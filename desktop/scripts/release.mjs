@@ -5,6 +5,8 @@
  *   npm run release -- minor     -> minor surum yukseltir (patch | minor | major)
  *   npm run release -- --no-bump -> surumu yukseltmeden mevcut surumu yayinlar (ilk surum icin)
  *   npm run release -- --dry     -> hicbir sey yayinlamaz, sadece derler ve plani yazar
+ *   npm run release -- --skip-build [--upload-only]
+ *                                -> derlemeyi atlar (dosyalar zaten release/ icindeyse)
  *   npm run release -- --repo alihajiyev/VideoForge
  *
  * Yaptigi isler:
@@ -28,21 +30,38 @@ const DEFAULT_REPO = 'alihajiyev/VideoForge'
 const argv = process.argv.slice(2)
 const dry = argv.includes('--dry')
 const noBump = argv.includes('--no-bump')
+const skipBuild = argv.includes('--skip-build') || argv.includes('--upload-only')
+const uploadOnly = argv.includes('--upload-only')
 const repoArgIndex = argv.indexOf('--repo')
 const repo = (repoArgIndex >= 0 ? argv[repoArgIndex + 1] : '') || process.env.VF_UPDATE_REPO || DEFAULT_REPO
 const BUMPS = ['patch', 'minor', 'major']
 const bump = BUMPS.find((b) => argv.includes(b)) ?? 'patch'
 
-function run(command, args, label) {
+/**
+ * Komut calistirir. ONEMLI: git/gh icin shell KULLANILMAZ - Windows'ta kabuk,
+ * icinde bosluk gecen argumanlari (ornegin commit mesaji) yanlis boler.
+ * npm icin ise Windows'ta npm.cmd oldugu icin kabuk gerekir.
+ */
+function run(command, args, label, shell = false) {
   console.log(`\n> ${label ?? `${command} ${args.join(' ')}`}`)
-  execFileSync(command, args, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' })
+  execFileSync(command, args, { cwd: root, stdio: 'inherit', shell })
 }
 
 function capture(command, args) {
   try {
-    return execFileSync(command, args, { cwd: root, encoding: 'utf8', shell: process.platform === 'win32' }).trim()
+    return execFileSync(command, args, { cwd: root, encoding: 'utf8' }).trim()
   } catch {
     return ''
+  }
+}
+
+/** gh komutu basarili oldu mu (cikti dondurmeden). */
+function ghOk(args) {
+  try {
+    execFileSync('gh', args, { cwd: root, stdio: 'ignore' })
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -81,8 +100,12 @@ if (!dry) {
   console.log('\n[1/4] DENEME: package.json degistirilmedi')
 }
 
-console.log('\n[2/4] Uygulama derleniyor (vite + electron-builder)...')
-run('npm', ['run', 'package'], 'npm run package')
+if (skipBuild) {
+  console.log('\n[2/4] Derleme atlandi (--skip-build): release/ klasorundeki dosyalar kullanilir')
+} else {
+  console.log('\n[2/4] Uygulama derleniyor (vite + electron-builder)...')
+  run('npm', ['run', 'package'], 'npm run package', true)
+}
 
 const releaseDir = path.join(root, 'release')
 const assets = fs.existsSync(releaseDir)
@@ -113,6 +136,9 @@ if (!capture('gh', ['--version'])) {
 }
 
 console.log('\n[3/4] Surum commit + etiket gonderiliyor...')
+if (uploadOnly) {
+  console.log('   (--upload-only: git islemleri atlandi)')
+} else {
 if (!noBump) {
   run('git', ['add', 'package.json'], 'git add package.json')
   run('git', ['commit', '-m', `surum ${version}`], `git commit -m "surum ${version}"`)
@@ -125,14 +151,23 @@ run('git', ['tag', tag], `git tag ${tag}`)
 const branch = capture('git', ['rev-parse', '--abbrev-ref', 'HEAD']) || 'main'
 run('git', ['push', 'origin', branch], `git push origin ${branch}`)
 run('git', ['push', 'origin', tag], `git push origin ${tag}`)
+}
 
-console.log('\n[4/4] GitHub surumu olusturuluyor...')
-const notes = capture('git', ['log', '--no-merges', '--pretty=- %s', '-8', 'HEAD~1..HEAD']) || `Surum ${version}`
-run(
-  'gh',
-  ['release', 'create', tag, ...assets, '--repo', repo, '--title', `VideoForge ${version}`, '--notes', notes],
-  `gh release create ${tag} --repo ${repo}`,
-)
+console.log('\n[4/4] GitHub surumu hazirlaniyor...')
+const notes = capture('git', ['log', '--no-merges', '--pretty=- %s', '-8', 'HEAD~1..HEAD']) || `VideoForge ${version}`
+const title = `VideoForge ${version}`
+const exists = ghOk(['release', 'view', tag, '--repo', repo])
+if (exists) {
+  console.log(`   ${tag} surumu zaten var: dosyalar ve notlar guncelleniyor`)
+  run('gh', ['release', 'upload', tag, ...assets, '--repo', repo, '--clobber'], `gh release upload ${tag} --clobber`)
+  run('gh', ['release', 'edit', tag, '--repo', repo, '--title', title, '--notes', notes], `gh release edit ${tag}`)
+} else {
+  run(
+    'gh',
+    ['release', 'create', tag, ...assets, '--repo', repo, '--title', title, '--notes', notes],
+    `gh release create ${tag} --repo ${repo}`,
+  )
+}
 
 console.log('\n=============================================')
 console.log(`  TAMAM: ${tag} yayinlandi -> https://github.com/${repo}/releases/tag/${tag}`)
