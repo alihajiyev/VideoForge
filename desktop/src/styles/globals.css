@@ -1,0 +1,247 @@
+@import 'tailwindcss';
+
+/* =========================================================================
+   VideoForge tasarim sistemi
+   Marka: "forge" -> eritilmis amber/turuncu; AI vurgusu: cyan.
+   Dark varsayilan, light tam eslesik.
+   ========================================================================= */
+
+:root {
+  color-scheme: dark;
+
+  --canvas: #08090c;
+  --canvas-2: #0c0e12;
+  --surface: #12151b;
+  --surface-2: #171b23;
+  --surface-3: #1e232d;
+  --overlay: rgb(4 5 8 / 0.72);
+
+  --border: #242a35;
+  --border-strong: #333b4a;
+
+  --fg: #f2f4f8;
+  --fg-muted: #aab3c2;
+  --fg-subtle: #74808f;
+
+  --brand: #f59e0b;
+  --brand-hi: #fbbf24;
+  --brand-soft: rgb(245 158 11 / 0.14);
+  --ember: #fb7185;
+  --ember-soft: rgb(251 113 133 / 0.12);
+  --cyan: #22d3ee;
+  --cyan-soft: rgb(34 211 238 / 0.12);
+  --violet: #a78bfa;
+
+  --success: #34d399;
+  --success-soft: rgb(52 211 153 / 0.14);
+  --warn: #fbbf24;
+  --warn-soft: rgb(251 191 36 / 0.14);
+  --danger: #fb7185;
+  --danger-soft: rgb(251 113 133 / 0.14);
+
+  --ring: rgb(245 158 11 / 0.5);
+  --glow: radial-gradient(70% 55% at 12% -5%, rgb(245 158 11 / 0.13), transparent 65%),
+    radial-gradient(55% 45% at 92% 0%, rgb(34 211 238 / 0.09), transparent 70%);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --canvas: #f7f7f9;
+  --canvas-2: #f0f1f4;
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --surface-3: #eef0f4;
+  --overlay: rgb(30 32 38 / 0.32);
+
+  --border: #e3e6ec;
+  --border-strong: #cdd3dc;
+
+  --fg: #14181f;
+  --fg-muted: #565f6d;
+  --fg-subtle: #8a93a1;
+
+  --brand: #d97706;
+  --brand-hi: #b45309;
+  --brand-soft: rgb(217 119 6 / 0.1);
+  --ember: #e11d48;
+  --ember-soft: rgb(225 29 72 / 0.1);
+  --cyan: #0891b2;
+  --cyan-soft: rgb(8 145 178 / 0.1);
+  --violet: #7c3aed;
+
+  --success: #059669;
+  --success-soft: rgb(5 150 105 / 0.1);
+  --warn: #b45309;
+  --warn-soft: rgb(180 83 9 / 0.1);
+  --danger: #dc2626;
+  --danger-soft: rgb(220 38 38 / 0.1);
+
+  --ring: rgb(217 119 6 / 0.4);
+  --glow: radial-gradient(70% 55% at 12% -5%, rgb(217 119 6 / 0.07), transparent 65%),
+    radial-gradient(55% 45% at 92% 0%, rgb(8 145 178 / 0.05), transparent 70%);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-canvas-2: var(--canvas-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-brand: var(--brand);
+  --color-brand-hi: var(--brand-hi);
+  --color-brand-soft: var(--brand-soft);
+  --color-ember: var(--ember);
+  --color-ember-soft: var(--ember-soft);
+  --color-cyan: var(--cyan);
+  --color-cyan-soft: var(--cyan-soft);
+  --color-violet: var(--violet);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  --font-sans:
+    'Inter var', 'Inter', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue',
+    Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.35), 0 14px 34px -16px rgb(0 0 0 / 0.55);
+  --shadow-pop: 0 26px 64px -20px rgb(0 0 0 / 0.7), 0 2px 8px rgb(0 0 0 / 0.45);
+  --shadow-glow: 0 14px 44px -16px rgb(245 158 11 / 0.5);
+
+  --animate-fade-in: fade-in 0.18s ease-out;
+  --animate-rise: rise 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-pulse-soft: pulse-soft 1.8s ease-in-out infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 13.5px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  input,
+  textarea,
+  [data-selectable] {
+    user-select: text;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+
+  ::selection {
+    background: var(--brand-soft);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--border-strong) 85%, transparent);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--fg-subtle) 70%, transparent);
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  .panel {
+    background: linear-gradient(180deg, color-mix(in oklab, var(--surface) 97%, white 3%), var(--surface));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .panel-flat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+
+  .glass {
+    background: color-mix(in oklab, var(--surface) 78%, transparent);
+    backdrop-filter: blur(14px) saturate(140%);
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .gradient-text {
+    background: linear-gradient(92deg, var(--brand-hi), var(--ember) 55%, var(--cyan));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .app-bg {
+    background-image: var(--glow);
+    background-repeat: no-repeat;
+  }
+
+  .hairline {
+    background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+    height: 1px;
+  }
+}

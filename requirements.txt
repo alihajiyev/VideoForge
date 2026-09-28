@@ -1,0 +1,13 @@
+# VideoForge gereksinimleri (lokal makine)
+# Modal bulut imajindaki surum: shared.py icinde google-genai==2.24.0 sabitli.
+google-genai==2.24.0
+modal
+yt-dlp
+elevenlabs
+requests
+pytubefix
+pytube
+python-dotenv
+SpeechRecognition
+openai-whisper
+soundfile

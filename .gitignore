@@ -1,0 +1,40 @@
+# --- Gizli bilgiler / kimlikler (ASLA commit etme) ---
+cookies.txt
+.env
+*.env
+
+# --- Veritabani ve loglar ---
+bot.db
+bot_log.txt
+*.sqlite3
+
+# --- Haftalik sonuclar (her calismada yeniden uretilir) ---
+haftalik_sonuc_*.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyc
+.venv/
+venv/
+
+# --- Modal / build artefaktlari ---
+.modal/
+modal_token*.txt
+
+# --- Ajan / yerel durum dosyalari ---
+.freebuff/
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+.aider*
+.claude/
+
+# --- Islem cikislari (Desktop'a yazilir ama emniyet) ---
+*_CLEAN.mp4
+*_VOICEOVER.mp3
+*_ses.mp3
+*_SEO.html
+*_THUMB.png
+Gun*/

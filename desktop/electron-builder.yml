@@ -1,0 +1,45 @@
+appId: com.videoforge.desktop
+productName: VideoForge
+copyright: Copyright © 2026 VideoForge
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+  - '!**/*.map'
+
+asar: true
+compression: maximum
+npmRebuild: false
+
+# Electron dagitimi dogrudan node_modules/electron/dist klasorunden kopyalanir
+# (antivirus kilitlerine takilan varsayilan zip akisini atlar).
+electronDist: node_modules/electron/dist
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: VideoForge
+  artifactName: 'VideoForge-Setup-${version}.${ext}'
+  uninstallDisplayName: 'VideoForge ${version}'
+  deleteAppDataOnUninstall: false
+
+portable:
+  artifactName: 'VideoForge-${version}-portable.${ext}'
+
+publish: null

@@ -1,0 +1,41 @@
+{
+  "kaynak_video_limit": 20,
+  "own_video_limit": 30,
+  "aday_sayisi": 15,
+  "oneri_sayisi": 10,
+  "transcript_ytdlp": true,
+  "whisper_yedek": true,
+  "havuz_sayisi": 40,
+  "kanallar": {
+    "1": {
+      "ad": "Kino Sekrety",
+      "nis": "Marvel/DC sinema Shorts",
+      "own_channel": "https://www.youtube.com/channel/UCDxooL2M22LvKI32dREyjfQ",
+      "kaynak_kanallar": [
+        "https://www.youtube.com/@HoloVisionX",
+        "https://www.youtube.com/@InfoZing-p",
+        "https://www.youtube.com/@minrook",
+        "https://www.youtube.com/@InkieChannel"
+      ]
+    },
+    "2": {
+      "ad": "Fakt Za 15",
+      "nis": "ilginc bilgiler / genel kultur Shorts",
+      "own_channel": "https://www.youtube.com/channel/UChwt3MX-u9PZB7Gh9tGTCtA/",
+      "kaynak_kanallar": [
+        "https://www.youtube.com/@slopeda/shorts",
+        "https://youtube.com/@bilimselmerak",
+        "https://www.youtube.com/@BilefMedya/shorts"
+      ]
+    },
+    "3": {
+      "ad": "PopkornFakty",
+      "nis": "film hikayeleri / dizi kesitleri Shorts",
+      "own_channel": "https://www.youtube.com/channel/UCjC5ny3Wcj3Q8pOy6QADc6g",
+      "kaynak_kanallar": [
+        "https://www.tiktok.com/@bayefendifilm1",
+        "https://www.tiktok.com/@anh.phan0485"
+      ]
+    }
+  }
+}

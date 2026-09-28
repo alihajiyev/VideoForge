@@ -1,0 +1,166 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import type { Artifact, ArtifactKind, ReportPreview } from '@shared/types'
+import { desktopDir } from '../core/paths'
+
+const PATTERNS: { re: RegExp; kind: ArtifactKind }[] = [
+  { re: /_CLEAN\.mp4$/i, kind: 'video' },
+  { re: /_VOICEOVER\.mp3$/i, kind: 'audio' },
+  { re: /_SEO\.html$/i, kind: 'seo' },
+  { re: /_THUMB\.png$/i, kind: 'thumb' },
+  { re: /^Kesif-Rapor.*\.html$/i, kind: 'report' },
+  { re: /_final\.mp4$/i, kind: 'video' },
+  { re: /^final_.*\.mp4$/i, kind: 'video' },
+]
+
+export function classify(name: string): ArtifactKind | null {
+  for (const p of PATTERNS) if (p.re.test(name)) return p.kind
+  return null
+}
+
+function candidateDirs(): string[] {
+  const dirs = [desktopDir]
+  try {
+    for (const entry of fs.readdirSync(desktopDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      if (/^Gun\d+_/i.test(entry.name) || /^Gun\d+/i.test(entry.name)) dirs.push(path.join(desktopDir, entry.name))
+    }
+  } catch {
+    /* Desktop okunamadi */
+  }
+  return dirs
+}
+
+function collect(dirs: string[], sinceMs: number | null, limit: number): Artifact[] {
+  const out: Artifact[] = []
+  for (const dir of dirs) {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      if (!entry.isFile()) continue
+      const kind = classify(entry.name)
+      if (!kind) continue
+      const full = path.join(dir, entry.name)
+      try {
+        const st = fs.statSync(full)
+        if (sinceMs !== null && st.mtimeMs < sinceMs) continue
+        out.push({ kind, name: entry.name, path: full, size: st.size, mtime: st.mtimeMs })
+      } catch {
+        /* atla */
+      }
+    }
+  }
+  out.sort((a, b) => b.mtime - a.mtime)
+  return out.slice(0, limit)
+}
+
+/** Belirli bir zamandan sonra uretilen cikti dosyalari (is bitince kullanilir). */
+export function scanArtifactsSince(sinceMs: number): Artifact[] {
+  return collect(candidateDirs(), sinceMs, 200)
+}
+
+/** Tum uretilmis cikti dosyalari (kutuphane ekrani). */
+export function listArtifacts(): Artifact[] {
+  return collect(candidateDirs(), null, 600)
+}
+
+export interface ReportGroup {
+  key: string
+  dir: string
+  title: string
+  items: Artifact[]
+  totalBytes: number
+  mtime: number
+}
+
+function stripSuffix(name: string): string {
+  return name
+    .replace(/_(CLEAN|VOICEOVER|SEO|THUMB)\.[^.]+$/i, '')
+    .replace(/\.(mp4|mp3|html|png)$/i, '')
+    .replace(/_\d{3}$/, '')
+    .replace(/_/g, ' ')
+    .trim()
+}
+
+/** Ayni videoya ait ciktilari (video + ses + kapak + SEO) gruplar. */
+export function groupArtifacts(items: Artifact[]): ReportGroup[] {
+  const map = new Map<string, ReportGroup>()
+  for (const item of items) {
+    const dir = path.dirname(item.path)
+    const stem = stripSuffix(item.name)
+    const key = `${dir}::${stem}`
+    let group = map.get(key)
+    if (!group) {
+      group = { key, dir, title: stem || item.name, items: [], totalBytes: 0, mtime: 0 }
+      map.set(key, group)
+    }
+    group.items.push(item)
+    group.totalBytes += item.size
+    group.mtime = Math.max(group.mtime, item.mtime)
+  }
+  const groups = [...map.values()]
+  groups.sort((a, b) => b.mtime - a.mtime)
+  for (const g of groups) {
+    g.items.sort((a, b) => a.kind.localeCompare(b.kind))
+  }
+  return groups
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+}
+
+function htmlToText(html: string): string {
+  return decodeEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(div|p|li|tr|h[1-6])>/gi, '\n')
+      .replace(/<[^>]+>/g, ' '),
+  )
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{2,}/g, '\n')
+    .trim()
+}
+
+/**
+ * SEO raporu onizlemesi. Rapor yapisi: <div class="card"><div class="label">Baslik</div>...
+ * Bolumleri "label -> icerik" olarak ayiklar (h1/h2 kullanilmiyor).
+ */
+export function previewHtml(filePath: string): ReportPreview {
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8')
+    const title = decodeEntities((raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').trim())
+    const sections: { label: string; text: string }[] = []
+
+    // Her <div class="label">X</div> sonrasi icerik, bir sonraki label'a kadar.
+    const re = /<div class="label">([\s\S]*?)<\/div>([\s\S]*?)(?=<div class="label">|<\/body>|$)/gi
+    for (const m of raw.matchAll(re)) {
+      const label = htmlToText(m[1]).replace(/\s+/g, ' ').trim()
+      const body = htmlToText(m[2]).slice(0, 900)
+      if (label || body) sections.push({ label: label || 'Bolum', text: body })
+    }
+
+    // Yedek: h1/h2 varsa (kesif raporu) onlari da baslik olarak al
+    const headings = [...raw.matchAll(/<h[12][^>]*>([\s\S]*?)<\/h[12]>/gi)]
+      .map((m) => htmlToText(m[1]).replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 12)
+
+    const text = htmlToText(raw).slice(0, 4000)
+    return { ok: true, title, headings, sections, text }
+  } catch (err) {
+    return { ok: false, error: String(err) }
+  }
+}
