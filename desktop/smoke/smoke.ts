@@ -628,7 +628,9 @@ async function main(): Promise<void> {
     check('Gercek VideoForge klasoru depo olarak tanindi', realGit.ok && realGit.isRepo === true, `${realGit.branch} / ${realGit.commit ?? 'commit yok'}`)
     check('Dal adi okundu (ilk commit olmasa bile)', typeof realGit.branch === 'string' && realGit.branch.length > 0, String(realGit.branch))
     check('Depo koku bot klasoruyle ayni', realGit.isBotRepo === true && realGit.toplevel === realBot, `kök: ${realGit.toplevel}`)
-    check('Kirli calisma agaci bildirildi', realGit.dirty === true, `${realGit.changedFiles.length} degisiklik`)
+    check('Calisma agaci durumu tutarli', realGit.dirty === (realGit.changedFiles.length > 0), `kirli: ${realGit.dirty}, ${realGit.changedFiles.length} dosya`)
+    check('Son commit bilgisi okundu', typeof realGit.commit === 'string' && realGit.commit.length >= 7, String(realGit.commit))
+    check('Uzak depo adresi okundu (gercek depo)', Boolean(realGit.remote && realGit.remote.includes('VideoForge')), String(realGit.remote))
 
     // Git deposu olmayan klasor: git yukari dogru aradigi icin gecici klasoru
     // cevreleyen depo varsa (ornegin kullanici ana klasoru) arama kesilir.
