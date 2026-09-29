@@ -21,6 +21,8 @@ venv/
 # --- Modal / build artefaktlari ---
 .modal/
 modal_token*.txt
+# bulut_kurulum.py'nin yazdigi "anahtarlar degisti mi" parmak izi
+.modal_secret.sig
 
 # --- Ajan / yerel durum dosyalari ---
 .freebuff/

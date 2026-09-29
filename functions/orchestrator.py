@@ -580,7 +580,7 @@ def run_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, system_p
     )
     v_key = f"voice_{lang}"
     if not sections.get(v_key):
-        print("❌ [Bulut] Ses metni bos, GPU temizligi baslatilmıyor.")
+        print("❌ [Bulut] Ses metni bos, GPU temizligi baslatilmiyor.")
         return {"prompt_user": False, "score": 0, "error": "Voice generation failed (kota/hata)", "video_bytes": None, "seo_html": "", "audio_bytes": None, "title": clean_title, "gpu_wall_time": 0, "num_chunks": 0}
 
     # Post-process: TEXT_FIXES on title/tags, normalize tags

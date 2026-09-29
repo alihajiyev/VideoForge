@@ -42,7 +42,7 @@ def _stat_step(label):
 
 
 def reset_gemini_call_stats():
-    """Yeni video islemi oncesi sayacları sifirla (run_orchestrator basinda)."""
+    """Yeni video islemi oncesi sayaclari sifirla (run_orchestrator basinda)."""
     GEMINI_CALL_STATS.update(calls=0, success=0, fail=0, empty=0)
     GEMINI_CALL_STATS["models"].clear()
     GEMINI_CALL_STATS["by_step"].clear()
@@ -58,7 +58,7 @@ def gemini_usage_summary():
 
 
 # Dogrulama donguleri icin ust sinir (#4): 99 yerine 8 deneme — kalite korunur,
-# kotanin boşa harcanmasi engellenir. Her dongu sonunda 'max deneme' uyarisi basar.
+# kotanin bosa harcanmasi engellenir. Her dongu sonunda 'max deneme' uyarisi basar.
 MAX_VERIFY_RETRIES = 8
 
 # Son _try_model cagrisi prompt-level hard-block ile mi bitti? (gemini_uret model
@@ -162,7 +162,7 @@ def _try_model(model_name, input_text, system_prompt, channel_name, retry_feedba
                     GEMINI_CALL_STATS["success"] += 1
                     _stat_model(model_name, "success")
                     return text.strip()
-                # --- BOS YANIT TEŞHİSİ ---
+                # --- BOS YANIT TESHISI ---
                 finish_reason = None
                 prompt_feedback = None
                 try:

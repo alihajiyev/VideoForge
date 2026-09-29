@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { STAGES, channelById } from '@shared/channels'
-import { IPC, MAX_LOG_LINES } from '@shared/constants'
+import { GUN_SAYISI_VARSAYILAN, IPC, MAX_LOG_LINES, normalGunSayisi } from '@shared/constants'
 import type { Artifact, JobRequest, JobState, LogLevel, RunHistoryItem } from '@shared/types'
 import { broadcast } from '../core/events'
 import { log } from '../core/logger'
@@ -19,6 +20,71 @@ let child: ChildProcess | null = null
 let cancelled = false
 let lineCounter = 0
 const history: RunHistoryItem[] = []
+
+/**
+ * DURDURMA (Stop) ALTYAPISI
+ * -------------------------
+ * Eski kod sadece `current.pid`'yi `taskkill /T /F` ile olduruyordu. O pid
+ * coktan olmusse (py launcher gibi ara surec) ya da islem agaci tam
+ * kapanmazsa `runStep` hic cozulmuyor, is sonsuza kadar "calisiyor" kaliyordu
+ * — kullanici "durdur diyorum durmuyor" diyordu. Artik:
+ *   1) is boyunca spawn edilen TUM pid'ler takip edilir ve agaclari oldurulur,
+ *   2) kapanmayan pid'ler icin artan baskili tekrar denenir,
+ *   3) bot tarafi icin iptal isaret dosyasi yazilir (gun aralarinda temiz durur),
+ *   4) 8 sn icinde kapanmazsa arayuz serbest birakilir (asla sonsuza kalmaz).
+ */
+const trackedPids = new Set<number>()
+let killCurrentStep: (() => void) | null = null
+let cancelFile: string | null = null
+let cancelWatchdog: NodeJS.Timeout | null = null
+
+function taskkill(pid: number): void {
+  try {
+    if (process.platform === 'win32') {
+      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+    } else {
+      try {
+        process.kill(-pid, 'SIGKILL')
+      } catch {
+        process.kill(pid, 'SIGKILL')
+      }
+    }
+  } catch {
+    /* yoksay */
+  }
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function writeCancelSentinel(): void {
+  if (!cancelFile) return
+  try {
+    fs.writeFileSync(cancelFile, String(Date.now()), 'utf8')
+  } catch {
+    /* yoksay */
+  }
+}
+
+function clearCancelSentinel(): void {
+  if (cancelWatchdog) {
+    clearTimeout(cancelWatchdog)
+    cancelWatchdog = null
+  }
+  if (cancelFile) {
+    try {
+      fs.rmSync(cancelFile, { force: true })
+    } catch {
+      /* yoksay */
+    }
+  }
+}
 
 function emptyStats(): JobState['stats'] {
   return { gpu: null, cost: null, duration: null, gemini: null, chunks: null }
@@ -86,7 +152,9 @@ export function buildSteps(req: JobRequest, base: string[]): { steps: JobStep[];
       const args = [...base, '-m', 'modal', 'run', script]
       if (req.link) args.push('--link', req.link)
       if (req.force) args.push('--force')
-      if (req.gun && req.gun > 0) args.push('--gun', String(req.gun), '--gun-toplam', String(req.gunToplam || 7))
+      if (req.gun && req.gun > 0) {
+        args.push('--gun', String(req.gun), '--gun-toplam', String(req.gunToplam || req.gunSayisi || GUN_SAYISI_VARSAYILAN))
+      }
       return {
         steps: [{ label: `${ch?.name ?? 'Kanal'} isleniyor`, cmd: args }],
         title: ch ? `${ch.name} - ${ch.niche}` : 'Kanal islemi',
@@ -94,29 +162,32 @@ export function buildSteps(req: JobRequest, base: string[]): { steps: JobStep[];
       }
     }
     case 'discover': {
+      const gun = normalGunSayisi(req.gunSayisi)
+      const planMode = Boolean(req.haftalik) || gun > GUN_SAYISI_VARSAYILAN
       const args = [...base, 'kesif.py', '--chn', req.channelId || '1', '--evet']
-      if (req.haftalik) args.push('--haftalik')
+      if (planMode) args.push('--haftalik', String(gun))
       return {
         steps: [{ label: 'Kesif (video onerisi)', cmd: args }],
         title: 'Kesif - Kanal Analizi',
-        subtitle: req.haftalik ? 'Haftalik mod: 7 video' : 'Tek seferlik oneri',
+        subtitle: planMode ? `${gun} gunluk plan` : 'Tek seferlik oneri',
       }
     }
     case 'weekly': {
+      const gun = normalGunSayisi(req.gunSayisi)
       const chn = req.channelId || '1'
       const ch = channelById(chn)
-      const kesifArgs = [...base, 'kesif.py', '--haftalik', '--chn', chn, '--evet']
+      const kesifArgs = [...base, 'kesif.py', '--haftalik', String(gun), '--chn', chn, '--evet']
       const isletArgs = [...base, 'haftalik_islet.py', '--evet']
       return {
         steps: [
-          { label: '1. Kesif - 7 video bulunuyor', cmd: kesifArgs },
+          { label: `1. Kesif - ${gun} video bulunuyor`, cmd: kesifArgs },
           {
             label: '2. Temizle + SEO + ses zinciri',
             cmd: isletArgs,
             continueWhen: () => fs.existsSync(planPath(b)),
           },
         ],
-        title: `Haftalik Zincir - ${ch?.name ?? chn}`,
+        title: `${gun} Gunluk Zincir - ${ch?.name ?? chn}`,
         subtitle: 'Kesif -> temizle -> SEO -> ses',
       }
     }
@@ -138,6 +209,14 @@ function runStep(step: JobStep, cwd: string): Promise<number> {
     let buffer = ''
     let settled = false
 
+    /** Surec kapanmasa bile dongunun tikanmamasini garantiler (durdurma yolu). */
+    const finish = (code: number): void => {
+      if (settled) return
+      settled = true
+      killCurrentStep = null
+      resolve(code)
+    }
+
     let proc: ChildProcess
     try {
       proc = spawn(step.cmd[0], step.cmd.slice(1), {
@@ -148,15 +227,19 @@ function runStep(step: JobStep, cwd: string): Promise<number> {
           PYTHONUNBUFFERED: '1',
           PYTHONIOENCODING: 'utf-8',
           PYTHONUTF8: '1',
+          // Bot gun aralarinda bu dosyayi kontrol eder -> temiz durus.
+          ...(cancelFile ? { VIDEOFORGE_CANCEL_FILE: cancelFile } : {}),
         },
       })
     } catch (err) {
       push('err', `Komut baslatilamadi: ${String(err)}`)
-      resolve(1)
+      finish(1)
       return
     }
 
     child = proc
+    killCurrentStep = () => finish(130)
+    if (proc.pid) trackedPids.add(proc.pid)
     if (current) {
       current.pid = proc.pid ?? null
       emitState()
@@ -179,21 +262,21 @@ function runStep(step: JobStep, cwd: string): Promise<number> {
 
     proc.on('error', (err) => {
       if (settled) return
-      settled = true
+      if (proc.pid) trackedPids.delete(proc.pid)
       push('err', `Surec hatasi: ${err.message}`)
       child = null
-      resolve(1)
+      finish(1)
     })
 
     proc.on('close', (code) => {
       if (settled) return
-      settled = true
+      if (proc.pid) trackedPids.delete(proc.pid)
       if (buffer.trim()) {
         const parsed = parseLine(buffer)
         if (parsed.text) push(parsed.level, parsed.text, parsed.stage)
       }
       child = null
-      resolve(code ?? 0)
+      finish(code ?? 0)
     })
   })
 }
@@ -237,6 +320,10 @@ export async function startJob(req: JobRequest): Promise<{ ok: boolean; error?: 
   const stages = STAGES[req.kind]
 
   cancelled = false
+  trackedPids.clear()
+  killCurrentStep = null
+  clearCancelSentinel()
+  cancelFile = path.join(os.tmpdir(), `videoforge-cancel-${randomUUID()}.flag`)
   current = {
     id: randomUUID(),
     kind: req.kind,
@@ -313,6 +400,7 @@ export async function startJob(req: JobRequest): Promise<{ ok: boolean; error?: 
     )
     emitState()
     broadcast(IPC.runEvent, { type: 'end', state: snapshot(current) })
+    clearCancelSentinel()
 
     const folders = new Set(current.artifacts.map((a) => path.dirname(a.path)))
     for (const folder of folders) {
@@ -327,26 +415,40 @@ export async function startJob(req: JobRequest): Promise<{ ok: boolean; error?: 
   return { ok: true }
 }
 
-export function cancelJob(): boolean {
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Islemleri durdurur: once bot tarafina iptal isareti, sonra TUM surec
+ * agaclarini oldurur, kapanmayanlar icin artan baskili tekrar dener ve
+ * 8 sn icinde kapanmazsa arayuzu serbest birakir (asla sonsuza kadar
+ * "calisiyor" kalmaz). Renderer bunu bekleyebilsin diye Promise doner.
+ */
+export async function cancelJob(): Promise<boolean> {
   if (!current || current.status !== 'running') return false
   cancelled = true
-  const pid = current.pid
   push('warn', 'Durdurma istegi gonderildi...')
-  if (pid) {
-    try {
-      if (process.platform === 'win32') {
-        spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true })
-      } else {
-        try {
-          process.kill(-pid, 'SIGTERM')
-        } catch {
-          process.kill(pid, 'SIGTERM')
-        }
-      }
-    } catch (err) {
-      push('warn', `Surec durdurulamadi: ${String(err)}`)
-    }
+
+  // 1) Bot tarafi: haftalik zincir gun aralarinda bu dosyayi gorup temiz durur.
+  writeCancelSentinel()
+
+  // 2) Bu is boyunca spawn edilen TUM pid'ler (sadece sonuncu degil).
+  const pids = new Set<number>(trackedPids)
+  if (current.pid) pids.add(current.pid)
+
+  if (!pids.size) {
+    push('warn', 'Durdurulacak canli surec bulunamadi, islem kapatiliyor.')
+    killCurrentStep?.()
+    return true
   }
+
+  for (const pid of pids) taskkill(pid)
+
+  // 3) Artan baski: once kisa bekle, hala yasayanlari zorla kapat.
+  await sleep(1500)
+  const kalan = [...pids].filter(isAlive)
+  for (const pid of kalan) taskkill(pid)
+  if (kalan.length) push('warn', `Kapanmayan ${kalan.length} surec icin zorla kapatma tekrarlandi...`)
+
   if (child) {
     try {
       child.kill()
@@ -354,5 +456,16 @@ export function cancelJob(): boolean {
       /* yoksay */
     }
   }
+
+  // 4) Son guvenlik agi: 8 sn icinde kapanmazsa UI'yi serbest birak.
+  if (cancelWatchdog) clearTimeout(cancelWatchdog)
+  cancelWatchdog = setTimeout(() => {
+    cancelWatchdog = null
+    if (current && current.status === 'running') {
+      push('warn', 'Surec agaci 8 saniyede kapanmadi - arayuz serbest birakiliyor (arka planda kalinti olabilir).')
+      killCurrentStep?.()
+    }
+  }, 8000)
+
   return true
 }

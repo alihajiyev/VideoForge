@@ -94,9 +94,10 @@ export function registerIpc(): void {
     }
   })
 
-  ipcMain.handle(IPC.runCancel, () => {
+  ipcMain.handle(IPC.runCancel, async () => {
     try {
-      return ok(cancelJob())
+      // cancelJob surec agacini oldurup kapanmayi bekler -> await sart.
+      return ok(await cancelJob())
     } catch (err) {
       return fail(String(err))
     }

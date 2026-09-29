@@ -55,8 +55,13 @@ export interface JobRequest {
   channelId?: ChannelId
   link?: string
   force?: boolean
+  /** Kesif plan modu (gunSayisi > 1 ile birlikte kullanilir). */
   haftalik?: boolean
+  /** Kac gunluk plan kurulsun (7 sabit degil). */
+  gunSayisi?: number
+  /** Tek video islenirken: bu videonun plandaki gun numarasi. */
   gun?: number
+  /** Tek video islenirken: planin toplam gun sayisi. */
   gunToplam?: number
 }
 

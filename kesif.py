@@ -37,15 +37,29 @@ CONFIG_FILE = os.path.join(BASE_DIR, "kesif_config.json")
 PLAN_FILE = os.path.join(BASE_DIR, "haftalik_plan.json")
 VIDIQ_KEY = "vidiq_4OjOZi1vxbUEWY_DHFs_fWHbANpXjbG86uNN1AG"
 
-# Haftalik mod: skor sirasi = paylasim sirasi (1. gun Pazartesi ... 7. gun Pazar)
+# Cok gunlu plan: skor sirasi = paylasim sirasi (1. gun Pazartesi ...).
+# Gun sayisi ARTIK SABIT DEGIL: --gun N / --haftalik N ile secilir.
 GUN_ADLARI = {1: "Pazartesi", 2: "Sali", 3: "Carsamba", 4: "Persembe",
               5: "Cuma", 6: "Cumartesi", 7: "Pazar"}
+VARSAYILAN_GUN_SAYISI = 7
+MAX_GUN_SAYISI = 60
+
+
+def gun_adi(sira):
+    """1 tabanli gun numarasi -> hafta gunu adi (7'den sonra bastan dongu)."""
+    try:
+        sira = int(sira)
+    except Exception:
+        return f"Gun {sira}"
+    return GUN_ADLARI.get(((sira - 1) % 7) + 1, f"Gun {sira}")
 
 DEFAULT_CONFIG = {
     "kaynak_video_limit": 20,
     "own_video_limit": 30,
     "aday_sayisi": 6,
     "oneri_sayisi": 5,
+    # --haftalik / --gun deger verilmeden calistirilirsa kac gunluk plan kurulsun
+    "gun_sayisi": 7,
     "transcript_ytdlp": True,
     "transcript_api": True,
     "whisper_yedek": True,
@@ -215,7 +229,7 @@ def _tiktok_resolve_user_id(username):
 
 
 def yt_channel_videos(channel_url, limit=20):
-    """Kanalın son videolarini flat-playlist ile ceker (API kotası gerekmez).
+    """Kanali son videolarini flat-playlist ile ceker (API kotasi gerekmez).
     Shorts sekmesi yoksa /videos'a dener. TikTok icin userId fallback'i vardir."""
     opts = {
         "quiet": True,
@@ -535,7 +549,7 @@ Output ONLY the style profile bullets in Turkish, nothing else."""
 
 def gemini_prefilter(candidates, kanal="1", nis=""):
     """1. asama: genis havuzu SADECE basliga gore kabaca suz.
-    Cömert davranir: supheli olan ELENMEZ, ust asamada transcript ile
+    Comert davranir: supheli olan ELENMEZ, ust asamada transcript ile
     bakilir. Donus: KAZANAN adayi ID listesi (sira onemsiz)."""
     lines = "\n".join(f'ID={c["id"]} | {c["views"]:,} views | "{c["title"]}"' for c in candidates)
     if str(kanal) == "1":
@@ -742,7 +756,10 @@ def main():
     parser.add_argument("--kanal", help="Kaynak kanal linki (birden fazlaysa virgulle ayir)", default=None)
     parser.add_argument("--adet", type=int, default=None, help="Kanal basina islenecek video sayisi")
     parser.add_argument("--chn", help="Hedef kanal no (config'deki kanallar: 1, 2...)", default=None)
-    parser.add_argument("--haftalik", action="store_true", help="Haftalik mod: 7 video, skor sirasi = paylasim sirasi (1-7. gun), plan JSON yazar")
+    parser.add_argument("--haftalik", nargs="?", const=0, type=int, default=None,
+                        help="Cok gunlu plan modu. Deger vermezsen config'deki gun sayisi (7). Ornek: --haftalik 10")
+    parser.add_argument("--gun", type=int, default=None,
+                        help="Plan kac gunluk olsun (--haftalik ile ayni is). Ornek: --gun 10")
     parser.add_argument("--evet", action="store_true", help="Hicbir sey sorma: config'deki kayitli kaynak kanallarla devam et (--chn sart)")
     args = parser.parse_args()
 
@@ -774,11 +791,28 @@ def main():
         print(f"❌ {kanal_ad} icin own_channel config'de bos.")
         return
     src_limit = args.adet or cfg["kaynak_video_limit"]
-    aday_sayisi = cfg["aday_sayisi"]
-    haftalik = args.haftalik
-    oneri_sayisi = 7 if haftalik else cfg["oneri_sayisi"]
+
+    # 0b) PLAN MODU + GUN SAYISI (7 artik sabit degil, kullanici seciyor)
+    if args.gun and args.gun > 0:
+        gun_sayisi = args.gun
+    elif args.haftalik and args.haftalik > 0:
+        gun_sayisi = args.haftalik                 # --haftalik 10
+    elif args.haftalik is not None:
+        gun_sayisi = int(cfg.get("gun_sayisi") or VARSAYILAN_GUN_SAYISI)  # ciplak --haftalik
+    else:
+        gun_sayisi = 0                             # tek seferlik oneri modu
+    if gun_sayisi > MAX_GUN_SAYISI:
+        warn(f"Gun sayisi {MAX_GUN_SAYISI} ile sinirlandi (istenen: {gun_sayisi}).")
+        gun_sayisi = MAX_GUN_SAYISI
+
+    haftalik = gun_sayisi > 0
+    # Plan modunda siralamaya genis havuz gerekir: kaynak cesitliligi kotasi
+    # (kaynak basina max 3) yuzunden aday sayisi gun sayisindan fazla olmali.
+    aday_sayisi = max(int(cfg["aday_sayisi"]), gun_sayisi + 5) if haftalik else int(cfg["aday_sayisi"])
+    oneri_sayisi = gun_sayisi if haftalik else cfg["oneri_sayisi"]
     if haftalik:
-        print("\n📅 HAFTALIK MOD: 7 video bulunacak, skor sirasi = paylasim sirasi (1=Pazartesi ... 7=Pazar)")
+        print(f"\n📅 COK GUNLU PLAN MODU: {gun_sayisi} video bulunacak; skor sirasi = paylasim sirasi "
+              f"(1. gun Pazartesi ... {gun_sayisi}. gun {gun_adi(gun_sayisi)})")
 
     header("VIDEOFORGE KESIF - KANAL ANALIZI & VIDEO ONERI", f"{kanal_ad} | Kaynak tarama + stil profili + siralama")
 
@@ -938,9 +972,9 @@ def main():
 
     # 5) GEMINI SIRALAMA (+ konu kapisi)
     konu_filtresi = cfg.get("konu_filtresi", True)
-    print(f"\n🤖 Gemini video secip siralıyor... (konu filtresi: {'ACIK' if konu_filtresi else 'KAPALI'})")
+    print(f"\n🤖 Gemini video secip siraliyor... (konu filtresi: {'ACIK' if konu_filtresi else 'KAPALI'})")
     results = gemini_rank(adaylar, style, own_name, konu_filtresi=konu_filtresi, kanal=chn, nis=nis,
-                          cop_dahil=haftalik, limit=(15 if haftalik else 10))
+                          cop_dahil=haftalik, limit=(max(15, gun_sayisi + 5) if haftalik else 10))
     if not results:
         print("❌ Gemini oneri uretemedi (kota dolu olabilir).")
         return
@@ -964,17 +998,20 @@ def main():
             sayac[s] = sayac.get(s, 0) + 1
         print("   📊 Kaynak dagilimi: " + ", ".join(f"{s} x{n}" for s, n in sorted(sayac.items(), key=lambda x: -x[1])))
     if haftalik:
-        # 7 GARANTI, kademeli: KAZANAN+kota3 -> KAZANAN kotasiz -> COP yedek (isaretli).
+        # N GARANTI, kademeli: KAZANAN+kota -> KAZANAN kotasiz -> COP yedek (isaretli).
+        # Kaynak kotasi gun sayisina gore buyur; aksi halde 3 kaynakta 9'dan
+        # sonra tavana takilip listeyi COP dolduruyordu.
+        kaynak_kotasi = max(3, (gun_sayisi + 2) // 3)
         kazananlar = [r for r in results if r.get("tip") != "COP"]
         cop_yedek = [r for r in results if r.get("tip") == "COP"]
-        final = _kotala(kazananlar, 3)[:7]
-        if len(final) < 7:
+        final = _kotala(kazananlar, kaynak_kotasi)[:gun_sayisi]
+        if len(final) < gun_sayisi:
             alinan = {r["id"] for r in final}
-            final += [r for r in _kotala(kazananlar, 99) if r["id"] not in alinan][:7 - len(final)]
+            final += [r for r in _kotala(kazananlar, 99) if r["id"] not in alinan][:gun_sayisi - len(final)]
         cop_eklendi = 0
-        if len(final) < 7:
+        if len(final) < gun_sayisi:
             alinan = {r["id"] for r in final}
-            for r in [r for r in cop_yedek if r["id"] not in alinan][:7 - len(final)]:
+            for r in [r for r in cop_yedek if r["id"] not in alinan][:gun_sayisi - len(final)]:
                 r["reason"] = "⚠️ YEDEK (COP tip): " + r.get("reason", "")
                 final.append(r)
                 cop_eklendi += 1
@@ -984,7 +1021,7 @@ def main():
         _dagilim_yaz(results)
         if cop_eklendi:
             print(f"   ⚠️ {cop_eklendi} gun COP yedekle dolduruldu (KAZANAN yetmedi, raporda isaretli).")
-        if len(results) < 7:
+        if len(results) < gun_sayisi:
             print(f"   ⚠️ Taze aday yetmedi ({len(adaylar)} aday tarandi): plan {len(results)} video ile kuruldu.")
             print(f"      Cozum: kaynak kanallara yeni video gelince tekrar calistir ya da --adet'i yukselt.")
     else:
@@ -998,17 +1035,18 @@ def main():
         oneri_kaydet(r["id"], r["score"], r.get("tip", ""), kanal=chn)
     print(f"   💾 {len(results)} oneri puani veritabanina kaydedildi (kanal {chn}: {kanal_ad} — ana bot ayni puani kullanacak).")
 
-    # 5b) HAFTALIK PLAN — skor sirasi = gun sirasi, haftalik_plan.json'a yazilir.
+    # 5b) COK GUNLU PLAN — skor sirasi = gun sirasi, haftalik_plan.json'a yazilir.
     # haftalik_islet.py bu dosyayi okuyup videolari sirayla VideoForge'dan gecirir.
     if haftalik:
         for i, r in enumerate(results, 1):
             r["gun"] = i
-            r["gun_adi"] = GUN_ADLARI.get(i, f"Gun {i}")
+            r["gun_adi"] = gun_adi(i)
         plan = {
             "chn": chn,
             "kanal_ad": kanal_ad,
             "tarih": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "toplam": len(results),
+            "gun_sayisi": gun_sayisi,
             "videolar": [],
         }
         for r in results:
@@ -1027,20 +1065,20 @@ def main():
             })
         with open(PLAN_FILE, "w", encoding="utf-8") as f:
             json.dump(plan, f, indent=2, ensure_ascii=False)
-        print(f"   📅 Haftalik plan yazildi: {PLAN_FILE}")
-        if len(results) < 7:
-            print(f"   ⚠️ 7 video bulunamadi, plan {len(results)} video ile olustu.")
+        print(f"   📅 {gun_sayisi} GUNLUK PLAN yazildi: {PLAN_FILE}")
+        if len(results) < gun_sayisi:
+            print(f"   ⚠️ {gun_sayisi} video bulunamadi, plan {len(results)} video ile olustu.")
 
     # 6) RAPOR — Masaustune HTML (ana bottaki SEO raporu tarzinda)
     html = build_html_report(results, style, own_name, src_links, adaylar)
     desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-    etiket = "Haftalik" if haftalik else f"Ch{chn}"
+    etiket = f"{gun_sayisi}Gun" if haftalik else f"Ch{chn}"
     rapor_path = os.path.join(desktop, f"Kesif-Rapor_{etiket}_{datetime.now().strftime('%Y%m%d_%H%M')}.html")
     with open(rapor_path, "w", encoding="utf-8") as f:
         f.write(html)
 
     print("\n" + "=" * 60)
-    print(f" {'HAFTALIK PLAN (7 GUN)' if haftalik else f'ONERILEN VIDEOLAR (TOP {len(results)})'}")
+    print(f" {f'{gun_sayisi} GUNLUK PLAN' if haftalik else f'ONERILEN VIDEOLAR (TOP {len(results)})'}")
     print("=" * 60)
     for r in results:
         c = next((x for x in adaylar if x["id"] == r["id"]), None)
@@ -1054,7 +1092,7 @@ def main():
     print(f"💾 HTML rapor masaustune kaydedildi:")
     print(f"   {rapor_path}")
     if haftalik:
-        print(f"\n▶️ Sirali isletme icin:  python haftalik_islet.py")
+        print(f"\n▶️ {gun_sayisi} gunluk zinciri sirali isletmek icin:  python haftalik_islet.py")
         print(f"   (videolar tek tek, gun sirasina gore VideoForge'dan gecer)")
 
 

@@ -144,7 +144,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
                   Kesif calistir
                 </Button>
                 <Button size="sm" icon={<Layers className="size-3.5" />} onClick={() => void quick('weekly')} disabled={job?.status === 'running'}>
-                  Haftalik zincir
+                  Cok gunlu zincir
                 </Button>
               </div>
             </div>

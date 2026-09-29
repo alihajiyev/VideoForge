@@ -3,6 +3,7 @@
   "own_video_limit": 30,
   "aday_sayisi": 15,
   "oneri_sayisi": 10,
+  "gun_sayisi": 7,
   "transcript_ytdlp": true,
   "whisper_yedek": true,
   "havuz_sayisi": 40,

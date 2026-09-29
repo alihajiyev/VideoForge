@@ -18,7 +18,7 @@ export const CHANNELS: ChannelDef[] = [
     script: 'faktza15.py',
     voiceId: 'M1CSR3PJBsfWU6ZquG3C',
     accent: 'from-emerald-500/20 to-teal-500/10',
-    note: '15 saniyelik ilginc bilgi formatı.',
+    note: '15 saniyelik ilginc bilgi formati.',
   },
   {
     id: '3',
@@ -50,10 +50,10 @@ export const STAGES: Record<JobKind, StageDef[]> = {
     { key: 'collect', label: 'Kaynak Tarama', hint: 'Kaynak kanal videolari' },
     { key: 'transcript', label: 'Transkript', hint: 'Alt yazi / Whisper' },
     { key: 'rank', label: 'Gemini Siralama', hint: 'Stil profili + puan' },
-    { key: 'report', label: 'Rapor / Plan', hint: 'HTML + haftalik plan' },
+    { key: 'report', label: 'Rapor / Plan', hint: 'HTML + gunluk plan' },
   ],
   weekly: [
-    { key: 'discover', label: '1. Kesif', hint: '7 video bulunur' },
+    { key: 'discover', label: '1. Kesif', hint: 'Secilen gun sayisi kadar video' },
     { key: 'plan', label: '2. Plan', hint: 'Skor sirasi = gun sirasi' },
     { key: 'render', label: '3. Islem Zinciri', hint: 'Temizle + SEO + ses' },
     { key: 'studio', label: '4. ShortsStudio', hint: 'Montaj (varsa)' },

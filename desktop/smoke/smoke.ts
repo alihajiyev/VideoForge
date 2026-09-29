@@ -13,7 +13,7 @@ import { app, BrowserWindow } from 'electron'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { IPC } from '@shared/constants'
+import { GUN_SAYISI_MAX, GUN_SAYISI_VARSAYILAN, IPC, normalGunSayisi } from '@shared/constants'
 import { CHANNELS } from '@shared/channels'
 import type { LogLine } from '@shared/types'
 import { registerIpc } from '../electron/ipc'
@@ -53,6 +53,28 @@ function section(title: string): void {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/** pid hala yasiyor mu (sinyal 0 gonderilebiliyorsa evet). */
+function pidAlive(pid: number | null | undefined): boolean {
+  if (!pid) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** pid kapanana kadar bekler (durdurma testinde surec agaci gercekten oldu mu). */
+async function waitForExit(pid: number | null | undefined, ms = 10_000): Promise<boolean> {
+  if (!pid) return true
+  const start = Date.now()
+  while (Date.now() - start < ms) {
+    if (!pidAlive(pid)) return true
+    await sleep(250)
+  }
+  return !pidAlive(pid)
+}
 
 async function waitForStatus(ms = 40_000): Promise<string> {
   const start = Date.now()
@@ -312,10 +334,40 @@ async function main(): Promise<void> {
     const ch3 = buildSteps({ kind: 'channel', channelId: '3', link: 'https://x/y', gun: 2, gunToplam: 7 }, base)
     check('Kanal 3 -> kinok_syjet.py + --gun', ch3.steps[0].cmd.join(' ').includes('kinok_syjet.py --link https://x/y --gun 2 --gun-toplam 7'), ch3.steps[0].cmd.join(' '))
     const disc = buildSteps({ kind: 'discover', channelId: '2', haftalik: true }, base)
-    check('Kesif komutu dogru', disc.steps[0].cmd.join(' ') === 'py -3 -X utf8 kesif.py --chn 2 --evet --haftalik', disc.steps[0].cmd.join(' '))
+    check(
+      'Kesif komutu dogru (varsayilan 7 gunluk plan)',
+      disc.steps[0].cmd.join(' ') === 'py -3 -X utf8 kesif.py --chn 2 --evet --haftalik 7',
+      disc.steps[0].cmd.join(' '),
+    )
+    const disc10 = buildSteps({ kind: 'discover', channelId: '2', haftalik: true, gunSayisi: 10 }, base)
+    check(
+      'Kesif gun sayisi komuta geciyor (10)',
+      disc10.steps[0].cmd.join(' ') === 'py -3 -X utf8 kesif.py --chn 2 --evet --haftalik 10',
+      disc10.steps[0].cmd.join(' '),
+    )
+    const discOff = buildSteps({ kind: 'discover', channelId: '2' }, base)
+    check('Plan modu kapaliyken --haftalik yok', !discOff.steps[0].cmd.includes('--haftalik'), discOff.steps[0].cmd.join(' '))
+    check('Plan modu kapaliyken alt yazi tek seferlik', discOff.subtitle === 'Tek seferlik oneri', discOff.subtitle)
     const wk = buildSteps({ kind: 'weekly', channelId: '1' }, base)
-    check('Haftalik zincir 2 adimli', wk.steps.length === 2 && wk.steps[0].cmd.join(' ').includes('--haftalik') && wk.steps[1].cmd.join(' ').includes('haftalik_islet.py'), wk.steps.map((s) => s.label).join(' -> '))
+    check('Cok gunlu zincir 2 adimli', wk.steps.length === 2 && wk.steps[0].cmd.join(' ').includes('--haftalik 7') && wk.steps[1].cmd.join(' ').includes('haftalik_islet.py'), wk.steps.map((s) => s.label).join(' -> '))
+    const wk14 = buildSteps({ kind: 'weekly', channelId: '3', gunSayisi: 14 }, base)
+    check(
+      'Zincir gun sayisi komuta geciyor (14)',
+      wk14.steps[0].cmd.join(' ').includes('--haftalik 14') && wk14.steps[0].label.includes('14 video') && wk14.title.includes('14 Gunluk'),
+      `${wk14.steps[0].cmd.join(' ')} | ${wk14.title}`,
+    )
     check('Zincir plan dosyasina bagli', typeof wk.steps[1].continueWhen === 'function')
+
+    section('8b) Gun sayisi normalizasyonu (7 sabit degil)')
+    check('normalGunSayisi(10) -> 10', normalGunSayisi(10) === 10, String(normalGunSayisi(10)))
+    check('normalGunSayisi(undefined) -> 7', normalGunSayisi(undefined) === GUN_SAYISI_VARSAYILAN, String(normalGunSayisi(undefined)))
+    check('normalGunSayisi(1) -> 7 (min 2)', normalGunSayisi(1) === 7, String(normalGunSayisi(1)))
+    check('normalGunSayisi(999) -> 60 (ust sinir)', normalGunSayisi(999) === GUN_SAYISI_MAX, String(normalGunSayisi(999)))
+    check('normalGunSayisi("12") -> 12', normalGunSayisi('12') === 12, String(normalGunSayisi('12')))
+    check('normalGunSayisi("abc") -> 7', normalGunSayisi('abc') === 7, String(normalGunSayisi('abc')))
+    const gun10 = buildSteps({ kind: 'channel', channelId: '3', link: 'https://x/y', gun: 4, gunSayisi: 10 }, base)
+    check('gun-toplam gunSayisi\'ndan tureiyor', gun10.steps[0].cmd.join(' ').includes('--gun-toplam 10'), gun10.steps[0].cmd.join(' '))
+
     const clean = buildSteps({ kind: 'clean', link: 'https://youtu.be/abc' }, base)
     check('Temizleyici komutu dogru', clean.steps[0].cmd.join(' ').includes('modal run temizle.py --link https://youtu.be/abc'), clean.steps[0].cmd.join(' '))
 
@@ -372,12 +424,16 @@ async function main(): Promise<void> {
     const slowStart = await startJob({ kind: 'discover', channelId: '1' })
     check('Yavas is basladi', slowStart.ok, slowStart.error ?? '')
     await sleep(2500)
+    const slowStartPid = getState()?.pid ?? null
+    check('Calisan surec pid\'i kayitli', Boolean(slowStartPid) && pidAlive(slowStartPid), String(slowStartPid))
     check('Is calisiyor durumda', getState()?.status === 'running', String(getState()?.status))
-    const cancelled = cancelJob()
+    const cancelled = await cancelJob()
     check('Iptal istegi kabul edildi', cancelled === true)
     const cancelStatus = await waitForStatus(30_000)
     check('Is iptal edildi olarak bitti', cancelStatus === 'cancelled', `durum: ${cancelStatus}`)
     check('Iptal sonrasi pid temizlendi', getState()?.pid === null, String(getState()?.pid))
+    check('Iptal sonrasi islem kapanma suresi makul', getState()?.endedAt !== null, String(getState()?.endedAt))
+    check('Iptal sonrasi kalan surec yok', await waitForExit(slowStartPid, 10_000), String(slowStartPid))
 
     /* ---------------- 13. Gercek renderer + preload ---------------- */
     section('13) Renderer + preload kopru testi (gizli pencere)')
@@ -441,6 +497,49 @@ async function main(): Promise<void> {
     check('Otomatik guncelleme anahtari gorunur', dom2.includes('acilista otomatik kontrol et'), '')
     check('Bot kodu guncellemesi paneli gorunur', dom2.includes('bot kodu guncellemesi (git)') && dom2.includes('bot kodunu guncelle'), '')
     check('Git durum satirlari gorunur', dom2.includes('son commit') && dom2.includes('uzak fark') && dom2.includes('dal'), '')
+
+    // Kesif sayfasi: gun sayisi artik SECILEBILIR (7 sabit degil)
+    const navKesif = await win.webContents.executeJavaScript(
+      `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.closest('nav') && /kesif/i.test(x.textContent || '')); if (!b) return false; b.click(); return true; })()`,
+    )
+    await sleep(800)
+    check('Kesif sayfasina gecis calisti', navKesif === true, String(navKesif))
+    const domKesif = ((await win.webContents.executeJavaScript('document.body.textContent')) as string).toLowerCase()
+    check('Cok gunlu plan modu anahtari gorunur', domKesif.includes('cok gunlu plan modu'), '')
+    check('Gun sayisi sorusu gorunur', domKesif.includes('kac gunluk plan'), '')
+    check('Hazir gun secenekleri gorunur (3/7/10/14/30)', ['3', '7', '10', '14', '30'].every((n) => domKesif.includes(n)), '')
+    check('Sacilan haftalik ifadesi kalmadi', !domKesif.includes('haftalik mod'), '')
+    const gunInput = (await win.webContents.executeJavaScript(
+      `(() => { const el = document.getElementById('gun-sayisi'); return el ? { type: el.type, value: el.value, min: el.min, max: el.max } : null; })()`,
+    )) as { type?: string; value?: string; min?: string; max?: string } | null
+    check('Gun sayisi alani sayisal ve varsayilan 7', gunInput?.type === 'number' && gunInput?.value === '7', JSON.stringify(gunInput))
+    check('Gun sayisi min/max sinirlari (2-60)', gunInput?.min === '2' && gunInput?.max === '60', JSON.stringify(gunInput))
+    // Kullanici 10 yazinca butonlar ve plan modu 10'u gostermeli
+    const gun10Ui = (await win.webContents.executeJavaScript(
+      `(async () => {
+         const el = document.getElementById('gun-sayisi');
+         if (!el) return null;
+         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+         setter.call(el, '10');
+         el.dispatchEvent(new Event('input', { bubbles: true }));
+         await new Promise((r) => setTimeout(r, 400));
+         return document.body.textContent || '';
+       })()`,
+    )) as string | null
+    check('Gun sayisi 10 yazilinca arayuz 10 gunluk plan gosterir', Boolean(gun10Ui && gun10Ui.toLowerCase().includes('10 gunluk plan olustur')), (gun10Ui ?? '').slice(0, 0))
+    check('Gun sayisi 10 yazilinca zincir butonu da 10', Boolean(gun10Ui && gun10Ui.toLowerCase().includes('10 gunluk zinciri baslat')), '')
+    // Logo GERCEKTEN yuklendi mi? (file:// altinda './logo.png' cozulmezse
+    // naturalWidth 0 kalir - bu, surucu kokune kacma hatasini yakalar.)
+    const logoImg = (await win.webContents.executeJavaScript(
+      `(async () => {
+         const i = document.querySelector('header img');
+         if (!i) return { src: null };
+         if (!i.complete) await new Promise((r) => { i.onload = r; i.onerror = r; setTimeout(r, 3000); });
+         return { src: i.getAttribute('src'), w: i.naturalWidth, h: i.naturalHeight, complete: i.complete };
+       })()`,
+    )) as { src: string | null; w?: number; h?: number; complete?: boolean } | null
+    check('Baslik cubugunda logo gorseli var', typeof logoImg?.src === 'string' && logoImg.src.includes('logo.png'), String(logoImg?.src))
+    check('Logo gorseli file:// altinda gercekten yuklendi', Boolean(logoImg?.w && logoImg.w > 0 && logoImg?.h && logoImg.h > 0), `naturalWidth=${logoImg?.w} naturalHeight=${logoImg?.h}`)
 
     // Tema degisimi: baslik cubugundaki gercek buton uzerinden (kullanici akisi)
     const themeOk = await win.webContents.executeJavaScript(
@@ -712,6 +811,111 @@ async function main(): Promise<void> {
     check('Olmayan guncelleme dosyasi icin net hata', missingLaunch.ok === false && /bulunamadi/i.test(missingLaunch.error ?? ''), missingLaunch.error ?? '')
     fs.rmSync(outside, { force: true })
     fs.rmSync(txtInside, { force: true })
+
+    /* ---------------- 16. Uygulama ikonu + kurulum ---------------- */
+    section('16) Uygulama ikonu ve kurulum yapilandirmasi')
+    const botDir = path.resolve(ROOT, '..')
+    const icoPath = path.join(ROOT, 'build', 'icon.ico')
+    const icoPngPath = path.join(ROOT, 'build', 'icon.png')
+    const publicLogo = path.join(ROOT, 'public', 'logo.png')
+    const distLogo = path.join(ROOT, 'dist', 'logo.png')
+    check('build/icon.ico var (kurulum ikonu)', fs.existsSync(icoPath), icoPath)
+    check('build/icon.png var', fs.existsSync(icoPngPath), icoPngPath)
+    check('public/logo.png var (arayuz logosu)', fs.existsSync(publicLogo), publicLogo)
+    check('Logo derlemeye kopyalandi (dist/logo.png)', fs.existsSync(distLogo), distLogo)
+
+    const baslik = (p: string, n: number): number[] => (fs.existsSync(p) ? [...fs.readFileSync(p).subarray(0, n)] : [])
+    const icoHeader = baslik(icoPath, 4)
+    check('icon.ico gecerli ICO basligi (00 00 01 00)', icoHeader.join(',') === '0,0,1,0', icoHeader.join(','))
+    const pngSig = (p: string): boolean => {
+      const b = baslik(p, 4)
+      return b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
+    }
+    check('build/icon.png gecerli PNG', pngSig(icoPngPath), '')
+    check('public/logo.png gecerli PNG', pngSig(publicLogo), '')
+    const pngSize = (p: string): { w: number; h: number } | null => {
+      if (!fs.existsSync(p)) return null
+      const b = fs.readFileSync(p)
+      return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) }
+    }
+    const bigPng = pngSize(icoPngPath)
+    check('Kurulum ikonu en az 256x256', Boolean(bigPng && bigPng.w >= 256 && bigPng.h >= 256), JSON.stringify(bigPng))
+    const smallPng = pngSize(publicLogo)
+    check('Arayuz logosu kare ve makul boyutta', Boolean(smallPng && smallPng.w === smallPng.h && smallPng.w <= 512), JSON.stringify(smallPng))
+
+    const buildYml = fs.readFileSync(path.join(ROOT, 'electron-builder.yml'), 'utf8')
+    check('electron-builder win.icon ayarli', /win:[\s\S]*?icon:\s*build\/icon\.ico/.test(buildYml), '')
+    check('NSIS kurulum/kaldirma ikonlari ayarli', /installerIcon:\s*build\/icon\.ico/.test(buildYml) && /uninstallerIcon:\s*build\/icon\.ico/.test(buildYml), '')
+    check('NSIS sihirbazi acik (oneClick kapali)', /oneClick:\s*false/.test(buildYml), '')
+    check('Masaustu kisayolu her zaman olusturulur', /createDesktopShortcut:\s*always/.test(buildYml), '')
+    check('Kurulum sonrasi uygulama acilir', /runAfterFinish:\s*true/.test(buildYml), '')
+    check('Kaldirmada kullanici verisi korunur', /deleteAppDataOnUninstall:\s*false/.test(buildYml), '')
+    check('Kurulum dosyasi adi sabit (VideoForge-Setup-X.Y.Z.exe)', /artifactName:\s*'VideoForge-Setup-\$\{version\}\.\$\{ext\}'/.test(buildYml), '')
+
+    const distIndexHtml = fs.readFileSync(path.join(ROOT, 'dist', 'index.html'), 'utf8')
+    check('index.html favicon olarak logo.png kullaniyor', /rel="icon"[^>]*logo\.png/.test(distIndexHtml), '')
+    const mainTs = fs.readFileSync(path.join(ROOT, 'electron', 'main.ts'), 'utf8')
+    check('Pencere ikonu main.ts icinde ayarli', mainTs.includes("'build', 'icon.ico'") && /icon:\s*windowIconPath\(\)/.test(mainTs), '')
+
+    /* ---------------- 17. Bulut gizli anahtar mimarisi ---------------- */
+    section('17) Bulut gizli anahtar mimarisi (Modal bagimlilik hatasi tekrar etmesin)')
+    const bkPy = fs.readFileSync(path.join(botDir, 'bulut_kanali.py'), 'utf8')
+    check('Kosullu modal Secret.from_dotenv cagrisi kalmadi', !/\.from_dotenv\s*\(/.test(bkPy), 'bulut_kanali.py')
+    check('Secret kosulsuz ve isimle referans ediliyor', /MODAL_SECRETS\s*=\s*\[modal\.Secret\.from_name\(SECRET_NAME\)\]/.test(bkPy), '')
+    check('Uc bulut fonksiyonu da ayni secret listesini kullaniyor', (bkPy.match(/secrets=MODAL_SECRETS/g) ?? []).length === 3, String((bkPy.match(/secrets=MODAL_SECRETS/g) ?? []).length))
+    check('Modal tekrar denemesi sinirlandi (retries=0 x3)', (bkPy.match(/retries=0/g) ?? []).length >= 3, String((bkPy.match(/retries=0/g) ?? []).length))
+    check('Konteyner ortaminda bulut_kurulum import edilmiyor (is_local korumasi)', /if modal\.is_local\(\)/.test(bkPy), '')
+    const kurulumPy = fs.readFileSync(path.join(botDir, 'bulut_kurulum.py'), 'utf8')
+    check('Kurulum yardimcisi secret adini tanimliyor', kurulumPy.includes('SECRET_NAME = "videoforge-env"'), '')
+    check('Secret adi iki dosyada ayni', kurulumPy.includes('videoforge-env') && bkPy.includes('videoforge-env'), '')
+    check('Kurulum yeniden yazarken once siler (bayat deger kalmaz)', kurulumPy.includes('objects.delete') && kurulumPy.includes('objects.create'), '')
+    const mscPy = fs.readFileSync(path.join(ROOT, 'smoke', 'modal_secret_check.py'), 'utf8')
+    check('Bulut kontrol araci isimli secret kullaniyor', mscPy.includes('Secret.from_name') && !/\.from_dotenv\s*\(/.test(mscPy), '')
+
+    /* ---------------- 18. Bot gun sayisi (7 sabit degil) ---------------- */
+    section('18) Bot tarafi gun sayisi ve durdurma destegi')
+    const kesifPy = fs.readFileSync(path.join(botDir, 'kesif.py'), 'utf8')
+    check('kesif.py --gun secenegi var', kesifPy.includes('"--gun"'), '')
+    check('kesif.py --haftalik artik deger alabiliyor', /"--haftalik",\s*nargs="\?"/.test(kesifPy), '')
+    check('kesif.py gun_sayisi ile calisiyor', kesifPy.includes('gun_sayisi') && !/\[:7\]/.test(kesifPy), '')
+    check('kesif.py 60 gun ust siniri', kesifPy.includes('MAX_GUN_SAYISI = 60'), '')
+    check('kesif.py 7 gun sabit metni kalmadi', !/7 GUN\)|7 video bulunacak/.test(kesifPy), '')
+    check('kesif.py plan gun sayisini JSON\'a yaziyor', /"gun_sayisi":\s*gun_sayisi/.test(kesifPy), '')
+    const isletPy = fs.readFileSync(path.join(botDir, 'haftalik_islet.py'), 'utf8')
+    check('haftalik_islet.py plan gun sayisini okuyor', isletPy.includes('plan_toplam'), '')
+    check('haftalik_islet.py iptal isaretini destekliyor', isletPy.includes('VIDEOFORGE_CANCEL_FILE') && isletPy.includes('iptal_edildi'), '')
+    check('haftalik_islet.py icinde sabit \'7 gun\' ifadesi yok', !/7 gun final/.test(isletPy), '')
+    check('Bos gun sayisinda 7 varsayilana donulur', isletPy.includes('varsayilan=7'), '')
+
+    // Bot Python dosyalari sozdizimi (dosya yazmadan, ast ile)
+    const pyRes = await resolvePython()
+    if (pyRes.ok && pyRes.python) {
+      const kontrol = await execCapture(
+        pyRes.python.command,
+        [
+          ...pyRes.python.args,
+          '-X',
+          'utf8',
+          '-c',
+          // utf-8-sig: bazi bot dosyalari BOM ile basliyor (Python calistirirken
+          // yok sayar, ast.parse etmez) - testte de yok sayilir.
+          "import ast,sys;[ast.parse(open(f,encoding='utf-8-sig').read(),f) for f in sys.argv[1:]]",
+          'kesif.py',
+          'haftalik_islet.py',
+          'bulut_kanali.py',
+          'bulut_kurulum.py',
+          'constants.py',
+          'shared.py',
+          'faktza15.py',
+          'kinosekrety.py',
+          'kinok_syjet.py',
+        ],
+        { cwd: botDir, timeoutMs: 60_000 },
+      )
+      check('Bot Python dosyalari sozdiziminden geciyor', kontrol.code === 0, (kontrol.stderr || kontrol.stdout).trim().split('\n').slice(-1)[0] ?? '')
+    } else {
+      check('Bot Python dosyalari sozdiziminden geciyor (python yok, atlandi)', true, '')
+    }
 
     /* ---------------- Temizlik ---------------- */
     // Git nesneleri Windows'ta salt okunur olabilir: EPERM'e karsi tekrar denenir.

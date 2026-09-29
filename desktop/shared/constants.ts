@@ -72,3 +72,18 @@ export const ARTIFACT_SUFFIXES: { re: RegExp; kind: 'video' | 'audio' | 'seo' | 
 ]
 
 export const MAX_LOG_LINES = 4000
+
+/** Kesif planinin gun sayisi sinirlari (7 sabit degil, kullanici seciyor). */
+export const GUN_SAYISI_MIN = 2
+export const GUN_SAYISI_MAX = 60
+export const GUN_SAYISI_VARSAYILAN = 7
+
+/**
+ * Kullanici girdisini gecerli bir gun sayisina cevirir.
+ * Gecersiz/bos degerde varsayilana (7) doner; ust sinir 60'tir.
+ */
+export function normalGunSayisi(value?: number | string | null): number {
+  const v = Math.floor(Number(value))
+  if (!Number.isFinite(v) || v < GUN_SAYISI_MIN) return GUN_SAYISI_VARSAYILAN
+  return Math.min(GUN_SAYISI_MAX, v)
+}

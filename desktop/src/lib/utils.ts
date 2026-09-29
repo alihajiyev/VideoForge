@@ -57,13 +57,13 @@ export const ARTIFACT_LABEL: Record<string, string> = {
   seo: 'SEO raporu',
   thumb: 'Kapak',
   report: 'Kesif raporu',
-  plan: 'Haftalik plan',
+  plan: 'Cok gunlu plan',
   other: 'Dosya',
 }
 
 export const KIND_LABEL: Record<string, string> = {
   channel: 'Kanal islemi',
   discover: 'Kesif',
-  weekly: 'Haftalik zincir',
+  weekly: 'Cok gunlu zincir',
   clean: 'Temizleme',
 }

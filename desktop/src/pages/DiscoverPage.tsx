@@ -5,7 +5,8 @@ import { api, unwrap } from '@/lib/api'
 import { useResource, useTicker } from '@/lib/hooks'
 import { useApp } from '@/app/AppContext'
 import { cn, formatBytes, formatRelative } from '@/lib/utils'
-import { Badge, Button, EmptyState, Panel, SectionTitle, Spinner, StatCard, Switch } from '@/components/ui/primitives'
+import { Badge, Button, EmptyState, Input, Panel, SectionTitle, Spinner, StatCard, Switch } from '@/components/ui/primitives'
+import { GUN_SAYISI_MAX, GUN_SAYISI_MIN, GUN_SAYISI_VARSAYILAN, normalGunSayisi } from '@shared/constants'
 import type { PageKey } from '@/components/layout/Sidebar'
 import type { WeeklyData } from '@electron/data/logs'
 
@@ -21,7 +22,9 @@ function planTitle(item: Record<string, unknown>): string {
 export function DiscoverPage({ onNavigate }: { onNavigate: (page: PageKey) => void }): ReactNode {
   const { startJob, job, engine } = useApp()
   const [channelId, setChannelId] = useState('1')
-  const [haftalik, setHaftalik] = useState(false)
+  // Plan modu acikken secilen gun sayisi kadar video bulunur (7 sabit degil).
+  const [planModu, setPlanModu] = useState(true)
+  const [gunSayisi, setGunSayisi] = useState<number>(GUN_SAYISI_VARSAYILAN)
   const [busy, setBusy] = useState(false)
   useTicker(job?.status === 'running')
 
@@ -33,9 +36,16 @@ export function DiscoverPage({ onNavigate }: { onNavigate: (page: PageKey) => vo
     .filter((i) => i.kind === 'report')
     .slice(0, 6)
 
+  const gun = normalGunSayisi(gunSayisi)
+
   const run = async (kind: 'discover' | 'weekly'): Promise<void> => {
     setBusy(true)
-    const ok = await startJob({ kind, channelId: channelId as '1' | '2' | '3', haftalik: kind === 'weekly' || haftalik })
+    const ok = await startJob({
+      kind,
+      channelId: channelId as '1' | '2' | '3',
+      haftalik: kind === 'weekly' || planModu,
+      gunSayisi: gun,
+    })
     setBusy(false)
     if (ok) onNavigate('run')
   }
@@ -45,7 +55,7 @@ export function DiscoverPage({ onNavigate }: { onNavigate: (page: PageKey) => vo
       <Panel className="app-bg p-5">
         <SectionTitle
           title="Kesif modulu"
-          subtitle="Kaynak kanallari tarar, transkript cikarir, Gemini ile stile gore puanlar ve haftalik plan uretir"
+          subtitle="Kaynak kanallari tarar, transkript cikarir, Gemini ile stile gore puanlar ve sectiginiz gun sayisi kadar plan uretir"
           icon={<Compass className="size-4" />}
         />
         <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_320px]">
@@ -66,14 +76,44 @@ export function DiscoverPage({ onNavigate }: { onNavigate: (page: PageKey) => vo
                 </button>
               ))}
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Switch
-                checked={haftalik}
-                onChange={setHaftalik}
-                label="Haftalik mod"
-                hint="7 video bulunur, skor sirasi = paylasim sirasi (1-7. gun)"
-              />
-              <div className="ml-auto flex gap-2">
+            <div className="flex flex-wrap items-start gap-4">
+              <Switch checked={planModu} onChange={setPlanModu} label="Cok gunlu plan modu" hint="Kapaliysa sadece tek seferlik oneri listesi uretilir." />
+              <div className={cn('transition-opacity', !planModu && 'pointer-events-none opacity-40')}>
+                <label className="text-[11.5px] font-medium text-fg-muted" htmlFor="gun-sayisi">
+                  Kac gunluk plan?
+                </label>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <Input
+                    id="gun-sayisi"
+                    type="number"
+                    min={GUN_SAYISI_MIN}
+                    max={GUN_SAYISI_MAX}
+                    value={gunSayisi}
+                    disabled={job?.status === 'running' || !planModu}
+                    onChange={(e) => setGunSayisi(Number(e.target.value))}
+                    onBlur={() => setGunSayisi((v) => normalGunSayisi(v))}
+                    className="w-[78px] text-center"
+                  />
+                  {[3, 7, 10, 14, 30].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      disabled={job?.status === 'running' || !planModu}
+                      onClick={() => setGunSayisi(n)}
+                      className={cn(
+                        'num rounded-[8px] border px-2 py-1 text-[11px] transition-colors disabled:opacity-50',
+                        n === gun ? 'border-brand bg-brand-soft text-fg' : 'border-border bg-[var(--surface-2)] text-fg-muted hover:border-border-strong',
+                      )}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[10.5px] text-fg-subtle">
+                  Skor sirasi = paylasim sirasi. {gun} video bulunur, {gun}. gunden sonra hafta adlari bastan dongu yapar.
+                </p>
+              </div>
+              <div className="ml-auto flex flex-wrap gap-2">
                 <Button
                   variant="primary"
                   icon={<Sparkles className="size-3.5" />}
@@ -81,15 +121,16 @@ export function DiscoverPage({ onNavigate }: { onNavigate: (page: PageKey) => vo
                   disabled={job?.status === 'running'}
                   onClick={() => void run('discover')}
                 >
-                  Kesif calistir
+                  {planModu ? `${gun} gunluk plan olustur` : 'Kesif calistir'}
                 </Button>
                 <Button
                   variant="secondary"
                   icon={<Layers className="size-3.5" />}
-                  disabled={job?.status === 'running'}
+                  disabled={job?.status === 'running' || !planModu}
+                  title={planModu ? undefined : 'Zincir icin once plan modunu acin'}
                   onClick={() => void run('weekly')}
                 >
-                  Haftalik zinciri baslat
+                  {gun} gunluk zinciri baslat
                 </Button>
               </div>
             </div>
@@ -100,7 +141,13 @@ export function DiscoverPage({ onNavigate }: { onNavigate: (page: PageKey) => vo
           </div>
 
           <div className="space-y-2">
-            <StatCard label="Planlanan gun" value={weekly.data?.plan?.length ?? '—'} hint="haftalik_plan.json" icon={<Target className="size-3" />} tone="brand" />
+            <StatCard
+              label="Plandaki gun"
+              value={weekly.data?.plan?.length ?? '—'}
+              hint={`${gun} gunluk plan · haftalik_plan.json`}
+              icon={<Target className="size-3" />}
+              tone="brand"
+            />
             <StatCard label="Gemini puanlama" value={engine ? `${engine.models.length} model` : '—'} hint="kota dolu ise siradaki modele gecer" icon={<Sparkles className="size-3" />} tone="cyan" />
           </div>
         </div>
@@ -110,7 +157,7 @@ export function DiscoverPage({ onNavigate }: { onNavigate: (page: PageKey) => vo
         <Panel className="overflow-hidden">
           <div className="border-b border-border p-4">
             <SectionTitle
-              title="Haftalik plan"
+              title="Gunluk plan"
               subtitle="Skor sirasina gore gun gun oneriler"
               right={
                 <Button size="sm" variant="ghost" icon={<RefreshCw className={cn('size-3.5', weekly.loading && 'animate-spin')} />} onClick={() => weekly.reload()} />
@@ -124,8 +171,8 @@ export function DiscoverPage({ onNavigate }: { onNavigate: (page: PageKey) => vo
           ) : (weekly.data?.plan?.length ?? 0) === 0 ? (
             <EmptyState
               icon={<Compass className="size-6" />}
-              title="Haftalik plan yok"
-              message="Haftalik kesif calistiginda haftalik_plan.json olusur ve burada listelenir."
+              title="Plan yok"
+              message="Cok gunlu kesif calistiginda haftalik_plan.json olusur ve burada listelenir."
             />
           ) : (
             <table className="w-full text-left">

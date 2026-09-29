@@ -18,7 +18,8 @@ cd desktop
 npm install
 npm run dev        # gelistirme (vite + electron)
 npm run build      # uretim derlemesi
-npm run package    # Windows exe (nsis + portable) -> release/
+npm run package    # Windows kurulum + portable -> release/
+npm run release    # surum numarasini yukseltip paketler ve GitHub'a yukler (--dry ile deneme)
 npm run typecheck  # tsc --noEmit
 npm run test:smoke # uctan uca test (147 kontrol) - asagiya bakin
 npm run release    # surum yukselt + derle + GitHub surumunu yayinla
@@ -56,8 +57,15 @@ Uygulama `python -X utf8 -m modal run <kanal dosyası> --link <url>` komutların
 | Kanal 1 (Kino Sekrety) | `modal run kinosekrety.py --link ...` |
 | Kanal 2 (Fakt Za 15) | `modal run faktza15.py --link ...` |
 | Kanal 3 (PopkornFakty) | `modal run kinok_syjet.py --link ...` |
-| Kesif | `python kesif.py --chn <n> --evet [--haftalik]` |
-| Haftalik zincir | `kesif.py --haftalik --chn <n> --evet` → `haftalik_islet.py --evet` |
+| Kesif (tek seferlik) | `python kesif.py --chn <n> --evet` |
+| Cok gunlu plan | `python kesif.py --haftalik <N> --chn <n> --evet` |
+| Cok gunlu zincir | `kesif.py --haftalik <N> --chn <n> --evet` → `haftalik_islet.py --evet` |
+
+> **Gun sayisi secilebilir (7 sabit degil).** Kesif sayfasindaki "Cok gunlu plan modu" anahtari ve
+> "Kac gunluk plan?" alani N'i belirler (2-60, hazir secenekler 3/7/10/14/30). `N=10` secilince 10
+> video bulunur, plan `haftalik_plan.json`'a 10 gun olarak yazilir, zincir 10 videoyu sirayla isler.
+> Hafta gunu adlari 7'den sonra bastan dongu yapar. `gunSayisi` alani `JobRequest` icinde tasinir
+> ve `normalGunSayisi()` ile dogrulanir (gecersiz deger -> 7, ust sinir -> 60).
 | Temizleyici | `modal run temizle.py --link ...` |
 
 - Bot klasoru varsayilani: gelistirmede depo koku, paketli uygulamada `Masaustu\VideoForge`

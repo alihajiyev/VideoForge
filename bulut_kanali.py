@@ -8,6 +8,18 @@ kopyaliyordu. Artik TEK yerde tanimli; kanal dosyalari import eder.
 Kanal-specific veriler (prompt, voice_id, kanal adi) remote cagriya
 parametre olarak gecilir — davranis birebir ayni kalir.
 
+GIZLI ANAHTARLAR
+----------------
+API anahtarlari ISIMLI tek bir Modal secret'inden gelir
+(`videoforge-env`). Lokal `.env` icerigi `bulut_kurulum.py` ile oraya
+kopyalanir. Burada modal'in "from_dotenv" yardimcisi KULLANILMAZ:
+
+  from_dotenv `.env` yoksa bos liste donuyordu -> lokalde 3 bagimlilik
+  (secret + imaj + volume), konteynerde 2 (imaj + volume). Modal bunu
+  soyle reddediyor:
+      Function has 2 dependencies but container got 3 object ids.
+  Isimli secret her iki ortamda daima AYNI sayida (1) bagimlilik uretir.
+
 KULLANIM (kanal dosyasinda):
     from bulut_kanali import app, cloud_orchestrator, cloud_transcribe
     ...
@@ -24,34 +36,73 @@ from shared import *
 from functions.orchestrator import run_orchestrator
 from functions.video_proc import run_clean
 
+# Bulut fonksiyonlarinin referans verdigi isimli secret (bulut_kurulum.py ile ayni).
+SECRET_NAME = "videoforge-env"
+
+# DIKKAT: kosulsuz ve sabit. Bagimlilik sayisi lokalde de, konteynerde de 1.
+MODAL_SECRETS = [modal.Secret.from_name(SECRET_NAME)]
+
 app = modal.App("videoforge", image=image)
 
-
-def _modal_secrets():
-    """API anahtarlarini Modal ortamina .env'den enjekte eder (imaja GOMULMEZ).
-    .env yoksa bos liste doner; o durumda anahtarlar zaten ortam degiskeninde olmalidir.
-    Anahtarlar kodda duz metin tutulmaz (bkz. constants.py)."""
+# Lokal kosuda anahtarlarin buluta kopyalandigindan emin ol. Icerik
+# degismediyse tek dosya okumasi yapilir, ag cagrisi OLMAZ. Konteynerde
+# (modal.is_local() False) hic calismaz - konteyner kendi env'ini kullanir.
+if modal.is_local():
     try:
-        env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-        if os.path.exists(env_path):
-            return [modal.Secret.from_dotenv(path=os.path.dirname(os.path.abspath(__file__)))]
-        print("⚠️ [Bulut] .env bulunamadi - API anahtarlari Modal secret'i ile enjekte edilmeyecek.")
+        from bulut_kurulum import hazirla as _secret_hazirla
+        _secret_hazirla()
+    except Exception as _exc:  # kurulum atlanirsa bulut cagrisi net hata verir
+        print(f"⚠️ [Bulut] Gizli anahtar kurulumu atlandi: {_exc}")
+
+
+class BulutHatasi(RuntimeError):
+    """Kullaniciya gosterilecek, anlasilir mesaji olan bulut hatasi."""
+
+
+def bulut_hatasi_mesaji(exc):
+    """Modal/kutuphane hatalarini tek satirlik anlasilir Turkce mesaja cevirir."""
+    metin = str(exc)
+    dusuk = metin.lower()
+    if "dependencies but container got" in metin:
+        return (f"Bulut bagimlilik uyusmazligi (Modal secret '{SECRET_NAME}'). "
+                "Cozum:  python bulut_kurulum.py --zorla  ve tekrar dene.")
+    if "not found" in dusuk or "notfound" in dusuk:
+        return (f"Modal'da '{SECRET_NAME}' gizli anahtari yok. "
+                "Cozum:  python bulut_kurulum.py --zorla")
+    if "token" in dusuk or "unauthorized" in dusuk or "authentication" in dusuk or "profile" in dusuk:
+        return "Modal hesabina giris yapilmamis. Cozum:  python -m modal token new"
+    if "quota" in dusuk or "rate limit" in dusuk or "429" in metin:
+        return "Bulut kotasi doldu, biraz sonra tekrar dene."
+    return metin.strip().splitlines()[-1][:300] if metin.strip() else type(exc).__name__
+
+
+def bulut_cagir(hedef, *args, **kwargs):
+    """`.remote()` cagrisini sarar: hatalari BulutHatasi'na cevirir.
+
+    Boylece kanal scriptleri tek yerde anlasilir hata mesaji alir; Modal'in
+    ham traceback'i kullaniciyi bogmaz."""
+    try:
+        return hedef.remote(*args, **kwargs)
+    except BulutHatasi:
+        raise
     except Exception as exc:
-        print(f"⚠️ [Bulut] Modal secret yuklenemedi: {exc}")
-    return []
+        raise BulutHatasi(bulut_hatasi_mesaji(exc)) from exc
 
 
-MODAL_SECRETS = _modal_secrets()
-
-
-@app.cls(gpu=CLEANER_GPU, image=image, cpu=4, memory=16384, timeout=3600, volumes={"/results": results_volume}, secrets=MODAL_SECRETS)
+# retries=0: hata alinca Modal ~40 saniye boyunca 10 kez tekrar deniyordu
+# (kota/islem bosa gidiyor, "Durdur" gec calisiyor gibi gorunuyordu).
+# Kanal scriptleri zaten videoyu siradaki kosuda yeniden dener, o yuzden
+# hizli ve net basarisizlik dogru davranis.
+@app.cls(gpu=CLEANER_GPU, image=image, cpu=4, memory=16384, timeout=3600,
+         volumes={"/results": results_volume}, secrets=MODAL_SECRETS, retries=0)
 class VideoCleaner:
     @modal.method()
     def clean(self, video_bytes: bytes):
         return run_clean(video_bytes)
 
 
-@app.function(image=image, cpu=4, memory=8192, timeout=3600, volumes={"/results": results_volume}, secrets=MODAL_SECRETS)
+@app.function(image=image, cpu=4, memory=8192, timeout=3600,
+              volumes={"/results": results_volume}, secrets=MODAL_SECRETS, retries=0)
 def cloud_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, eval_topic=False, force=False, source_timeline=None,
                        system_prompt=None, voice_id=None, lang="ru", channel_name=None,
                        voice_prompt=None, title_prompt=None, tags_prompt=None):
@@ -59,7 +110,8 @@ def cloud_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, eval_t
                             voice_prompt=voice_prompt, title_prompt=title_prompt, tags_prompt=tags_prompt, source_timeline=source_timeline)
 
 
-@app.function(image=image, cpu=2, memory=8192, timeout=1200, gpu="T4", secrets=MODAL_SECRETS)
+@app.function(image=image, cpu=2, memory=8192, timeout=1200, gpu="T4",
+              secrets=MODAL_SECRETS, retries=0)
 def cloud_transcribe(video_bytes: bytes):
     """Zaman damgali transcript Modal GPU'da uretilir (bilgisayar yorulmaz)."""
     import tempfile, os

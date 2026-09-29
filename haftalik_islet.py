@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-VideoForge Haftalik Isletici — kesif.py --haftalik'in urettigi haftalik_plan.json'u
-okur, videolari gun sirasina gore TEK TEK (asla ayni anda degil) 3 adimli zincirden
-gecirir:
+VideoForge Cok Gunlu Isletici — kesif.py --haftalik N / --gun N'in urettigi
+haftalik_plan.json'u okur, videolari gun sirasina gore TEK TEK (asla ayni
+anda degil) 3 adimli zincirden gecirir:
 
-  1. KESIF (zaten yapildi): haftalik_plan.json'daki 7 video
+  1. KESIF (zaten yapildi): haftalik_plan.json'daki N video
   2. VIDEOFORGE: her video temizlenir, SEO + ses hazirlanir.
      Cikti: Masaustu/GunN_*/ icinde *_CLEAN.mp4 + *.mp3 + *_SEO.html (+ png)
   3. SHORTSSTUDIO: Gun klasorundeki mp4 + mp3 + SEO html alinir, ShortsStudio'da
      montaj/edit yapilir. Cikti: Masaustu/final_XXXXXX.mp4 (+ Gun klasorune kopya)
 
 Kullanim:
-    python kesif.py --haftalik      # once plan uret
+    python kesif.py --gun 10        # once 10 gunluk plan uret (--haftalik 10 ile ayni)
     python haftalik_islet.py        # sonra 3 adimli zinciri sirali islet
     python haftalik_islet.py --basla 3   # 3. gunden devam et (kaldigin yerden)
     python haftalik_islet.py --studio-atla  # sadece VideoForge (eski davranis)
@@ -42,6 +42,24 @@ PLAN_FILE = os.path.join(BASE_DIR, "haftalik_plan.json")
 def sonuc_dosyasi(chn):
     # Kanal bazli sonuc haritasi (tum kanallar art arda kosunca ezilmesin).
     return os.path.join(BASE_DIR, f"haftalik_sonuc_ch{chn}.json")
+
+
+def plan_toplam(plan, varsayilan=7):
+    """Plandaki hedef gun sayisi ('toplam'; eski planlarda da 'toplam')."""
+    try:
+        return int(plan.get("toplam") or plan.get("gun_sayisi") or varsayilan)
+    except Exception:
+        return varsayilan
+
+
+def iptal_edildi():
+    """Uygulamadaki 'Durdur' istegi geldi mi?
+
+    Desktop uygulamasi alt surecin ortamina VIDEOFORGE_CANCEL_FILE yazar.
+    Surec agaci oldurulemezse bile bot gun aralarinda temiz sekilde durur.
+    """
+    yol = os.environ.get("VIDEOFORGE_CANCEL_FILE")
+    return bool(yol) and os.path.exists(yol)
 
 # Kesif kanal no -> VideoForge bot scripti (VideoForge-Baslat.bat ile ayni eslesme)
 CHN_SCRIPT = {
@@ -126,7 +144,29 @@ def find_gun_girdileri(gun_dir):
 
 FINAL_RE = re.compile(r"final_\d+\.mp4")
 KILIT_DOSYASI = os.path.join(BASE_DIR, ".haftalik_islet.lock")
-KILIT_OMRU_SN = 4 * 3600  # 4 saatten eski kilit bayat sayilir (kilitli kalan kosu yoktur)
+KILIT_OMRU_SN = 4 * 3600  # kesin ust sinir: bundan eski kilit her halukarda bayattir
+
+
+def pid_yasiyor(pid):
+    """Verilen islem numarasi hala calisiyor mu? (Windows/macOS/Linux)"""
+    try:
+        pid = int(pid)
+    except Exception:
+        return False
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        try:
+            cikti = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                                   capture_output=True, text=True, timeout=15)
+            return str(pid) in (cikti.stdout or "")
+        except Exception:
+            return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
 
 
 def _final_adi_bul(cikti):
@@ -139,6 +179,11 @@ def _final_adi_bul(cikti):
 
 def kilit_al():
     """Zincir kilidi: ayni anda 2 kosu calismasin (girdi/final karismasini onler).
+
+    Bayat kilit artik SAATLE degil, GERCEK islem kontroluyle anlasilir:
+    kilidi tutan pid olmusse kilit hemen serbest kalir. Eskiden bir kosu
+    yarida kesilince (Durdur / pencere kapanmasi) 4 saat boyunca
+    "Baska bir haftalik zincir calisiyor olabilir" hatasi veriyordu.
     Donus: (True, '') ya da (False, sebep)."""
     try:
         fd = os.open(KILIT_DOSYASI, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -152,12 +197,17 @@ def kilit_al():
     try:
         with open(KILIT_DOSYASI, "r", encoding="utf-8") as f:
             satirlar = f.read().split()
+        pid = int(satirlar[0]) if satirlar else 0
         yas = time.time() - float(satirlar[1]) if len(satirlar) > 1 else 0
     except Exception:
-        yas = 0
-    if yas < KILIT_OMRU_SN:
-        return False, (f"Baska bir haftalik zincir calisiyor olabilir ({KILIT_DOSYASI}). "
-                       "Bitmesini bekle ya da takili kaldiysa kilit dosyasini silip tekrar dene.")
+        pid, yas = 0, 0
+    # Gercekten calisan bir zincir mi? (pid canli VE kilit makul yasta)
+    if pid and yas < KILIT_OMRU_SN and pid_yasiyor(pid):
+        return False, (f"Baska bir zincir calisiyor (pid {pid}, {int(yas)}sn). "
+                       f"Bitmesini bekle. Takildiysa: {KILIT_DOSYASI} dosyasini sil.")
+    # pid olmus ya da cok eski -> kilit bayat, temizle ve yeniden dene.
+    if pid:
+        print(f"🔓 Bayat kilit temizlendi (pid {pid} artik calismiyor).")
     try:
         os.remove(KILIT_DOSYASI)
     except Exception:
@@ -281,7 +331,7 @@ def studio_islet(gun, chn, gun_toplam=0):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="VideoForge Haftalik Isletici - plani 3 adimli zincirle sirali islet")
+    parser = argparse.ArgumentParser(description="VideoForge Cok Gunlu Isletici - plani 3 adimli zincirle sirali islet")
     parser.add_argument("--basla", type=int, default=1, help="Kacinci gunden baslasin (varsayilan 1)")
     parser.add_argument("--evet", action="store_true", help="Onay sormadan basla")
     parser.add_argument("--studio-atla", action="store_true", help="3. adimi (ShortsStudio montaji) atla, sadece VideoForge")
@@ -291,7 +341,7 @@ def main():
 
     if not os.path.exists(PLAN_FILE):
         err(f"Plan bulunamadi: {PLAN_FILE}")
-        print("Once sunu calistir:  python kesif.py --haftalik")
+        print("Once sunu calistir:  python kesif.py --gun 10   (10 gunluk plan icin)")
         return
 
     with open(PLAN_FILE, "r", encoding="utf-8") as f:
@@ -310,7 +360,7 @@ def main():
             return
         try:
             print(f" [Adim 3/3] ShortsStudio montaji (Gun {args.sadece_studio}, kanal {chn})...")
-            studio_ok, studio_bilgi = studio_islet(args.sadece_studio, chn, plan.get("toplam", 7))
+            studio_ok, studio_bilgi = studio_islet(args.sadece_studio, chn, plan_toplam(plan))
         finally:
             kilit_birak()
         if studio_ok:
@@ -327,11 +377,12 @@ def main():
         return
 
     videolar = sorted(plan.get("videolar", []), key=lambda v: v.get("gun", 99))
-    toplam = plan.get("toplam", len(videolar))
+    toplam = plan_toplam(plan, len(videolar))
+    gun_sayisi = plan.get("gun_sayisi") or toplam
     kanal_ad = plan.get("kanal_ad", f"Kanal {chn}")
 
     init_db()
-    # Daha once islenmisler atlanir (kaldiğin yerden devam bedava gelir)
+    # Daha once islenmisler atlanir (kaldigin yerden devam bedava gelir)
     kuyruk = []
     atlanan = 0
     for v in videolar:
@@ -349,7 +400,7 @@ def main():
 
     studio_var = studio_mevcut(studio_dir_bul()) and not args.studio_atla
     adimlar = "Kesif ✓ → VideoForge → ShortsStudio" if studio_var else "Kesif ✓ → VideoForge (ShortsStudio ATLANDI)"
-    header("📅 VIDEOFORGE HAFTALIK ISLETICI",
+    header(f"📅 VIDEOFORGE {gun_sayisi} GUNLUK ZINCIR",
            f"{kanal_ad} | {len(kuyruk)} video sirayla islenecek (gun {kuyruk[0]['gun']}-{kuyruk[-1]['gun']}/{toplam}) | {adimlar}")
     for v in kuyruk:
         print(f"  📅 {v['gun']}. Gun ({v.get('gun_adi', '')}) [Skor {v.get('skor', '?')}] {v.get('baslik', '?')[:55]}")
@@ -373,8 +424,13 @@ def main():
     basarili, basarisiz = [], []
     studio_eksik = []  # VideoForge OK ama ShortsStudio basarisiz
     final_haritasi = {}  # gun -> final dosya adi
+    kesildi = False
     for i, v in enumerate(kuyruk, 1):
         gun = v["gun"]
+        if iptal_edildi():
+            print("\n⛔ Durdurma istegi alindi - zincir durduruluyor (islenmis gunler korunur).")
+            kesildi = True
+            break
         print("\n" + "=" * 60)
         print(f" 🎬 GUN {gun}/{toplam} ({i}/{len(kuyruk)} bu kosuda) — {v.get('gun_adi', '')}")
         print(f"    {v.get('baslik', '?')[:70]}")
@@ -409,7 +465,7 @@ def main():
             studio_eksik.append(gun)
 
     print("\n" + "=" * 60)
-    print(" 📅 HAFTALIK KOSU OZETI (3 ADIMLI ZINCIR)")
+    print(f" 📅 {gun_sayisi} GUNLUK KOSU OZETI (3 ADIMLI ZINCIR)")
     print("=" * 60)
     desktop = _desktop()
     print(f"  ✅ Tam final hazir gunler: {basarili if basarili else 'yok'}")
@@ -431,10 +487,12 @@ def main():
     except Exception as e:
         warn(f"Sonuc dosyasi yazilamadi: {e}")
     kilit_birak()
-    if basarisiz or studio_eksik:
+    if kesildi:
+        footer_fail("Kullanici durdurdu - kalan gunler sonraki kosuda otomatik devam eder")
+    elif basarisiz or studio_eksik:
         footer_fail("Kosu bitti, eksik gunler var")
     else:
-        footer_done("Haftalik plan tamamlandi! 7 gun final hazir 🎉")
+        footer_done(f"Plan tamamlandi! {len(basarili)} gun final hazir 🎉")
 
 
 if __name__ == "__main__":

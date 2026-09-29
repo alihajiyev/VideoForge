@@ -9,6 +9,9 @@ directories:
 files:
   - dist/**
   - dist-electron/**
+  # Uygulama/gorev cubugu ikonu (main.ts windowIconPath ile arar)
+  - build/icon.ico
+  - build/icon.png
   - package.json
   - '!**/*.map'
 
@@ -21,6 +24,8 @@ npmRebuild: false
 electronDist: node_modules/electron/dist
 
 win:
+  # exe, pencere ve gorev cubugu ikonu (logo.ico -> build/icon.ico)
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: [x64]
@@ -28,16 +33,24 @@ win:
       arch: [x64]
 
 nsis:
+  # Kurulum sihirbazi: kullanici klasor secebilir, masaustu + baslat menusu
+  # kisayollari olusur, uygulama kurulum sonunda acilir.
   oneClick: false
   perMachine: false
   allowElevation: true
   allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
+  createDesktopShortcut: always
   createStartMenuShortcut: true
   shortcutName: VideoForge
+  runAfterFinish: true
   artifactName: 'VideoForge-Setup-${version}.${ext}'
   uninstallDisplayName: 'VideoForge ${version}'
+  # Kaldirmada kullanici verisi (ayarlar, indirilen guncellemeler) SILINMEZ.
   deleteAppDataOnUninstall: false
+  # Sihirbazin her adiminda ayni logo
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
 
 portable:
   artifactName: 'VideoForge-${version}-portable.${ext}'

@@ -1,4 +1,5 @@
 import { app, BrowserWindow, shell } from 'electron'
+import fs from 'node:fs'
 import path from 'node:path'
 import { applyTheme, registerIpc } from './ipc'
 import { getSettings } from './core/settings'
@@ -10,6 +11,24 @@ const DEV_URL = process.env.VITE_DEV_SERVER_URL
 
 let win: BrowserWindow | null = null
 
+/**
+ * Pencere/gorev cubugu ikonu (desktop/build/icon.ico).
+ * Paketli derlemede asar icinden, dev'de depo kokunden okunur.
+ */
+function windowIconPath(): string | undefined {
+  const adaylar = [
+    path.join(app.getAppPath(), 'build', 'icon.ico'),
+    path.join(__dirname, '..', 'build', 'icon.ico'),
+  ]
+  return adaylar.find((p) => {
+    try {
+      return fs.existsSync(p)
+    } catch {
+      return false
+    }
+  })
+}
+
 function createWindow(): void {
   win = new BrowserWindow({
     width: 1380,
@@ -20,6 +39,7 @@ function createWindow(): void {
     frame: false,
     titleBarStyle: 'hidden',
     backgroundColor: '#0b0f14',
+    icon: windowIconPath(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
