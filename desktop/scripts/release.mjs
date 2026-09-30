@@ -108,17 +108,28 @@ if (skipBuild) {
 }
 
 const releaseDir = path.join(root, 'release')
-const assets = fs.existsSync(releaseDir)
+const tumExeler = fs.existsSync(releaseDir)
   ? fs
       .readdirSync(releaseDir)
       .filter((f) => f.toLowerCase().endsWith('.exe'))
       .map((f) => path.join(releaseDir, f))
   : []
 
-console.log(`\n[2/4] Uretilen dosyalar:`)
+// SADECE bu surume ait dosyalar yuklenir. release/ klasoru onceki derlemelerden
+// kalan .exe dosyalarini tutar; eski dosya yuklenirse kullanici Ayarlar'da
+// yanlislikla ESKI kurulumu indirir (guncelleme dongusu / bozuk kurulum).
+const assets = tumExeler.filter((a) => path.basename(a).includes(version))
+const eskiDosyalar = tumExeler.filter((a) => !path.basename(a).includes(version))
+
+console.log(`\n[2/4] Uretilen dosyalar (surum ${version}):`)
 for (const a of assets) console.log(`   - ${path.basename(a)} (${(fs.statSync(a).size / 1048576).toFixed(1)} MB)`)
+if (eskiDosyalar.length) {
+  console.log(`\n   ! Bu surume ait olmayan ${eskiDosyalar.length} eski .exe YUKLENMEDI:`)
+  for (const a of eskiDosyalar) console.log(`     - ${path.basename(a)}`)
+  console.log('     (release/ klasorunden silebilirsiniz)')
+}
 if (!assets.length) {
-  console.error('\nHATA: release/ klasorunde .exe bulunamadi - derleme basarisiz olmus olabilir.')
+  console.error(`\nHATA: release/ klasorunde surum ${version} icin .exe bulunamadi - derleme basarisiz olmus olabilir.`)
   process.exit(1)
 }
 

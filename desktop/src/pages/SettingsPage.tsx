@@ -317,23 +317,32 @@ export function SettingsPage(): ReactNode {
                       </pre>
                     ) : null}
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {update.assets
-                        .filter((a) => /\.(exe|msi)$/i.test(a.name))
-                        .map((a) => (
+                      {/* Yeni surume ait kurulum dosyasi one cikarilir ve birincil
+                          renkle isaretlenir. Surumde eski dosya da varsa 'eski surum'
+                          etiketi alir; boylece yanlislikla eski kurulum indirilmez. */}
+                      {(() => {
+                        const hedefSurum = (update.latest ?? '').replace(/^v/i, '')
+                        const kurulumlar = update.assets.filter((a) => /\.(exe|msi)$/i.test(a.name))
+                        if (kurulumlar.length === 0) {
+                          return <span className="text-[11.5px] text-warn">Bu surumde .exe dosyasi yayinlanmamis.</span>
+                        }
+                        const guncelMi = (ad: string) => !hedefSurum || ad.includes(hedefSurum)
+                        const sirali = [...kurulumlar].sort(
+                          (a, b) => Number(guncelMi(b.name)) - Number(guncelMi(a.name))
+                        )
+                        return sirali.map((a) => (
                           <Button
                             key={a.name}
                             size="sm"
-                            variant="secondary"
+                            variant={guncelMi(a.name) ? 'primary' : 'secondary'}
                             icon={<CloudDownload className="size-3.5" />}
                             loading={download?.name === a.name && !download.done}
                             onClick={() => void downloadUpdate(a.name).then((p) => setDownloadedPath(p))}
                           >
-                            {a.name} ({formatBytes(a.size)})
+                            {a.name} ({formatBytes(a.size)}){guncelMi(a.name) ? '' : ' · eski surum'}
                           </Button>
-                        ))}
-                      {update.assets.filter((a) => /\.(exe|msi)$/i.test(a.name)).length === 0 ? (
-                        <span className="text-[11.5px] text-warn">Bu surumde .exe dosyasi yayinlanmamis.</span>
-                      ) : null}
+                        ))
+                      })()}
                     </div>
                   </>
                 ) : update.ok && !update.error ? (
