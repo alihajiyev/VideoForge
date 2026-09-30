@@ -1197,17 +1197,20 @@ Write ONLY the tags, one line."""
     # === STEP 7b: MOVIE TITLE COLONS (regex, 0 Gemini) ===
     voice_text = fix_movie_titles(voice_text)
 
-    # === STEP 7c: RUSSIAN SPELLING CHECK (Gemini, general) ===
-    print("📝 [Bulut] Rusca yazim kontrol ediliyor...")
+    # === STEP 7c: RUSSIAN SPELLING + GRAMMAR COMPLETENESS (Gemini, tek cagri) ===
+    # Eskiden AYNI prompt iki kez cagriliyordu (video basina +1 Gemini istegi,
+    # 7 anahtarin 500 RPD limitinde hissedilir kota israfi). Tek cagri hem yazimi
+    # hem eksik fiil/baglaci duzeltir (prompt zaten ikisini de istiyor).
+    # Ikinci tur SADECE ilk tur metni belirgin sekilde kisa/bozuk cikardiysa
+    # (deterministik tetik) tekrarlanir.
+    print("📝 [Bulut] Rusca yazim + gramer kontrol ediliyor...")
+    onceki_uzunluk = len(voice_text)
     voice_text = fix_spelling(voice_text, channel_name)
-    # === STEP 7c2: GRAMMAR COMPLETENESS CHECK (Gemini) ===
-    # Catch missing verbs/conjunctions (e.g. "а он сам молот легендарным") that a
-    # single spelling pass may miss. Deterministic trigger: suspicious gaps around
-    # pronoun+noun without a verb pattern is hard, so re-run the same fix once more.
-    print("📝 [Bulut] Gramer tamligi kontrol ediliyor...")
-    fixed_again = fix_spelling(voice_text, channel_name)
-    if len(fixed_again) >= len(voice_text) * 0.7:
-        voice_text = fixed_again
+    if len(voice_text) < onceki_uzunluk * 0.7:
+        print("📝 [Bulut] Metin belirgin sekilde kisaldi, gramer turu bir kez daha deneniyor...")
+        fixed_again = fix_spelling(voice_text, channel_name)
+        if len(fixed_again) >= len(voice_text) * 0.7:
+            voice_text = fixed_again
     # === STEP 8: CHARACTER LENGTH (fix_length handles everything, no verify needed) ===
     print("📏 [Bulut] Uzunluk kontrol ediliyor...")
     voice_text, _ = fix_length(voice_text, char_limit, lang, channel_name, tam_metin, voice_prompt=voice_prompt)

@@ -11,7 +11,8 @@ BAKU_TZ = timezone(timedelta(hours=4))
 def now_baku():
     return datetime.now(BAKU_TZ)
 from elevenlabs.client import ElevenLabs
-from constants import SETTINGS, TEXT_FIXES, NAME_FIXES, ELEVENLABS_API_KEY, FRAMES_PER_GPU, MAX_CONCURRENT_GPUS, results_volume, get_video_fps, get_video_duration, OVERHEAD_SECONDS, GPU_COST_PER_SEC, get_char_limit, MOVIE_NAMES_RU, GENERIC_TAGS, PROC_W, PROC_H, CLEANER_GPU
+from constants import SETTINGS, TEXT_FIXES, NAME_FIXES, ELEVENLABS_API_KEY, FRAMES_PER_GPU, MAX_CONCURRENT_GPUS, results_volume, get_video_fps, get_video_duration, OVERHEAD_SECONDS, GPU_COST_PER_SEC, get_char_limit, MOVIE_NAMES_RU, GENERIC_TAGS, PROC_W, PROC_H, CLEANER_GPU, TTS_DOGRULAMA_AKTIF
+from functions import maliyet
 from functions.transcribe import api_ile_transkript_cek
 from functions.gemini_func import gemini_uret, evaluate_topic, run_voice_pipeline, fix_length, reset_gemini_call_stats, gemini_usage_summary, _LAST_HARD_BLOCK
 from functions.seo_builder import build_seo_html
@@ -233,6 +234,20 @@ def group_words_to_sentences(words, sentences):
     except Exception:
         return None
 
+# Whisper modeli modul seviyesinde bir kez yuklenir. Modal ayni fonksiyon icin
+# sicak konteyneri yeniden kullanabildigi icin bu, video basina model indirme +
+# yukleme suresini (ve dolayisiyla faturalanan konteyner suresini) keser.
+_WHISPER_MEASURE_MODEL = None
+
+
+def _olcum_modeli(_wh):
+    global _WHISPER_MEASURE_MODEL
+    if _WHISPER_MEASURE_MODEL is None:
+        print("🎙️ [Bulut] Whisper (small) olcum modeli yukleniyor (bir kez)...")
+        _WHISPER_MEASURE_MODEL = _wh.load_model("small")
+    return _WHISPER_MEASURE_MODEL
+
+
 def measure_voice_times(voice_text, audio_bytes):
     """Measure REAL per-sentence timings of the produced voiceover MP3 with
     Whisper word timestamps (runs in cloud, no extra TTS credits).
@@ -250,7 +265,7 @@ def measure_voice_times(voice_text, audio_bytes):
         mp3 = os.path.join(tmp, "voice_meas.mp3")
         with open(mp3, "wb") as f:
             f.write(audio_bytes)
-        model = _wh.load_model("small")
+        model = _olcum_modeli(_wh)
         result = model.transcribe(mp3, word_timestamps=True, language="ru")
         words = []
         for seg in result.get("segments", []):
@@ -633,15 +648,18 @@ def run_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, system_p
                 deduped.append(tag_l)
         sections["tags"] = ", ".join(deduped)
 
-    # Rebuild SEO HTML with finalized sections
+    # SEO HTML artik BURADA kurulmaz: TTS sonrasi metin kisaltilabildigi icin
+    # erken kurulan rapor bayat kaliyordu (bkz. eski hata #2.1). Tek kurum
+    # asagida, tum metin/ses duzeltmeleri bittikten sonra yapilir.
     try:
         usage_note = gemini_usage_summary()
         print(f"📊 [Bulut] Gemini kullanimi: {usage_note}")
     except Exception:
         usage_note = ""
-    seo_html_str = build_seo_html(sections, raw_title, tam_metin, channel_name, lang, start_time=process_start, end_time=now_baku(), usage_note=usage_note)
+    seo_html_str = ""
 
     audio_bytes = None
+    voiceover_text = ""  # TTS blogu hata verse de asagida tanimli kalsin (NameError onlendi)
     if SETTINGS["ELEVENLABS_ENABLED"]:
         try:
             print("🎙️ [Bulut] ElevenLabs ile seslendirme (TTS) hazirlaniyor...")
@@ -668,30 +686,22 @@ def run_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, system_p
             if voiceover_text:
                 print(f"✅ [Bulut] Seslendirme metni bulundu ({len(voiceover_text)} karakter).")
                 print(f"📤 [Bulut] ElevenLabs'a gonderilecek metin:\n\"\"\"{voiceover_text}\"\"\"")
-                MAX_TTS_RETRIES = 2
-                for retry_attempt in range(MAX_TTS_RETRIES + 1):
-                    client_el = ElevenLabs(api_key=ELEVENLABS_API_KEY)
-                    el_response = client_el.text_to_speech.convert(voice_id=voice_id, text=voiceover_text, language_code=lang, output_format="mp3_44100_128", voice_settings={"speed": 1.0})
-                    audio_bytes_tmp = el_response if isinstance(el_response, bytes) else b"".join(el_response)
-                    print(f"✅ [Bulut] Seslendirme MP3 olarak basariyla olusturuldu ({retry_attempt+1}/{MAX_TTS_RETRIES+1}).")
-
-                    if retry_attempt < MAX_TTS_RETRIES:
-                        vr = tts_verify(audio_bytes_tmp, voiceover_text, lang)
-                        if vr is None:
-                            audio_bytes = audio_bytes_tmp
-                            break
-                        ratio, stt_text, problem_words = vr
+                # TEK TTS cagrisi. Eski retry dongusu her durumda ilk turda break
+                # ediyordu (olu kod) ama her video icin bosuna `tts_verify` cagirip
+                # Whisper small modelini yukluyordu. Dogrulama artik acik bir
+                # bayrakla kapatilabilir; davranis ayni, bosa harcama yok.
+                client_el = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+                el_response = client_el.text_to_speech.convert(voice_id=voice_id, text=voiceover_text, language_code=lang, output_format="mp3_44100_128", voice_settings={"speed": 1.0})
+                audio_bytes = el_response if isinstance(el_response, bytes) else b"".join(el_response)
+                print("✅ [Bulut] Seslendirme MP3 olarak basariyla olusturuldu.")
+                if TTS_DOGRULAMA_AKTIF:
+                    vr = tts_verify(audio_bytes, voiceover_text, lang)
+                    if vr is not None:
+                        ratio, _stt_text, problem_words = vr
                         if ratio >= 0.90:
                             print(f"✅ [Bulut] TTS dogrulama basarili (eslesme: {ratio:.0%})")
-                            audio_bytes = audio_bytes_tmp
-                            break
-                        print(f"⚠️ [Bulut] TTS dogrulama basarisiz (eslesme: {ratio:.0%}). Sorunlu kelimeler: {', '.join(problem_words[:8])}")
-                        print(f"⚠️ [Bulut] Sorunlu kelimeler TTS ile ilgili, metin degismiyor, ayni ses kabul ediliyor.")
-                        audio_bytes = audio_bytes_tmp
-                        break
-                    else:
-                        audio_bytes = audio_bytes_tmp
-                        print(f"✅ [Bulut] Son deneme, ses kabul edildi.")
+                        else:
+                            print(f"⚠️ [Bulut] TTS dogrulama dusuk (eslesme: {ratio:.0%}). Sorunlu kelimeler: {', '.join(problem_words[:8])}")
             else:
                 print(f"⚠️ [Bulut] Seslendirme metni bulunamadi ({v_key} etiketi yok).")
         except Exception as e:
@@ -732,14 +742,16 @@ def run_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, system_p
     fps = get_video_fps(video_final_yolu)
     dur = get_video_duration(video_final_yolu)
     total_frames = int(dur * fps)
-    # VRAM-safe chunk sizing: keep pixels-per-chunk constant vs the 360x640 baseline,
-    # so raising the ProPainter processing resolution does not increase VRAM usage.
-    # Buyuk GPU (L40S ~46GB) kullaniliyorsa chunk 2 katina cikarilir (ayni doluluk orani).
-    frames_per_gpu = max(150, int(FRAMES_PER_GPU * (360 * 640) / (PROC_W * PROC_H)))
-    if CLEANER_GPU != "L4":
-        frames_per_gpu = min(FRAMES_PER_GPU, frames_per_gpu * 2)
-    chunk_dur_sec = frames_per_gpu / fps
-    num_chunks = math.ceil(dur / chunk_dur_sec)
+    # GPU parca plani (bkz. functions/maliyet.py): VRAM-guvenli kare sayisi + ESIT
+    # parcalama + kuyruk birlestirme. Sabit-sureli bolmenin aksine minik son parca
+    # kalmaz; boylece bosuna GPU konteyneri (soguk baslangic + model yukleme)
+    # acilmaz. Karar tamamen saf fonksiyonda, bulut davranisi degismez.
+    frames_per_gpu = maliyet.vram_guvenli_kare(FRAMES_PER_GPU, PROC_W, PROC_H,
+                                               guclu_gpu=(CLEANER_GPU != "L4"))
+    chunk_plani = maliyet.planla(total_frames, fps, frames_per_gpu)
+    num_chunks = chunk_plani["num_chunks"]
+    if chunk_plani.get("kuyruk_birlesti"):
+        print("🧩 [Bulut] Kuyruk parcasi birlestirildi (bosuna GPU konteyneri onlendi).")
 
     # Beat map: map each voiceover sentence onto the ORIGINAL video timeline
     # (real transcript segment timings when available, else proportional over
@@ -749,6 +761,10 @@ def run_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, system_p
         voice_timeline = build_video_beat_map(sections.get(v_key, ""), source_timeline, dur)
     except Exception as e:
         print(f"⚠️ [Bulut] Beat map uretilemedi: {e}")
+    # SEO raporu varsayilanlari: beat map uretilemese de rapor kurulabilsin.
+    audio_timeline, voice_audio_dur = voice_timeline, dur
+    beatmap_json = None
+    src_list, src_dur = [], float(dur or 0)
     if voice_timeline:
         print(f"🗺️ [Bulut] Beat map hazir: {len(voice_timeline)} cumle haritalandi.")
         # REAL voiceover sentence times: measure the produced MP3 with Whisper
@@ -820,16 +836,26 @@ def run_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, system_p
         except Exception as e:
             print(f"⚠️ [Bulut] Orijinal zaman cizelgesi hazirlanamadi: {e}")
             src_list, src_dur = [], float(dur or 0)
-        seo_html_str = build_seo_html(sections, raw_title, tam_metin, channel_name, lang, start_time=process_start, end_time=now_baku(), timeline=audio_timeline, audio_duration=voice_audio_dur, source_timeline=src_list, source_duration=src_dur, beatmap=beatmap_json, usage_note=usage_note)
+    # TEK SEO kurulumu: tum metin/ses duzeltmeleri ve beat map hazir olduktan
+    # sonra. Boylece rapor, gosterilen seslendirme metniyle HER ZAMAN tutarli.
+    seo_html_str = build_seo_html(sections, raw_title, tam_metin, channel_name, lang, start_time=process_start, end_time=now_baku(), timeline=audio_timeline, audio_duration=voice_audio_dur, source_timeline=src_list, source_duration=src_dur, beatmap=beatmap_json, usage_note=usage_note)
 
     print(f"✂️ [Bulut] Toplam {total_frames} Frame tespit edildi. (FPS: {fps:.2f})")
-    print(f"🚀 [Bulut] Video {num_chunks} farkli parcaya bolunuyor (Her biri max {frames_per_gpu} frame @ {PROC_W}x{PROC_H} isleme)...")
+    print(f"🚀 [Bulut] Video {num_chunks} farkli parcaya bolunuyor (Her biri ~{int(chunk_plani['kare_per_chunk'] or 0)} frame @ {PROC_W}x{PROC_H} isleme)...")
+    print(f"💸 [Bulut] GPU konteyner sabit maliyeti: {num_chunks} parca x ~{int(OVERHEAD_SECONDS)}sn = ${maliyet.tahmini_maliyet(num_chunks, GPU_COST_PER_SEC, OVERHEAD_SECONDS):.4f} (islem suresi haric)")
 
+    araliklar = maliyet.parcalar(chunk_plani, total_frames, fps)
+    if not araliklar:
+        araliklar = [(0.0, 0.0)]  # sure bilinmiyorsa tek parca: tum video
+    num_chunks = len(araliklar)
     bytes_list = []
-    for i in range(num_chunks):
-        start_time = i * chunk_dur_sec
+    for i, (baslangic, sure) in enumerate(araliklar):
         part_path = os.path.join(tmp_dir, f"part_{i}.mp4")
-        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", video_final_yolu, "-ss", str(start_time), "-t", str(chunk_dur_sec), "-c:v", "libx264", "-crf", "16", "-preset", "superfast", "-pix_fmt", "yuv420p", part_path], check=True)
+        ff_cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", video_final_yolu, "-ss", str(baslangic)]
+        if sure > 0:
+            ff_cmd += ["-t", str(sure)]
+        ff_cmd += ["-c:v", "libx264", "-crf", "16", "-preset", "superfast", "-pix_fmt", "yuv420p", part_path]
+        subprocess.run(ff_cmd, check=True)
         with open(part_path, "rb") as f: bytes_list.append(f.read())
 
     bot = VideoCleanerClass()

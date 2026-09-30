@@ -32,6 +32,7 @@ const mockSettings: AppSettings = {
   autoCheckUpdates: true,
   updateRepo: 'alihajiyev/VideoForge',
   githubToken: '',
+  gunSayisi: 7,
 }
 
 const mockUpdate: UpdateInfo = {

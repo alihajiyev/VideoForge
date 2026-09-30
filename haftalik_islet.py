@@ -22,7 +22,6 @@ import argparse
 import glob
 import json
 import re
-import shutil
 import subprocess
 import time
 
@@ -226,10 +225,13 @@ def kilit_birak():
 def studio_islet(gun, chn, gun_toplam=0):
     """3. adim: Gun klasorundeki ciktiyi ShortsStudio'dan gecir.
 
+    TEK AKIS (kopyalama YOK): VideoForge ciktilari GunN klasorunde kalir; tam
+    yollari ShortsStudio'ya ortam degiskeniyle verilir. Boylece eski davranistaki
+    "en yeni dosyayi bul" mantigi ve ShortsStudio kokunde biriken bayat dosyalar
+    sorunu tamamen ortadan kalkar (eskiden bayat dosya yuzunden kosu, GPU
+    harcandiktan SONRA duruyordu — en pahali hata turu).
+
     Donus: (True, final_dosya_adi) ya da (False, hata_mesaji).
-    Tek render yapilir; final SADECE Masaustu/final_XXXXXX.mp4 olarak cikar
-    (Gun klasorune kopya birakilmaz — hangi finalin hangi gune ait oldugu
-    konsol ozeti + haftalik_sonuc_chN.json'da yaziyor).
     """
     desktop = _desktop()
     studio_dir = studio_dir_bul()
@@ -245,47 +247,20 @@ def studio_islet(gun, chn, gun_toplam=0):
         return False, hata
     video_path, audio_path, seo_path = girdiler
 
-    # ShortsStudio kokte kalan eski girdiler varsa karismasin diye dur.
-    # (main.py en yeni mp4/mp3'u secer ama SEO html'i rastgele [0] secer — bayat dosya risk.)
-    onceki_mp4 = [f for f in glob.glob(os.path.join(studio_dir, "*.mp4"))
-                  if not os.path.basename(f).startswith("final_")]
-    onceki_mp3 = glob.glob(os.path.join(studio_dir, "*.mp3"))
-    onceki_seo = [f for f in glob.glob(os.path.join(studio_dir, "*.html"))
-                  if "SEO" in os.path.basename(f).upper()]
-    if onceki_mp4 or onceki_mp3 or onceki_seo:
-        return False, ("ShortsStudio klasorunde eski girdi dosyalari var "
-                       "(main.py yanlis dosyayi secebilir). Lutfen ShortsStudio klasorundeki "
-                       ".mp4/.mp3/*SEO*.html dosyalarini temizleyip tekrar calistir.")
-
     studio_no = CHN_STUDIO_NO.get(str(chn), "1")
-
-    hedef_video = os.path.join(studio_dir, os.path.basename(video_path))
-    hedef_audio = os.path.join(studio_dir, os.path.basename(audio_path))
-    hedef_seo = os.path.join(studio_dir, os.path.basename(seo_path))
-    kopyalanan = []
-    try:
-        shutil.copy2(video_path, hedef_video)
-        kopyalanan.append(hedef_video)
-        shutil.copy2(audio_path, hedef_audio)
-        kopyalanan.append(hedef_audio)
-        shutil.copy2(seo_path, hedef_seo)
-        kopyalanan.append(hedef_seo)
-    except Exception as e:
-        for f in kopyalanan:
-            try:
-                os.remove(f)
-            except Exception:
-                pass
-        return False, f"ShortsStudio'ya kopyalama hatasi: {e}"
-
     info(f"🎬 ShortsStudio montaji basliyor (Gun {gun}, kanal no {studio_no})...")
     info(f"   Video: {os.path.basename(video_path)}")
     info(f"   Ses:   {os.path.basename(audio_path)}")
+
     env = dict(os.environ)
     env["CHANNEL_NUM"] = studio_no
     # ShortsStudio emoji basar (✅/›); pipe'li stdout cp1254'e dusup
     # UnicodeEncodeError veriyor. UTF-8 moda zorla (ShortsStudio koduna dokunmadan).
     env["PYTHONUTF8"] = "1"
+    # TEK AKIS: kopya yerine acik yollar. GunN klasoru tek kaynak olarak kalir.
+    env["VIDEOFORGE_STUDIO_VIDEO"] = os.path.abspath(video_path)
+    env["VIDEOFORGE_STUDIO_AUDIO"] = os.path.abspath(audio_path)
+    env["VIDEOFORGE_STUDIO_SEO"] = os.path.abspath(seo_path)
     cmd = [sys.executable, "-m", "modal", "run", "main.py"]
     # Ciktiyi CANLI goster + topla: final adi BU kosunun kendi ciktisindan
     # okunur (tahmin/set-farki yok — paralel kosu baskasinin finalini
@@ -309,15 +284,6 @@ def studio_islet(gun, chn, gun_toplam=0):
         studio_rc = proc.wait()
     except Exception as e:
         warn(f"ShortsStudio calistirma hatasi: {e}")
-    finally:
-        # Basarida main.py girdileri kendisi siler; basarisizlikta arta kalan
-        # kopyalarimizi temizle ki sonraki gun yanlis dosyayi secmesin.
-        for f in kopyalanan:
-            try:
-                if os.path.exists(f):
-                    os.remove(f)
-            except Exception:
-                pass
 
     if studio_rc != 0:
         return False, f"ShortsStudio modal run returncode={studio_rc}"

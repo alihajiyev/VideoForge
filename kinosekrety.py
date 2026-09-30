@@ -82,14 +82,14 @@ def main(link: str = None, gun: int = 0, gun_toplam: int = 0):
     header("☁️  VIDEO INDIRICI & AI TEMIZLEYICI (KINO SEKRETY) ☁️", "Kino Sekrety kanali secildi")
     parser = argparse.ArgumentParser()
     parser.add_argument("--force", "-f", action="store_true", help="Skip topic evaluation")
-    parser.add_argument("--gun", type=int, default=0, help="Haftalik plan gun no (1-7: cikti kendi klasorune yazilir)")
-    parser.add_argument("--gun-toplam", type=int, default=0, help="Haftalik plan toplam video sayisi")
+    parser.add_argument("--gun", type=int, default=0, help="Cok gunlu plan gun no (1..N: cikti kendi GunN klasorune yazilir)")
+    parser.add_argument("--gun-toplam", type=int, default=0, help="Cok gunlu plan toplam gun (video) sayisi")
     args, _ = parser.parse_known_args()
     force = args.force
     gun = args.gun or gun or 0
     gun_toplam = args.gun_toplam or gun_toplam or 0
     if gun > 0:
-        info(f"📅 Haftalik plan: {gun}. gun / {gun_toplam or '?'}")
+        info(f"📅 Cok gunlu plan: {gun}. gun / {gun_toplam or '?'}")
     if not link:
         link = input("🔗 Linki yapistir ve Enter'a bas: ")
     platform = platform_tespit_et(link)

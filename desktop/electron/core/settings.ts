@@ -2,6 +2,7 @@ import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AppSettings } from '@shared/types'
+import { GUN_SAYISI_VARSAYILAN, normalGunSayisi } from '@shared/constants'
 import { defaultBotPath } from './paths'
 import { log } from './logger'
 
@@ -20,7 +21,14 @@ function defaults(): AppSettings {
     autoCheckUpdates: true,
     updateRepo: DEFAULT_UPDATE_REPO,
     githubToken: '',
+    gunSayisi: GUN_SAYISI_VARSAYILAN,
   }
+}
+
+/** Kayitli gun sayisini gecerli araliga ceker (bozuk/eski deger 7'ye doner). */
+function duzeltGunSayisi(ayar: AppSettings): AppSettings {
+  const sayi = normalGunSayisi(ayar.gunSayisi)
+  return sayi === ayar.gunSayisi ? ayar : { ...ayar, gunSayisi: sayi }
 }
 
 function filePath(): string {
@@ -35,7 +43,7 @@ export function getSettings(): AppSettings {
   try {
     const raw = fs.readFileSync(filePath(), 'utf8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
-    cached = { ...base, ...parsed }
+    cached = duzeltGunSayisi({ ...base, ...parsed })
     // Depo adi degistiyse eski kayitli degeri tasi (kullanici kendi adresini girdiyse dokunma).
     if (cached.updateRepo && LEGACY_UPDATE_REPOS.includes(cached.updateRepo.trim())) {
       cached = { ...cached, updateRepo: DEFAULT_UPDATE_REPO }
@@ -47,7 +55,7 @@ export function getSettings(): AppSettings {
 }
 
 export function setSettings(patch: Partial<AppSettings>): AppSettings {
-  const next = { ...getSettings(), ...patch }
+  const next = duzeltGunSayisi({ ...getSettings(), ...patch })
   cached = next
   try {
     fs.writeFileSync(filePath(), JSON.stringify(next, null, 2), 'utf8')

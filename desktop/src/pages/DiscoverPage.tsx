@@ -3,10 +3,10 @@ import { Compass, ExternalLink, Layers, RefreshCw, Sparkles, Target } from 'luci
 import { CHANNELS } from '@shared/channels'
 import { api, unwrap } from '@/lib/api'
 import { useResource, useTicker } from '@/lib/hooks'
-import { useApp } from '@/app/AppContext'
+import { useApp, useGunSayisi } from '@/app/AppContext'
 import { cn, formatBytes, formatRelative } from '@/lib/utils'
-import { Badge, Button, EmptyState, Input, Panel, SectionTitle, Spinner, StatCard, Switch } from '@/components/ui/primitives'
-import { GUN_SAYISI_MAX, GUN_SAYISI_MIN, GUN_SAYISI_VARSAYILAN, normalGunSayisi } from '@shared/constants'
+import { Badge, Button, EmptyState, Panel, SectionTitle, Spinner, StatCard, Switch } from '@/components/ui/primitives'
+import { GunSayisiSecici } from '@/components/ui/GunSayisiSecici'
 import type { PageKey } from '@/components/layout/Sidebar'
 import type { WeeklyData } from '@electron/data/logs'
 
@@ -24,7 +24,8 @@ export function DiscoverPage({ onNavigate }: { onNavigate: (page: PageKey) => vo
   const [channelId, setChannelId] = useState('1')
   // Plan modu acikken secilen gun sayisi kadar video bulunur (7 sabit degil).
   const [planModu, setPlanModu] = useState(true)
-  const [gunSayisi, setGunSayisi] = useState<number>(GUN_SAYISI_VARSAYILAN)
+  // Gun sayisi ayarlarda saklanir: Panel'de yazilan sayi burada da gorunur.
+  const [gunSayisi, setGunSayisi] = useGunSayisi()
   const [busy, setBusy] = useState(false)
   useTicker(job?.status === 'running')
 
@@ -36,7 +37,7 @@ export function DiscoverPage({ onNavigate }: { onNavigate: (page: PageKey) => vo
     .filter((i) => i.kind === 'report')
     .slice(0, 6)
 
-  const gun = normalGunSayisi(gunSayisi)
+  const gun = gunSayisi
 
   const run = async (kind: 'discover' | 'weekly'): Promise<void> => {
     setBusy(true)
@@ -79,39 +80,11 @@ export function DiscoverPage({ onNavigate }: { onNavigate: (page: PageKey) => vo
             <div className="flex flex-wrap items-start gap-4">
               <Switch checked={planModu} onChange={setPlanModu} label="Cok gunlu plan modu" hint="Kapaliysa sadece tek seferlik oneri listesi uretilir." />
               <div className={cn('transition-opacity', !planModu && 'pointer-events-none opacity-40')}>
-                <label className="text-[11.5px] font-medium text-fg-muted" htmlFor="gun-sayisi">
-                  Kac gunluk plan?
-                </label>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <Input
-                    id="gun-sayisi"
-                    type="number"
-                    min={GUN_SAYISI_MIN}
-                    max={GUN_SAYISI_MAX}
-                    value={gunSayisi}
-                    disabled={job?.status === 'running' || !planModu}
-                    onChange={(e) => setGunSayisi(Number(e.target.value))}
-                    onBlur={() => setGunSayisi((v) => normalGunSayisi(v))}
-                    className="w-[78px] text-center"
-                  />
-                  {[3, 7, 10, 14, 30].map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      disabled={job?.status === 'running' || !planModu}
-                      onClick={() => setGunSayisi(n)}
-                      className={cn(
-                        'num rounded-[8px] border px-2 py-1 text-[11px] transition-colors disabled:opacity-50',
-                        n === gun ? 'border-brand bg-brand-soft text-fg' : 'border-border bg-[var(--surface-2)] text-fg-muted hover:border-border-strong',
-                      )}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-1 text-[10.5px] text-fg-subtle">
-                  Skor sirasi = paylasim sirasi. {gun} video bulunur, {gun}. gunden sonra hafta adlari bastan dongu yapar.
-                </p>
+                <GunSayisiSecici
+                  value={gunSayisi}
+                  onChange={setGunSayisi}
+                  disabled={job?.status === 'running' || !planModu}
+                />
               </div>
               <div className="ml-auto flex flex-wrap gap-2">
                 <Button

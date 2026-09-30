@@ -17,7 +17,7 @@ import { GUN_SAYISI_MAX, GUN_SAYISI_VARSAYILAN, IPC, normalGunSayisi } from '@sh
 import { CHANNELS } from '@shared/channels'
 import type { LogLine } from '@shared/types'
 import { registerIpc } from '../electron/ipc'
-import { registerWindowIpc } from '../electron/core/window'
+import { registerWindowIpc, setMainWindow } from '../electron/core/window'
 import { DEFAULT_UPDATE_REPO, getSettings, setSettings } from '../electron/core/settings'
 import { defaultBotPath, planPath } from '../electron/core/paths'
 import { resolvePython } from '../electron/python/locate'
@@ -26,7 +26,7 @@ import { buildSteps, cancelJob, getState, getHistory, startJob } from '../electr
 import { execCapture } from '../electron/core/exec'
 import { botGitStatus, checkForUpdate, compareVersions, downloadUpdate, launchDownloaded, parseVersion, pullBotCode } from '../electron/update/updater'
 import { envCheck } from '../electron/data/env'
-import { readLibrary } from '../electron/data/library'
+import { forgetLink, readLibrary } from '../electron/data/library'
 import { engineConfig } from '../electron/data/engine'
 import { readBotLog, weeklyData } from '../electron/data/logs'
 import { groupArtifacts, listArtifacts, previewHtml, scanArtifactsSince } from '../electron/data/reports'
@@ -367,6 +367,20 @@ async function main(): Promise<void> {
     check('normalGunSayisi("abc") -> 7', normalGunSayisi('abc') === 7, String(normalGunSayisi('abc')))
     const gun10 = buildSteps({ kind: 'channel', channelId: '3', link: 'https://x/y', gun: 4, gunSayisi: 10 }, base)
     check('gun-toplam gunSayisi\'ndan tureiyor', gun10.steps[0].cmd.join(' ').includes('--gun-toplam 10'), gun10.steps[0].cmd.join(' '))
+    // Panel/Kesif sayfasindan gelen gunSayisi zincire ve etiketlere gecmeli.
+    const wk12 = buildSteps({ kind: 'weekly', channelId: '2', haftalik: true, gunSayisi: 12 }, base)
+    check('Zincir 12 gun ile kuruldu (--haftalik 12)', wk12.steps[0].cmd.join(' ').includes('--haftalik 12'), wk12.steps[0].cmd.join(' '))
+    check('Zincir 12 gun etiketlere yansidi', wk12.steps[0].label.includes('12 video') && wk12.title.includes('12 Gunluk'), `${wk12.steps[0].label} | ${wk12.title}`)
+
+    /* Gun sayisi ayari: kaydedilir ve gecersiz degerler duzeltilir. */
+    setSettings({ gunSayisi: 99 })
+    check('Gun sayisi ayari 60 ile sinirlandi', getSettings().gunSayisi === GUN_SAYISI_MAX, String(getSettings().gunSayisi))
+    setSettings({ gunSayisi: 1 })
+    check('Cok kucuk gun sayisi 7 varsayilana dondu', getSettings().gunSayisi === GUN_SAYISI_VARSAYILAN, String(getSettings().gunSayisi))
+    setSettings({ gunSayisi: 'abc' as unknown as number })
+    check('Bozuk gun sayisi ayari 7 varsayilana dondu', getSettings().gunSayisi === GUN_SAYISI_VARSAYILAN, String(getSettings().gunSayisi))
+    setSettings({ gunSayisi: 12 })
+    check('Gun sayisi ayari diske kaydedildi', getSettings().gunSayisi === 12, String(getSettings().gunSayisi))
 
     const clean = buildSteps({ kind: 'clean', link: 'https://youtu.be/abc' }, base)
     check('Temizleyici komutu dogru', clean.steps[0].cmd.join(' ').includes('modal run temizle.py --link https://youtu.be/abc'), clean.steps[0].cmd.join(' '))
@@ -512,7 +526,8 @@ async function main(): Promise<void> {
     const gunInput = (await win.webContents.executeJavaScript(
       `(() => { const el = document.getElementById('gun-sayisi'); return el ? { type: el.type, value: el.value, min: el.min, max: el.max } : null; })()`,
     )) as { type?: string; value?: string; min?: string; max?: string } | null
-    check('Gun sayisi alani sayisal ve varsayilan 7', gunInput?.type === 'number' && gunInput?.value === '7', JSON.stringify(gunInput))
+    // Alan artik KAYITLI ayari gosterir (Panel ve Kesif ayni degeri paylasir).
+    check('Gun sayisi alani sayisal ve kayitli degeri gosteriyor', gunInput?.type === 'number' && (gunInput?.value ?? '') === String(getSettings().gunSayisi), `${JSON.stringify(gunInput)} / kayitli=${getSettings().gunSayisi}`)
     check('Gun sayisi min/max sinirlari (2-60)', gunInput?.min === '2' && gunInput?.max === '60', JSON.stringify(gunInput))
     // Kullanici 10 yazinca butonlar ve plan modu 10'u gostermeli
     const gun10Ui = (await win.webContents.executeJavaScript(
@@ -606,6 +621,240 @@ async function main(): Promise<void> {
 
     const guard = await win.webContents.executeJavaScript(`(async()=>{ const r = await window.vfgui.shellOpen('C:/Windows/System32/drivers/etc/hosts'); return r.ok; })()`)
     check('Yol korumasi (proje disi dosya) engellendi', guard === false, String(guard))
+
+    /* ---------------- 13b. Tum sayfalar (her ozellik ekrani) ---------------- */
+    section('13b) Tum sayfalar gercekten ciziliyor mu (menu uzerinden gezinti)')
+    const SAYFALAR: { nav: string; ad: string; isaretler: string[] }[] = [
+      { nav: 'Panel', ad: 'Panel', isaretler: ['ortam durumu'] },
+      { nav: 'Calistir', ad: 'Calistir', isaretler: ['aktif islem yok', 'gecmis'] },
+      { nav: 'Kutuphane', ad: 'Kutuphane', isaretler: ['bot.db icerigi'] },
+      { nav: 'Cikti', ad: 'Cikti & Rapor', isaretler: ['cikti dosyalari'] },
+      { nav: 'Kesif', ad: 'Kesif', isaretler: ['kesif modulu'] },
+      { nav: 'Loglar', ad: 'Loglar', isaretler: ['bot_log.txt'] },
+      { nav: 'Ayarlar', ad: 'Ayarlar', isaretler: ['gorunum', 'yollar ve python'] },
+    ]
+    for (const sayfa of SAYFALAR) {
+      const tiklandi = (await win.webContents.executeJavaScript(
+        `(() => {
+           const b = [...document.querySelectorAll('nav button')].find((x) => (x.textContent || '').trim().toLowerCase().startsWith(${JSON.stringify(sayfa.nav.toLowerCase())}));
+           if (!b) return false;
+           b.click();
+           return true;
+         })()`,
+      )) as boolean
+      await sleep(800)
+      const sayfaMetni = ((await win.webContents.executeJavaScript('document.body.textContent')) as string).toLowerCase()
+      const bulunan = sayfa.isaretler.filter((i) => sayfaMetni.includes(i))
+      check(`${sayfa.ad} sayfasi acildi ve ici cizildi`, tiklandi && bulunan.length > 0, tiklandi ? `beklenen: ${sayfa.isaretler.join(' | ')} -> ${bulunan.join(', ') || 'HICBIRI YOK'}` : 'menu butonu bulunamadi')
+    }
+    check('Sayfa gezintisi konsol hatasi uretmedi', rendererErrors.length === 0, rendererErrors.slice(0, 2).join(' | '))
+
+    /* ---------------- 13c. Pencere kontrolleri ---------------- */
+    section('13c) Pencere kontrolleri (kucult / buyut / durum / kapat)')
+    setMainWindow(win)
+    const durumOnce = (await win.webContents.executeJavaScript('window.vfgui.winState()')) as { maximized: boolean; focused: boolean }
+    check('Pencere durumu okunuyor (winState)', durumOnce?.maximized === false, JSON.stringify(durumOnce))
+    const buyut1 = (await win.webContents.executeJavaScript('window.vfgui.winMaximize()')) as boolean
+    await sleep(600)
+    const durumBuyuk = (await win.webContents.executeJavaScript('window.vfgui.winState()')) as { maximized: boolean; focused: boolean }
+    check('Buyut komutu pencereyi gercekten buyuttu', buyut1 === true && durumBuyuk?.maximized === true, `donen=${buyut1} durum=${JSON.stringify(durumBuyuk)}`)
+    const buyut2 = (await win.webContents.executeJavaScript('window.vfgui.winMaximize()')) as boolean
+    await sleep(600)
+    check('Ayni komut tekrar cagrilinca geri kuculttu (ac/kapa)', buyut2 === false && win.isMaximized() === false, `donen=${buyut2} isMaximized=${win.isMaximized()}`)
+    const kucult = (await win.webContents.executeJavaScript('window.vfgui.winMinimize()')) as boolean
+    await sleep(500)
+    check('Kucult komutu uygulandi', kucult === true && win.isMinimized(), `donen=${kucult} isMinimized=${win.isMinimized()}`)
+    win.restore()
+    await sleep(400)
+    check('Kucultmeden geri donus calisti', !win.isMinimized() || win.isDestroyed(), `isMinimized=${win.isMinimized()}`)
+    setMainWindow(null)
+    // Kapat komutu ikinci bir pencerede denenir (kendi penceremizi kapatip testi bozmayalim).
+    const win2 = new BrowserWindow({
+      show: false,
+      width: 900,
+      height: 640,
+      webPreferences: {
+        preload: path.join(ROOT, 'dist-electron', 'preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+      },
+    })
+    setMainWindow(win2)
+    await win2.loadFile(distIndex)
+    await sleep(700)
+    check('Ikinci pencere yuklendi (kopru hazir)', (await win2.webContents.executeJavaScript('typeof window.vfgui')) === 'object', '')
+    // Pencere kapanirken renderer olur: promise reddedilebilir ya da hic
+    // sonuclanmayabilir (Electron davranisi) - bu yuzden zaman siniri var.
+    const kapat = (await Promise.race([
+      win2.webContents.executeJavaScript('window.vfgui.winClose()').catch(() => null),
+      sleep(5_000).then(() => 'zaman-asimi' as const),
+    ])) as boolean | null | 'zaman-asimi'
+    await sleep(900)
+    check('Kapat komutu pencereyi kapatti', win2.isDestroyed(), `donen=${kapat} yikildi=${win2.isDestroyed()}`)
+    setMainWindow(null)
+    if (!win2.isDestroyed()) win2.destroy()
+
+    /* ---------------- 13d. Kutuphane kaydi silme (guvenli kopya) ---------------- */
+    section('13d) Kutuphane kaydi silme (bot.db kopyasi uzerinde)')
+    const gercekDb = path.join(realBot, 'bot.db')
+    const kopyaBot = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-libforget-'))
+    const dbVar = fs.existsSync(gercekDb)
+    const dbOnceki = dbVar ? fs.statSync(gercekDb) : null
+    if (dbVar) {
+      write(path.join(kopyaBot, 'shared.py'), '# sahte bot klasoru\n')
+      fs.copyFileSync(gercekDb, path.join(kopyaBot, 'bot.db'))
+      setSettings({ videoForgePath: kopyaBot })
+      const once = await readLibrary()
+      const hedefLink = (once.videos.find((v) => (v.link || '').trim())?.link ?? '').trim()
+      const silindi = await forgetLink(hedefLink)
+      const sonra = await readLibrary()
+      check('Kopya bot.db okundu', once.ok && once.counts.videos > 0, `${once.counts.videos} video`)
+      check('Kayit silindi (libraryForget)', silindi.ok === true && (silindi.deleted ?? 0) >= 1, JSON.stringify(silindi))
+      check('Silinen kayit artik listede yok', sonra.videos.every((v) => v.link !== hedefLink), hedefLink)
+      check('Kutuphane sayaci silinen kadar azaldi', sonra.counts.videos === once.counts.videos - (silindi.deleted ?? 0), `${once.counts.videos} - ${silindi.deleted} = ${sonra.counts.videos}`)
+    } else {
+      check('Kopya bot.db okundu (bot.db yok, atlandi)', false, 'bot.db bulunamadi - test edilemedi')
+      check('Kayit silindi (atlandi)', false, 'bot.db bulunamadi')
+      check('Silinen kayit artik listede yok (atlandi)', false, 'bot.db bulunamadi')
+      check('Kutuphane sayaci silinen kadar azaldi (atlandi)', false, 'bot.db bulunamadi')
+    }
+    forceRemove(kopyaBot)
+    if (dbOnceki) {
+      const dbSonraki = fs.statSync(gercekDb)
+      check('Gercek bot.db degismedi (silme kopyada yapildi)', dbOnceki.size === dbSonraki.size && dbOnceki.mtimeMs === dbSonraki.mtimeMs, `${dbSonraki.size} bayt`)
+    } else {
+      check('Gercek bot.db degismedi (bot.db yok)', true, '')
+    }
+
+    /* ---------------- 13e. Ayar / tema / motor / rapor kopruleri ---------------- */
+    section('13e) Ayar, tema, motor ve rapor kopruleri (kalan IPC kanallari)')
+    setSettings({ videoForgePath: realBot })
+    const ayarOku = (await win.webContents.executeJavaScript('window.vfgui.settingsGet()')) as { ok: boolean; data?: { videoForgePath: string; autoCheckUpdates: boolean } }
+    check('settingsGet IPC calisiyor', ayarOku.ok === true && typeof ayarOku.data?.videoForgePath === 'string', String(ayarOku.data?.videoForgePath))
+    const ayarYaz = (await win.webContents.executeJavaScript('window.vfgui.settingsSet({ autoCheckUpdates: false })')) as { ok: boolean; data?: { autoCheckUpdates: boolean } }
+    check('settingsSet IPC yazdi ve ana surece ulasti', ayarYaz.ok === true && ayarYaz.data?.autoCheckUpdates === false && getSettings().autoCheckUpdates === false, `IPC=${ayarYaz.data?.autoCheckUpdates} yerel=${getSettings().autoCheckUpdates}`)
+    await win.webContents.executeJavaScript('window.vfgui.settingsSet({ autoCheckUpdates: true })')
+    check('Ayar geri alindi', getSettings().autoCheckUpdates === true, String(getSettings().autoCheckUpdates))
+
+    const temaYaz = (await win.webContents.executeJavaScript(`window.vfgui.themeSet('light')`)) as { ok: boolean; data?: { mode: string } }
+    check('themeSet IPC calisti ve kalici yazdi', temaYaz.ok === true && temaYaz.data?.mode === 'light' && getSettings().mode === 'light', JSON.stringify(temaYaz.data?.mode))
+    await win.webContents.executeJavaScript(`window.vfgui.themeSet('dark')`)
+    check('Tema geri alindi', getSettings().mode === 'dark', getSettings().mode)
+
+    const motor = (await win.webContents.executeJavaScript('window.vfgui.engineConfig()')) as { ok: boolean; data?: { charLimit: number } }
+    check('engineConfig IPC calisti', motor.ok === true && typeof motor.data?.charLimit === 'number', `charLimit=${motor.data?.charLimit}`)
+    const motorKopya = await (async () => {
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-enginelimit-'))
+      fs.copyFileSync(gercekDb, path.join(tmp, 'bot.db'))
+      fs.writeFileSync(path.join(tmp, 'constants.py'), 'CHAR_LIMIT_KINO_SYJET = 570\n', 'utf8')
+      setSettings({ videoForgePath: tmp })
+      const yaz = (await win.webContents.executeJavaScript(`window.vfgui.engineSetCharLimit(${motor.data?.charLimit ?? 570})`)) as { ok: boolean; data?: { charLimit: number } }
+      forceRemove(tmp)
+      return yaz
+    })()
+    check('engineSetCharLimit yazdi ve degeri geri okudu', motorKopya.ok === true && motorKopya.data?.charLimit === motor.data?.charLimit, `${motor.data?.charLimit} -> ${motorKopya.data?.charLimit}`)
+    setSettings({ videoForgePath: realBot })
+
+    const gecmisB = (await win.webContents.executeJavaScript('window.vfgui.runHistory()')) as { ok: boolean; data?: unknown[] }
+    check('runHistory IPC calisti', gecmisB.ok === true && Array.isArray(gecmisB.data), `${gecmisB.data?.length ?? -1} kayit`)
+    const iptalBos = (await win.webContents.executeJavaScript('window.vfgui.runCancel()')) as { ok: boolean }
+    check('Calisan is yokken runCancel cokme yapmadi', iptalBos.ok === true, JSON.stringify(iptalBos))
+    const onizleme = (await win.webContents.executeJavaScript(`(async () => { const r = await window.vfgui.reportsPreview(${JSON.stringify(path.join(ROOT, 'dist', 'index.html'))}); return r.ok ? { ok: true, title: r.data.title ?? '' } : { ok: false, error: r.error }; })()`)) as { ok: boolean; title?: string; error?: string }
+    check('reportsPreview izinli yolda HTML onizlemesi uretti', onizleme.ok === true, onizleme.ok ? `baslik: ${onizleme.title}` : (onizleme.error ?? ''))
+    const onizlemeGuard = (await win.webContents.executeJavaScript(`(async () => { const r = await window.vfgui.reportsPreview('C:/Windows/System32/drivers/etc/hosts'); return r.ok; })()`)) as boolean
+    check('reportsPreview proje disi yolu reddetti', onizlemeGuard === false, String(onizlemeGuard))
+    const revealGuard = (await win.webContents.executeJavaScript(`(async () => { const r = await window.vfgui.shellReveal('C:/Windows/System32/drivers/etc/hosts'); return r.ok; })()`)) as boolean
+    check('shellReveal proje disi yolu reddetti', revealGuard === false, String(revealGuard))
+    const extGuard = (await win.webContents.executeJavaScript(`(async () => { const r = await window.vfgui.shellOpenExternal('dosya://kotu'); return r.ok; })()`)) as boolean
+    check('shellOpenExternal sadece http(s) kabul ediyor', extGuard === false, String(extGuard))
+    const launchGuard = (await win.webContents.executeJavaScript(`(async () => { const r = await window.vfgui.updateLaunch(''); return r.ok; })()`)) as boolean
+    check('updateLaunch olmayan dosyayi reddetti (kendini kurmaz)', launchGuard === false, String(launchGuard))
+    const updKontrol = (await win.webContents.executeJavaScript('window.vfgui.updateCheck()')) as { ok: boolean; data?: { latest: string | null; available: boolean } }
+    check('updateCheck IPC calisti', updKontrol.ok === true, updKontrol.ok ? `son surum: ${updKontrol.data?.latest ?? 'yok'} / guncelleme: ${updKontrol.data?.available}` : '')
+    /* ---------------- 13f. Panelden gun sayisi secerek zincir ---------------- */
+    // Kullanicinin bildirdigi hata: Panel'deki "cok gunlu zincir" dugmesi gun
+    // sayisini gecirmiyordu -> her zaman 7 gun isliyordu. Bu test alani,
+    // kaydetmeyi ve dugmenin istegi tasidigini bastan sona dogrular.
+    section('13f) Panelden gun sayisi secerek zincir baslatma (alan -> komut)')
+    const panelBot = makeFakeBot()
+    setSettings({ videoForgePath: panelBot, gunSayisi: 7 })
+    const panelHazirla = (await win.webContents.executeJavaScript(
+      `(async () => {
+         const nav = [...document.querySelectorAll('nav button')].find((b) => (b.textContent || '').trim().toLowerCase().startsWith('panel'));
+         if (!nav) return { hata: 'panel menusu yok', alan: false };
+         nav.click();
+         await new Promise((r) => setTimeout(r, 800));
+         const el = document.getElementById('gun-sayisi');
+         if (!el) return { hata: 'gun sayisi alani yok', alan: false };
+         el.focus();
+         el.select();
+         return { alan: true, disabled: el.disabled, odak: document.activeElement === el, deger: el.value };
+       })()`,
+    )) as { alan?: boolean; disabled?: boolean; odak?: boolean; deger?: string; hata?: string }
+    check('Panel sayfasinda gun sayisi alani VAR (kullanici bulamama sorunu)', panelHazirla?.alan === true, panelHazirla?.hata ?? 'alan bulundu')
+    check('Gun sayisi alani odaklanabilir ve acik', panelHazirla?.alan === true && panelHazirla?.disabled === false && panelHazirla?.odak === true, JSON.stringify(panelHazirla))
+
+    // Alana 12 yaz (kullanicinin klavyeyle yazmasi = input olayi).
+    const panelAlan = (await win.webContents.executeJavaScript(
+      `(async () => {
+         const el = document.getElementById('gun-sayisi');
+         if (!el) return null;
+         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+         setter.call(el, '12');
+         el.dispatchEvent(new Event('input', { bubbles: true }));
+         await new Promise((r) => setTimeout(r, 900));
+         const bul = (re) => ([...document.querySelectorAll('button')].find((b) => re.test(b.textContent || '')) || {}).textContent || '';
+         return { alan: true, deger: el.value, zincir: bul(/gunluk zincir/i), plan: bul(/gunluk plan olustur/i) };
+       })()`,
+    )) as { alan?: boolean; deger?: string; zincir?: string; plan?: string } | null
+    check('Gun sayisi alanina yazilan deger alanda gorunuyor (12)', panelAlan?.deger === '12', String(panelAlan?.deger))
+    check('Yazilan gun sayisi kendiliginden kaydedildi (12)', getSettings().gunSayisi === 12, `alan=${String(panelAlan?.deger)} ayar=${getSettings().gunSayisi}`)
+    check('Panel zincir dugmesi secilen gunu gosteriyor', /12 gunluk zincir/i.test(panelAlan?.zincir ?? ''), String(panelAlan?.zincir))
+    check('Panel plan dugmesi secilen gunu gosteriyor', /12 gunluk plan olustur/i.test(panelAlan?.plan ?? ''), String(panelAlan?.plan))
+
+    // Hazir secenek butonlari da (tek tiklamayla) kaydetmeli: 14
+    const panelHazir = (await win.webContents.executeJavaScript(
+      `(async () => {
+         const b = [...document.querySelectorAll('button')].find((x) => (x.getAttribute('aria-pressed') !== null) && (x.textContent || '').trim() === '14');
+         if (!b) return false;
+         b.click();
+         await new Promise((r) => setTimeout(r, 600));
+         return true;
+       })()`,
+    )) as boolean
+    check('Hazir gun secenegi (14) tiklanabiliyor', panelHazir === true, '')
+    check('Hazir secenek ayarlara yazildi (14)', getSettings().gunSayisi === 14, String(getSettings().gunSayisi))
+
+    // Test zinciri icin tekrar 12'ye don (panel hala acik).
+    const tekrar12 = (await win.webContents.executeJavaScript(
+      `(async () => {
+         const el = document.getElementById('gun-sayisi');
+         if (!el) return null;
+         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+         setter.call(el, '12');
+         el.dispatchEvent(new Event('input', { bubbles: true }));
+         await new Promise((r) => setTimeout(r, 900));
+         return el.value;
+       })()`,
+    )) as string | null
+    check('Gun sayisi tekrar 12 yapildi', tekrar12 === '12' && getSettings().gunSayisi === 12, `alan=${String(tekrar12)} ayar=${getSettings().gunSayisi}`)
+
+    // Zincir dugmesine gercekten bas (yazilan 12 gun ile): ana surecteki is 12 gun kurulmali.
+    const zincirBasildi = (await win.webContents.executeJavaScript(
+      `(() => { const b = [...document.querySelectorAll('button')].find((x) => /gunluk zincir/i.test(x.textContent || '')); if (!b) return false; b.click(); return true; })()`,
+    )) as boolean
+    await sleep(1600)
+    const panelJob = getState()
+    check('Panel zincir dugmesi isi baslatti', zincirBasildi === true && panelJob !== null, `durum: ${panelJob?.status}`)
+    check('Panelden baslayan is secilen gun sayisini kullaniyor (12)', /12 Gunluk/i.test(panelJob?.title ?? ''), String(panelJob?.title))
+    check('Panel zinciri 2 adimli kuruldu (kesif + isletme)', (panelJob?.stages.length ?? 0) >= 2, `${panelJob?.stages.length} asama`)
+    const panelSon = await waitForStatus(90_000)
+    check('Panel zinciri tamamlandi (sahte bot)', panelSon === 'done', `durum: ${panelSon}`)
+    check('Panel zinciri plan dosyasini uretti', fs.existsSync(planPath(panelBot)), planPath(panelBot))
+    forceRemove(panelBot)
+    setSettings({ videoForgePath: realBot })
+
     check('Renderer konsol hatasi yok', rendererErrors.length === 0, rendererErrors.slice(0, 3).join(' | '))
 
     win.destroy()

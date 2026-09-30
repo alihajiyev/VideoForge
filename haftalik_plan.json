@@ -1,119 +1,86 @@
 {
-  "chn": "2",
-  "kanal_ad": "Fakt Za 15",
-  "tarih": "2026-09-28 15:12",
-  "toplam": 10,
-  "gun_sayisi": 10,
+  "chn": "1",
+  "kanal_ad": "Kino Sekrety",
+  "tarih": "2026-09-30 18:16",
+  "toplam": 7,
+  "gun_sayisi": 7,
   "videolar": [
     {
       "gun": 1,
       "gun_adi": "Pazartesi",
-      "id": "TD0p64FqQMA",
-      "link": "https://www.youtube.com/watch?v=TD0p64FqQMA",
-      "baslik": "Tren Neden Rayları Tıraşlıyor? İşte Kıvılcımların Sebebi! 🚆✨",
-      "kaynak": "SCIENTIFIC CURIOSITY",
-      "skor": 9.5,
+      "id": "pZdMBzvVvzM",
+      "link": "https://www.youtube.com/watch?v=pZdMBzvVvzM",
+      "baslik": "Red Hulk’s Durability Makes NO Sense 😳 #shorts #marvel",
+      "kaynak": "HoloVisionX",
+      "skor": 9.8,
       "tip": "KAZANAN",
-      "sebep": "Dev makine ve ray taşlama kıvılcımları kanalın en yüksek ilgi çeken mekanik temasına tam uyuyor.|"
+      "sebep": "Red Hulk'ın dayanıklılığı ve Thor kıyaslaması kanalın en çok izlenen ana akım tarzı."
     },
     {
       "gun": 2,
       "gun_adi": "Sali",
-      "id": "__dEdhnCDo0",
-      "link": "https://www.youtube.com/watch?v=__dEdhnCDo0",
-      "baslik": "Hava Yastıklı Ceket: Düşmeleri Önleyen Akıllı Teknoloji! 🚀",
-      "kaynak": "SCIENTIFIC CURIOSITY",
-      "skor": 9.1,
+      "id": "qnxlRfWpahA",
+      "link": "https://www.youtube.com/watch?v=qnxlRfWpahA",
+      "baslik": "This Tiny Marvel Mistake Went Unnoticed 😱 #shorts #marvel",
+      "kaynak": "HoloVisionX",
+      "skor": 9.7,
       "tip": "KAZANAN",
-      "sebep": "Giyilebilir akıllı teknoloji ve hayat kurtaran hava yastıklı ceket mühendislik merakını tetikliyor.|"
+      "sebep": "Thanos ve Spider-Man mantık hatası tam kitleye hitap eden dev hit."
     },
     {
       "gun": 3,
       "gun_adi": "Carsamba",
-      "id": "mc23qyBODG0",
-      "link": "https://www.youtube.com/watch?v=mc23qyBODG0",
-      "baslik": "Biyolüminesans: Gece Parlayan Denizlerin Bilimsel Sırrı! 🌊✨ (Maldivler – Porto Riko)",
-      "kaynak": "SCIENTIFIC CURIOSITY",
-      "skor": 8.8,
+      "id": "UfYDXrmiT8M",
+      "link": "https://www.youtube.com/watch?v=UfYDXrmiT8M",
+      "baslik": "Spider-Man’s Endgame Scene Makes NO Sense 😱 #shorts #marvel",
+      "kaynak": "HoloVisionX",
+      "skor": 9.6,
       "tip": "KAZANAN",
-      "sebep": "Biyolüminesans doğa olayı görsel kontrastı ve bilimsel sırrıyla izleyicide büyük merak uyandırıyor.|"
+      "sebep": "Endgame Spider-Man sahnesi mantık hatası, kanalın en yüksek getiren formatı."
     },
     {
       "gun": 4,
       "gun_adi": "Persembe",
-      "id": "IDJ4w-z6Rj8",
-      "link": "https://www.youtube.com/watch?v=IDJ4w-z6Rj8",
-      "baslik": "Elma Salyangozu Yumurtaları Neden Eziliyor? 🐌🌾",
-      "kaynak": "SCIENTIFIC CURIOSITY",
-      "skor": 8.5,
+      "id": "NDBrgKDIE7k",
+      "link": "https://www.youtube.com/watch?v=NDBrgKDIE7k",
+      "baslik": "Did you know that in \"Avengers: Doomsday\"...",
+      "kaynak": "Minrook",
+      "skor": 8.9,
       "tip": "KAZANAN",
-      "sebep": "Tarım tehdidi elma salyangozu yumurtaları doğa uyarı temasıyla izleyicide şaşkınlık yaratıyor.|"
+      "sebep": "Avengers Doomsday Doctor Doom zırh detayı, güncel ve büyük A-list içerik."
     },
     {
       "gun": 5,
       "gun_adi": "Cuma",
-      "id": "ml_r7OSJUMA",
-      "link": "https://www.youtube.com/watch?v=ml_r7OSJUMA",
-      "baslik": "Why Are There Cups in These Trees? 😳",
-      "kaynak": "Bilef Medya ",
-      "skor": 7.2,
+      "id": "27cI6MUmqB8",
+      "link": "https://www.youtube.com/watch?v=27cI6MUmqB8",
+      "baslik": "Did you know that in \"The Incredible Hulk\"...",
+      "kaynak": "Minrook",
+      "skor": 8.6,
       "tip": "KAZANAN",
-      "sebep": "Ağaçlara asılan bardaklardaki yiyecek karışımı kışın kuşlar için ilginç bir gelenek sunuyor.|"
+      "sebep": "Red Hulk ve Hulk thunderclap detayı, güçlü güç dinamikleri içeriği."
     },
     {
       "gun": 6,
       "gun_adi": "Cumartesi",
-      "id": "_8Zp6mmTZ_k",
-      "link": "https://www.youtube.com/watch?v=_8Zp6mmTZ_k",
-      "baslik": "İçinden Çıkana Şaşıracaksınız! 😱 Dev Güve Kozası 🦋",
-      "kaynak": "SCIENTIFIC CURIOSITY",
-      "skor": 8.2,
+      "id": "BmEC-mtDzLU",
+      "link": "https://www.youtube.com/watch?v=BmEC-mtDzLU",
+      "baslik": "The Often Overlooked Genius of Peter Parker in the MCU.#shorts",
+      "kaynak": "Inkie",
+      "skor": 8.5,
       "tip": "KAZANAN",
-      "sebep": "Dev güve kozası ve metamorfoz doğanın sıra dışı biyolojik gerçeklerini gözler önüne seriyor.|"
+      "sebep": "Peter Parker'ın deha sahneleri, istikrarlı izlenen Spider-Man formatı."
     },
     {
       "gun": 7,
       "gun_adi": "Pazar",
-      "id": "cuOGFCvFN4g",
-      "link": "https://www.youtube.com/watch?v=cuOGFCvFN4g",
-      "baslik": "Karada Yürüyen Balık: Çamur Zıpzıpı! 🐟🦎",
-      "kaynak": "SCIENTIFIC CURIOSITY",
+      "id": "jNZrWBtQCyM",
+      "link": "https://www.youtube.com/watch?v=jNZrWBtQCyM",
+      "baslik": "You Missed These Details in Spider-Verse! #spiderman #mcu #marvel",
+      "kaynak": "InfoZing",
       "skor": 7.9,
       "tip": "KAZANAN",
-      "sebep": "Karada yürüyen çamur zıpzıpı balığı sıra dışı doğa özellikleri ile çok başarılı oluyor.|"
-    },
-    {
-      "gun": 8,
-      "gun_adi": "Pazartesi",
-      "id": "UltMMx3uJkY",
-      "link": "https://www.youtube.com/watch?v=UltMMx3uJkY",
-      "baslik": "Atların Tüyleri Neden Tıraş Edilir? Sağlık İçin Şaşırtıcı Sebep!",
-      "kaynak": "SCIENTIFIC CURIOSITY",
-      "skor": 7.6,
-      "tip": "KAZANAN",
-      "sebep": "Atların tüylerinin tıraş edilme sağlık sebebi şaşırtıcı bir bilgi sunuyor.|"
-    },
-    {
-      "gun": 9,
-      "gun_adi": "Sali",
-      "id": "J_Vq5ssshyA",
-      "link": "https://www.youtube.com/watch?v=J_Vq5ssshyA",
-      "baslik": "Kumaş Kalıplı Beton: Erozyon Kontrolünde Yenilikçi ve Sürdürülebilir Yöntem!",
-      "kaynak": "SCIENTIFIC CURIOSITY",
-      "skor": 6.8,
-      "tip": "KAZANAN",
-      "sebep": "Kumaş kalıplı beton erozyon kontrolü mühendislik yöntemiyle dikkat çekiyor.|"
-    },
-    {
-      "gun": 10,
-      "gun_adi": "Carsamba",
-      "id": "L1-Gl46j6y8",
-      "link": "https://www.youtube.com/watch?v=L1-Gl46j6y8",
-      "baslik": "These Places You Thought Were Fake on the Internet Are Real 😳",
-      "kaynak": "Bilef Medya ",
-      "skor": 5.5,
-      "tip": "COP",
-      "sebep": "⚠️ YEDEK (COP tip): Gerçek yerler listesi biraz dağınık ve standart internet derlemesi kalıyor.|"
+      "sebep": "Spider-Verse detayları, biraz niş olsa da tanınan kahraman barındırıyor."
     }
   ]
 }

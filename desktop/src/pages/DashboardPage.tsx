@@ -16,9 +16,10 @@ import {
 import { CHANNELS } from '@shared/channels'
 import { api, unwrap } from '@/lib/api'
 import { useResource } from '@/lib/hooks'
-import { useApp } from '@/app/AppContext'
+import { useApp, useGunSayisi } from '@/app/AppContext'
 import { cn, formatBytes, formatRelative } from '@/lib/utils'
 import { Badge, Button, EmptyState, Input, Panel, SectionTitle, Spinner, StatCard, Switch } from '@/components/ui/primitives'
+import { GunSayisiSecici } from '@/components/ui/GunSayisiSecici'
 import type { PageKey } from '@/components/layout/Sidebar'
 import type { Artifact, EnvCheck } from '@shared/types'
 
@@ -61,8 +62,15 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
     if (ok) onNavigate('run')
   }
 
+  // Gun sayisi Panel'de de secilir; ayarlarda saklandigi icin Kesif sayfasiyla aynidir.
+  const [gunSayisi, setGunSayisi] = useGunSayisi()
   const quick = async (kind: 'discover' | 'weekly'): Promise<void> => {
-    const ok = await startJob({ kind, channelId: channelId as '1' | '2' | '3', haftalik: kind === 'weekly' })
+    const ok = await startJob({
+      kind,
+      channelId: channelId as '1' | '2' | '3',
+      haftalik: kind === 'weekly',
+      gunSayisi,
+    })
     if (ok) onNavigate('run')
   }
 
@@ -137,14 +145,33 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
               </Button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-4">
-              <Switch checked={force} onChange={setForce} label="Konu puanini atla" hint="--force (1. kanal)" />
-              <div className="ml-auto flex gap-2">
-                <Button size="sm" icon={<Compass className="size-3.5" />} onClick={() => void quick('discover')} disabled={job?.status === 'running'}>
-                  Kesif calistir
+            <div className="flex flex-wrap items-start gap-4">
+              <div className="space-y-2.5">
+                <Switch checked={force} onChange={setForce} label="Konu puanini atla" hint="--force (1. kanal)" />
+                <GunSayisiSecici
+                  value={gunSayisi}
+                  onChange={setGunSayisi}
+                  disabled={job?.status === 'running'}
+                />
+              </div>
+              <div className="ml-auto flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  icon={<Compass className="size-3.5" />}
+                  onClick={() => void quick('discover')}
+                  disabled={job?.status === 'running'}
+                  title={`${gunSayisi} gunluk plan olustur`}
+                >
+                  {gunSayisi} gunluk plan olustur
                 </Button>
-                <Button size="sm" icon={<Layers className="size-3.5" />} onClick={() => void quick('weekly')} disabled={job?.status === 'running'}>
-                  Cok gunlu zincir
+                <Button
+                  size="sm"
+                  icon={<Layers className="size-3.5" />}
+                  onClick={() => void quick('weekly')}
+                  disabled={job?.status === 'running'}
+                  title={`${gunSayisi} gunluk zinciri baslat`}
+                >
+                  {gunSayisi} gunluk zincir
                 </Button>
               </div>
             </div>

@@ -245,6 +245,12 @@ GEMINI_MODELS = [
 
 SETTINGS = {"ELEVENLABS_ENABLED": True}
 
+# TTS sonrasi ses-metin dogrulamasi (Whisper small ile STT + karsilastirma).
+# Eski kodda retry dongusu olu koddu ama HER video icin bosuna Whisper modelini
+# yukleyip metne ceviriyordu (zaman + konteyner maliyeti). Sonuc hicbir zaman
+# metni degistirmedigi icin varsayilan KAPALI. Gerekirse True yapin.
+TTS_DOGRULAMA_AKTIF = False
+
 TEXT_FIXES = {
     "Ğ’ÑĞ½ÑŒÑƒ": "Ğ’ĞµĞ½Ñ", "Ğ²ÑĞ½ÑŒÑƒ": "Ğ²ĞµĞ½Ñ",
     "Ğ’ĞµĞ½Ğ²Ñƒ": "Ğ’ĞµĞ½Ñ", "Ğ²ĞµĞ½Ğ²Ñƒ": "Ğ²ĞµĞ½Ñ",

@@ -31,7 +31,7 @@ const STAGE_HINTS: { re: RegExp; stage: string }[] = [
   { re: /(kapak|seo|beat map|zaman cizelgesi|ses zamani)/i, stage: 'seo' },
   { re: /(kaynak kanal|kaynak tarama|kanal taraniyor|toplan)|kaynak/i, stage: 'collect' },
   { re: /(stil profil|siralama|puan|rank)/i, stage: 'rank' },
-  { re: /(html rapor|rapor|haftalik plan|plan json)/i, stage: 'report' },
+  { re: /(html rapor|rapor|haftalik plan|gunluk plan|plan json)/i, stage: 'report' },
 ]
 
 function detectStage(text: string): string | undefined {

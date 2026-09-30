@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { normalGunSayisi } from '@shared/constants'
 import { api, unwrap, type RunEvent } from '@/lib/api'
 import type {
   AppInfo,
@@ -61,6 +62,49 @@ export function useApp(): AppCtx {
   const ctx = useContext(Ctx)
   if (!ctx) throw new Error('useApp AppProvider disinda kullanildi')
   return ctx
+}
+
+/**
+ * Cok gunlu plan/zincir gun sayisi: ayarlarda saklanir, tum sayfalar ayni
+degeri gorur (Panel + Kesif). Yazarken yerel tutulur, `kaydet=true` ile diske
+yazilir (blur / hazir secenek tiklamasi / Enter).
+ */
+export function useGunSayisi(): [number, (gun: number, kaydet?: boolean) => void] {
+  const { settings, saveSettings } = useApp()
+  const kayitli = normalGunSayisi(settings?.gunSayisi)
+  const [gun, setGun] = useState<number>(kayitli)
+  const sonKayit = useRef<number>(kayitli)
+
+  // Baska bir yerden (Ayarlar/Panel/Kesif) degisirse alani guncel tut.
+  useEffect(() => {
+    setGun(kayitli)
+    sonKayit.current = kayitli
+  }, [kayitli])
+
+  // Yazarken her tus vurusunda diske yazmayalim: 400 ms sonra sessizce kaydet.
+  // Boylece kullanici sayiyi yazip hemen dugmeye basinca deger kaybolmaz.
+  useEffect(() => {
+    if (gun === sonKayit.current) return
+    const t = setTimeout(() => {
+      sonKayit.current = gun
+      void saveSettings({ gunSayisi: gun })
+    }, 400)
+    return () => clearTimeout(t)
+  }, [gun, saveSettings])
+
+  const guncelle = useCallback(
+    (deger: number, kaydet = false) => {
+      const temiz = normalGunSayisi(deger)
+      setGun(temiz)
+      if (kaydet) {
+        sonKayit.current = temiz
+        if (temiz !== kayitli) void saveSettings({ gunSayisi: temiz })
+      }
+    },
+    [kayitli, saveSettings],
+  )
+
+  return [gun, guncelle]
 }
 
 export function AppProvider({ children }: { children: ReactNode }): ReactNode {

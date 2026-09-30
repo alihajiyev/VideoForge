@@ -104,6 +104,8 @@ export interface AppSettings {
   updateRepo: string
   /** Private depo yayinlari icin opsiyonel GitHub token (bos = public) */
   githubToken: string
+  /** Cok gunlu plan/zincir kac gun olsun (7 sabit degil, 2-60) */
+  gunSayisi: number
 }
 
 export interface UpdateAsset {

@@ -26,6 +26,8 @@ modal_token*.txt
 
 # --- Ajan / yerel durum dosyalari ---
 .freebuff/
+# haftalik_islet.py calisma kilidi (pid tabanli, her kosuda olusur)
+.haftalik_islet.lock
 
 # --- IDE / editor ---
 .vscode/
