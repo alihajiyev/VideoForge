@@ -81,7 +81,7 @@ export async function setCharLimit(value: number): Promise<{ ok: boolean; error?
   if (!fs.existsSync(file)) return { ok: false, error: 'bot.db yok' }
 
   const py = await resolvePython()
-  if (!py.ok || !py.python) return { ok: false, error: 'Python bulunamadi' }
+  if (!py.ok || !py.python) return { ok: false, error: 'Python bulunamadı' }
 
   const script =
     'import sqlite3,sys;c=sqlite3.connect(sys.argv[1]);' +

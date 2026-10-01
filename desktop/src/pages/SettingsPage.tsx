@@ -41,6 +41,8 @@ export function SettingsPage(): ReactNode {
     update,
     updateChecking,
     download,
+    autoUpdate,
+    installAutoUpdate,
     botGit,
     botGitBusy,
     checkUpdate,
@@ -296,6 +298,50 @@ export function SettingsPage(): ReactNode {
               </Button>
             </div>
 
+            {autoUpdate && autoUpdate.durum !== 'kapali' ? (
+              <div className="rounded-[10px] border border-[color-mix(in_oklab,var(--brand)_32%,transparent)] bg-brand-soft px-3 py-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone="brand" dot={autoUpdate.durum === 'indiriliyor' || autoUpdate.durum === 'kontrol'}>
+                    Uygulama içi güncelleme
+                  </Badge>
+                  <span className="text-[12px] text-fg-muted">
+                    {autoUpdate.durum === 'kontrol'
+                      ? 'Kontrol ediliyor...'
+                      : autoUpdate.durum === 'guncel'
+                        ? `Uygulama güncel (v${autoUpdate.current})`
+                        : autoUpdate.durum === 'mevcut'
+                          ? `Yeni sürüm v${autoUpdate.version ?? ''} bulundu, indiriliyor...`
+                          : autoUpdate.durum === 'indiriliyor'
+                            ? `Yeni sürüm v${autoUpdate.version ?? ''} indiriliyor (%${autoUpdate.pct})`
+                            : autoUpdate.durum === 'hazir'
+                              ? `v${autoUpdate.version ?? ''} indirildi. Yeniden başlatınca kurulacak.`
+                              : `Güncelleme hatası: ${autoUpdate.error ?? 'bilinmiyor'}`}
+                  </span>
+                  {autoUpdate.durum === 'hazir' ? (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      className="ml-auto"
+                      icon={<RefreshCw className="size-3.5" />}
+                      onClick={() => void installAutoUpdate()}
+                    >
+                      Şimdi güncelle ve yeniden başlat
+                    </Button>
+                  ) : null}
+                </div>
+                {autoUpdate.durum === 'indiriliyor' ? (
+                  <div className="mt-2">
+                    <Progress value={autoUpdate.pct} />
+                  </div>
+                ) : null}
+                {autoUpdate.durum === 'hazir' ? (
+                  <p className="mt-2 text-[11px] text-fg-subtle">
+                    Kurulum setup sihirbazı olmadan sessizce yapılır; uygulama kendini yeniden başlatır.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
             {update ? (
               <div
                 className={cn(
@@ -314,7 +360,7 @@ export function SettingsPage(): ReactNode {
                         Yeni sürüm: {update.latest}
                       </Badge>
                       <span className="text-[11.5px] text-fg-muted">
-                        yuklu: {update.current} · depo: {update.repo}
+                        yüklü: {update.current} · depo: {update.repo}
                       </span>
                       <Button
                         size="sm"
@@ -323,7 +369,7 @@ export function SettingsPage(): ReactNode {
                         icon={<ExternalLink className="size-3.5" />}
                         onClick={() => void api.updateOpenRelease(update.repo)}
                       >
-                        Yayin sayfasi
+                        Yayın sayfası
                       </Button>
                     </div>
                     {update.notes ? (
@@ -331,6 +377,7 @@ export function SettingsPage(): ReactNode {
                         {update.notes}
                       </pre>
                     ) : null}
+                    {autoUpdate && autoUpdate.durum !== 'kapali' ? null : (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {/* Yeni surume ait kurulum dosyasi one cikarilir ve birincil
                           renkle isaretlenir. Surumde eski dosya da varsa 'eski surum'
@@ -359,6 +406,7 @@ export function SettingsPage(): ReactNode {
                         ))
                       })()}
                     </div>
+                    )}
                   </>
                 ) : update.ok && !update.error ? (
                   <p className="text-[12px] text-fg-muted">

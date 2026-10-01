@@ -228,6 +228,30 @@ export interface DownloadProgress {
   path?: string
 }
 
+/** Uygulama ici otomatik guncelleme durumu (electron-updater). */
+export type AutoUpdateDurum =
+  | 'kapali' // desteklenmiyor (paketli degil / yapilandirma yok)
+  | 'bosta' // henuz kontrol edilmedi
+  | 'kontrol' // kontrol ediliyor
+  | 'guncel' // yeni surum yok
+  | 'mevcut' // yeni surum var, indirme basladi/bekliyor
+  | 'indiriliyor'
+  | 'hazir' // indirildi, yeniden baslatinca kurulur
+  | 'hata'
+
+export interface AutoUpdateState {
+  durum: AutoUpdateDurum
+  /** Uygulamanin su anki surumu */
+  current: string
+  /** Bulunan yeni surum (varsa) */
+  version: string | null
+  /** Indirme yuzdesi (0-100) */
+  pct: number
+  received: number
+  total: number
+  error?: string
+}
+
 export interface LibraryVideo {
   id: number
   link: string

@@ -247,7 +247,7 @@ function runStep(step: JobStep, cwd: string): Promise<number> {
         },
       })
     } catch (err) {
-      push('err', `Komut baslatilamadi: ${String(err)}`)
+      push('err', `Komut başlatılamadı: ${String(err)}`)
       finish(1)
       return
     }
@@ -309,25 +309,25 @@ export function isRunning(): boolean {
 }
 
 export async function startJob(req: JobRequest): Promise<{ ok: boolean; error?: string }> {
-  if (isRunning()) return { ok: false, error: 'Zaten calisan bir is var. Once onu durdurun.' }
+  if (isRunning()) return { ok: false, error: 'Zaten çalışan bir iş var. Önce onu durdurun.' }
 
   const settings = getSettings()
   const b = botPath(settings.videoForgePath)
   if (!b || !fs.existsSync(b)) {
-    return { ok: false, error: `VideoForge klasoru bulunamadi: ${b}` }
+    return { ok: false, error: `VideoForge klasörü bulunamadı: ${b}` }
   }
   if (!fs.existsSync(path.join(b, 'shared.py'))) {
-    return { ok: false, error: `${b} bir VideoForge klasoru gibi gorunmuyor (shared.py yok).` }
+    return { ok: false, error: `${b} bir VideoForge klasörü gibi görünmüyor (shared.py yok).` }
   }
   if (req.kind === 'channel' || req.kind === 'clean') {
     if (!req.link || !/^https?:\/\//i.test(req.link)) {
-      return { ok: false, error: 'Gecerli bir video linki girin (http/https).' }
+      return { ok: false, error: 'Geçerli bir video linki girin (http/https).' }
     }
   }
 
   const py = await resolvePython()
   if (!py.ok || !py.python) {
-    return { ok: false, error: 'Python bulunamadi. Ayarlar > Python yolu bolumunden belirtin.' }
+    return { ok: false, error: 'Python bulunamadı. Ayarlar > Python yolu bölümünden belirtin.' }
   }
 
   const base = [py.python.command, ...py.python.args, '-X', 'utf8']
@@ -361,7 +361,7 @@ export async function startJob(req: JobRequest): Promise<{ ok: boolean; error?: 
 
   const jobStarted = Date.now()
   broadcast(IPC.runEvent, { type: 'start', state: snapshot(current), req })
-  log.info('is baslatildi:', built.title, '| komut:', built.steps.map((s) => s.cmd.join(' ')).join(' && '))
+  log.info('iş başlatıldı:', built.title, '| komut:', built.steps.map((s) => s.cmd.join(' ')).join(' && '))
 
   void (async () => {
     let lastCode = 0
@@ -371,11 +371,11 @@ export async function startJob(req: JobRequest): Promise<{ ok: boolean; error?: 
         lastCode = await runStep(step, b)
         if (cancelled) break
         if (lastCode !== 0) {
-          push('err', `Adim basarisiz oldu (cikis kodu ${lastCode}): ${step.label}`)
+          push('err', `Adım başarısız oldu (çıkış kodu ${lastCode}): ${step.label}`)
           break
         }
         if (step.continueWhen && !step.continueWhen()) {
-          push('warn', 'Sonraki adim icin gerekli dosya olusmadi (orn. haftalik_plan.json), zincir durduruldu.')
+          push('warn', 'Sonraki adım için gerekli dosya oluşmadı (örn. haftalik_plan.json), zincir durduruldu.')
           break
         }
       }
@@ -393,7 +393,7 @@ export async function startJob(req: JobRequest): Promise<{ ok: boolean; error?: 
     current.exitCode = lastCode
     current.endedAt = Date.now()
     current.pid = null
-    current.error = cancelled ? null : lastCode === 0 ? null : `Cikis kodu ${lastCode}`
+    current.error = cancelled ? null : lastCode === 0 ? null : `Çıkış kodu ${lastCode}`
     current.status = cancelled ? 'cancelled' : lastCode === 0 ? 'done' : 'error'
     if (current.artifacts.length) current.stageIndex = current.stages.length - 1
     const sureMs = current.endedAt && current.startedAt ? current.endedAt - current.startedAt : null
@@ -424,10 +424,10 @@ export async function startJob(req: JobRequest): Promise<{ ok: boolean; error?: 
     push(
       current.status === 'done' ? 'ok' : current.status === 'cancelled' ? 'warn' : 'err',
       current.status === 'done'
-        ? `Islem tamamlandi. ${current.artifacts.length} cikti dosyasi bulundu.`
+        ? `İşlem tamamlandı. ${current.artifacts.length} çıktı dosyası bulundu.`
         : current.status === 'cancelled'
-          ? 'Islem kullanici tarafindan durduruldu.'
-          : 'Islem hatalarla bitti. Loglari kontrol edin.',
+          ? 'İşlem kullanıcı tarafından durduruldu.'
+          : 'İşlem hatalarla bitti. Logları kontrol edin.',
     )
     emitState()
     broadcast(IPC.runEvent, { type: 'end', state: snapshot(current) })
@@ -477,7 +477,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 export async function cancelJob(): Promise<boolean> {
   if (!current || current.status !== 'running') return false
   cancelled = true
-  push('warn', 'Durdurma istegi gonderildi...')
+  push('warn', 'Durdurma isteği gönderildi...')
 
   // 1) Bot tarafi: haftalik zincir gun aralarinda bu dosyayi gorup temiz durur.
   writeCancelSentinel()
@@ -487,7 +487,7 @@ export async function cancelJob(): Promise<boolean> {
   if (current.pid) pids.add(current.pid)
 
   if (!pids.size) {
-    push('warn', 'Durdurulacak canli surec bulunamadi, islem kapatiliyor.')
+    push('warn', 'Durdurulacak canlı süreç bulunamadı, işlem kapatılıyor.')
     killCurrentStep?.()
     return true
   }
@@ -498,7 +498,7 @@ export async function cancelJob(): Promise<boolean> {
   await sleep(1500)
   const kalan = [...pids].filter(isAlive)
   for (const pid of kalan) taskkill(pid)
-  if (kalan.length) push('warn', `Kapanmayan ${kalan.length} surec icin zorla kapatma tekrarlandi...`)
+  if (kalan.length) push('warn', `Kapanmayan ${kalan.length} süreç için zorla kapatma tekrarlandı...`)
 
   if (child) {
     try {
@@ -513,7 +513,7 @@ export async function cancelJob(): Promise<boolean> {
   cancelWatchdog = setTimeout(() => {
     cancelWatchdog = null
     if (current && current.status === 'running') {
-      push('warn', 'Surec agaci 8 saniyede kapanmadi - arayuz serbest birakiliyor (arka planda kalinti olabilir).')
+      push('warn', 'Süreç ağacı 8 saniyede kapanmadı - arayüz serbest bırakılıyor (arka planda kalıntı olabilir).')
       killCurrentStep?.()
     }
   }, 8000)

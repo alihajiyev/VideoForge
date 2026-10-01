@@ -622,10 +622,14 @@ async function main(): Promise<void> {
          const has = (k) => typeof window.vfgui[k] === 'function';
          const st = await window.vfgui.botGitStatus();
          const prog = window.vfgui.onUpdateProgress(() => {});
+         const autoSub = window.vfgui.onAutoUpdateChanged(() => {});
+         const auto = await window.vfgui.autoUpdateState();
          return {
            updateCheck: has('updateCheck'), updateDownload: has('updateDownload'), updateLaunch: has('updateLaunch'),
            updateOpenRelease: has('updateOpenRelease'), botGitStatus: has('botGitStatus'), botGitPull: has('botGitPull'),
            progressSub: typeof prog === 'function',
+           autoState: has('autoUpdateState'), autoCheck: has('autoUpdateCheck'), autoInstall: has('autoUpdateInstall'),
+           autoSub: typeof autoSub === 'function', autoDurum: auto.ok ? auto.data.durum : null,
            statusOk: st.ok === true, isRepo: st.data ? st.data.isRepo : null, branch: st.data ? st.data.branch : null,
          };
        })()`,
@@ -636,6 +640,12 @@ async function main(): Promise<void> {
       JSON.stringify(updBridge),
     )
     check('botGitStatus IPC gercek depoda calisti', updBridge?.statusOk === true && updBridge?.isRepo === true, `dal: ${updBridge?.branch}`)
+    check(
+      'Otomatik guncelleme kopru metotlari tanimli',
+      Boolean(updBridge?.autoState && updBridge?.autoCheck && updBridge?.autoInstall && updBridge?.autoSub),
+      JSON.stringify({ durum: updBridge?.autoDurum }),
+    )
+    check('Otomatik guncelleme paketsiz derlemede kapali/bosta', updBridge?.autoDurum === 'kapali' || updBridge?.autoDurum === 'bosta', String(updBridge?.autoDurum))
 
     const guard = await win.webContents.executeJavaScript(`(async()=>{ const r = await window.vfgui.shellOpen('C:/Windows/System32/drivers/etc/hosts'); return r.ok; })()`)
     check('Yol korumasi (proje disi dosya) engellendi', guard === false, String(guard))
@@ -1083,7 +1093,7 @@ async function main(): Promise<void> {
     if (nestedStatus.ok && nestedStatus.isRepo) {
       check('Ust depo icindeki klasor ayirt edildi', nestedStatus.isBotRepo === false, `toplevel: ${nestedStatus.toplevel}`)
       const nestedPull = await pullBotCode()
-      check('Yanlis (ust) depo cekilmedi', nestedPull.ok === false && /kendi git deposu degil/.test(nestedPull.error ?? ''), nestedPull.error ?? '')
+      check('Yanlis (ust) depo cekilmedi', nestedPull.ok === false && /kendi git deposu değil/.test(nestedPull.error ?? ''), nestedPull.error ?? '')
     } else {
       check('Ust depo icindeki klasor ayirt edildi (ust depo yok, atlandi)', true, 'gecici klasorun ustunde depo yok')
       check('Yanlis (ust) depo cekilmedi (ust depo yok, atlandi)', true, '')
@@ -1123,14 +1133,14 @@ async function main(): Promise<void> {
     const dirtyStatus = await botGitStatus()
     check('Yerel degisiklik algilandi', dirtyStatus.dirty === true && dirtyStatus.changedFiles.length >= 1, dirtyStatus.changedFiles.join(' | '))
     const refused = await pullBotCode()
-    check('Kirli calisma agacinda guncelleme reddedildi', refused.ok === false && /Yerel degisiklik/.test(refused.error ?? ''), refused.error ?? '')
+    check('Kirli calisma agacinda guncelleme reddedildi', refused.ok === false && /Yerel değişiklik/.test(refused.error ?? ''), refused.error ?? '')
     check('Reddedilen guncelleme dosyayi bozmadi', fs.readFileSync(path.join(pair.clone, 'bot.py'), 'utf8').includes('yerel degisiklik'), '')
 
     // Indirme/baslatma korumalari
     const outside = path.join(os.tmpdir(), `vf-outside-${Date.now()}.exe`)
     fs.writeFileSync(outside, 'MZ sahte')
     const outsideLaunch = launchDownloaded(outside)
-    check('Indirme klasoru disindaki dosya baslatilmadi', outsideLaunch.ok === false && /Guvenlik/.test(outsideLaunch.error ?? ''), outsideLaunch.error ?? '')
+    check('Indirme klasoru disindaki dosya baslatilmadi', outsideLaunch.ok === false && /Güvenlik/.test(outsideLaunch.error ?? ''), outsideLaunch.error ?? '')
     const updDir = path.join(app.getPath('userData'), 'updates')
     fs.mkdirSync(updDir, { recursive: true })
     const txtInside = path.join(updDir, 'sahte-guncelleme.txt')
@@ -1138,7 +1148,7 @@ async function main(): Promise<void> {
     const txtLaunch = launchDownloaded(txtInside)
     check('Desteklenmeyen dosya turu baslatilmadi', txtLaunch.ok === false && /Desteklenmeyen/.test(txtLaunch.error ?? ''), txtLaunch.error ?? '')
     const missingLaunch = launchDownloaded(path.join(updDir, 'olmayan.exe'))
-    check('Olmayan guncelleme dosyasi icin net hata', missingLaunch.ok === false && /bulunamadi/i.test(missingLaunch.error ?? ''), missingLaunch.error ?? '')
+    check('Olmayan guncelleme dosyasi icin net hata', missingLaunch.ok === false && /bulunamadı/i.test(missingLaunch.error ?? ''), missingLaunch.error ?? '')
     fs.rmSync(outside, { force: true })
     fs.rmSync(txtInside, { force: true })
 
@@ -1176,7 +1186,8 @@ async function main(): Promise<void> {
     const buildYml = fs.readFileSync(path.join(ROOT, 'electron-builder.yml'), 'utf8')
     check('electron-builder win.icon ayarli', /win:[\s\S]*?icon:\s*build\/icon\.ico/.test(buildYml), '')
     check('NSIS kurulum/kaldirma ikonlari ayarli', /installerIcon:\s*build\/icon\.ico/.test(buildYml) && /uninstallerIcon:\s*build\/icon\.ico/.test(buildYml), '')
-    check('NSIS sihirbazi acik (oneClick kapali)', /oneClick:\s*false/.test(buildYml), '')
+    check('NSIS tek tik kurulum (oneClick acik)', /oneClick:\s*true/.test(buildYml), '')
+    check('Otomatik guncelleme publish yapilandirmasi (github)', /provider:\s*github/.test(buildYml), '')
     check('Masaustu kisayolu her zaman olusturulur', /createDesktopShortcut:\s*always/.test(buildYml), '')
     check('Kurulum sonrasi uygulama acilir', /runAfterFinish:\s*true/.test(buildYml), '')
     check('Kaldirmada kullanici verisi korunur', /deleteAppDataOnUninstall:\s*false/.test(buildYml), '')

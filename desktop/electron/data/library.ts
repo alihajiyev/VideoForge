@@ -54,7 +54,7 @@ except Exception as e:
 
 async function runPython(script: string, args: string[], timeoutMs = 25_000): Promise<{ ok: boolean; out: string; err?: string }> {
   const py = await resolvePython()
-  if (!py.ok || !py.python) return { ok: false, out: '', err: 'Python bulunamadi' }
+  if (!py.ok || !py.python) return { ok: false, out: '', err: 'Python bulunamadı' }
   const res = await execCapture(py.python.command, [...py.python.args, '-X', 'utf8', '-c', script, ...args], {
     timeoutMs,
     cwd: botPath(getSettings().videoForgePath),
@@ -73,7 +73,7 @@ export async function readLibrary(): Promise<LibraryData> {
     counts: { videos: 0, oneriler: 0 },
   }
   const db = dbPath(botPath(getSettings().videoForgePath))
-  if (!fs.existsSync(db)) return { ...empty, error: `bot.db bulunamadi: ${db}` }
+  if (!fs.existsSync(db)) return { ...empty, error: `bot.db bulunamadı: ${db}` }
   const res = await runPython(READ_SCRIPT, [db])
   if (!res.ok) return { ...empty, error: res.err || 'bot.db okunamadi' }
   const line = res.out.trim().split('\n').pop() || '{}'
@@ -82,7 +82,7 @@ export async function readLibrary(): Promise<LibraryData> {
     return { ...empty, ...parsed }
   } catch (err) {
     log.warn('library parse hatasi:', err)
-    return { ...empty, error: 'bot.db ciktisi cozulemedi' }
+    return { ...empty, error: 'bot.db çıktısı çözülemedi' }
   }
 }
 
@@ -95,6 +95,6 @@ export async function forgetLink(link: string): Promise<{ ok: boolean; deleted?:
   try {
     return JSON.parse(res.out.trim().split('\n').pop() || '{}') as { ok: boolean; deleted: number }
   } catch {
-    return { ok: false, error: 'Cikti cozulemedi' }
+    return { ok: false, error: 'Çıktı çözülemedi' }
   }
 }

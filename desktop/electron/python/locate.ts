@@ -29,7 +29,7 @@ async function probe(cmd: PythonCommand): Promise<boolean> {
   const out = (res.stdout || '').trim()
   const [major, minor] = out.split(/\s+/).map((n) => Number(n))
   if (res.code !== 0 || !Number.isFinite(major)) {
-    cmd.detail = (res.stderr || 'surum okunamadi').trim().split('\n').pop()?.slice(0, 120)
+    cmd.detail = (res.stderr || 'sürüm okunamadı').trim().split('\n').pop()?.slice(0, 120)
     return false
   }
   // Modal / google-genai icin Python 3.10+ gerekir.

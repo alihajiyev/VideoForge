@@ -72,7 +72,7 @@ export async function checkForUpdate(repoOverride?: string, tokenOverride?: stri
     checkedAt: Date.now(),
   }
   if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) {
-    return { ...base, error: 'Guncelleme deposu tanimli degil (owner/repo biciminde olmali).' }
+    return { ...base, error: 'Güncelleme deposu tanımlı değil (owner/repo biçiminde olmalı).' }
   }
 
   let res: Response
@@ -90,7 +90,7 @@ export async function checkForUpdate(repoOverride?: string, tokenOverride?: stri
     return {
       ...base,
       ok: true,
-      error: `Yayinlanmis surum bulunamadi (${repo}). Depo private ise Ayarlar'a 'repo' yetkili bir GitHub token girin; surum hic yayinlanmadiysa 'npm run release' ile yayinlayin.`,
+      error: `Yayınlanmış sürüm bulunamadı (${repo}). Depo private ise Ayarlar'a 'repo' yetkili bir GitHub token girin; sürüm hiç yayınlanmadıysa 'npm run release' ile yayınlayın.`,
     }
   }
   if (res.status === 401 || res.status === 403) {
@@ -111,7 +111,7 @@ export async function checkForUpdate(repoOverride?: string, tokenOverride?: stri
   }
 
   const latest = (release.tag_name || release.name || '').trim()
-  if (!latest) return { ...base, error: 'Surum etiketi bulunamadi.' }
+  if (!latest) return { ...base, error: 'Sürüm etiketi bulunamadı.' }
 
   const assets: UpdateAsset[] = (release.assets ?? [])
     .filter((a) => Boolean(a.name))
@@ -150,7 +150,7 @@ export async function downloadUpdate(assetName: string): Promise<{ ok: boolean; 
   const info = await checkForUpdate()
   if (!info.ok) return { ok: false, error: info.error }
   const asset = info.assets.find((a) => a.name === assetName)
-  if (!asset) return { ok: false, error: `Dosya surumde bulunamadi: ${assetName}` }
+  if (!asset) return { ok: false, error: `Dosya sürümde bulunamadı: ${assetName}` }
 
   const settings = getSettings()
   const token = (settings.githubToken || '').trim()
@@ -204,10 +204,10 @@ export async function downloadUpdate(assetName: string): Promise<{ ok: boolean; 
 /** Indirilen yeni surumu baslatir ve mevcut uygulamadan cikar. */
 export function launchDownloaded(filePath: string): { ok: boolean; error?: string } {
   try {
-    if (!fs.existsSync(filePath)) return { ok: false, error: 'Indirilen dosya bulunamadi.' }
+    if (!fs.existsSync(filePath)) return { ok: false, error: 'İndirilen dosya bulunamadı.' }
     const dir = path.resolve(downloadDir()).toLowerCase()
     if (!path.resolve(filePath).toLowerCase().startsWith(dir)) {
-      return { ok: false, error: 'Guvenlik: sadece indirilen guncelleme dosyasi baslatilabilir.' }
+      return { ok: false, error: 'Güvenlik: sadece indirilen güncelleme dosyası başlatılabilir.' }
     }
     if (!/\.(exe|msi)$/i.test(filePath)) return { ok: false, error: 'Desteklenmeyen dosya turu (.exe veya .msi olmali).' }
     spawnDetached(filePath)
@@ -264,7 +264,7 @@ export async function botGitStatus(opts: { fetch?: boolean } = {}): Promise<BotG
 
   const version = await git(['--version'], cwd)
   if (version.error || version.code !== 0) {
-    return { ...empty, error: 'git bulunamadi. Git kurup PATH degiskenine ekleyin.' }
+    return { ...empty, error: 'git bulunamadı. Git kurup PATH değişkenine ekleyin.' }
   }
 
   const inside = await git(['rev-parse', '--is-inside-work-tree'], cwd)
@@ -340,7 +340,7 @@ export async function pullBotCode(): Promise<{ ok: boolean; output: string; erro
     return {
       ok: false,
       output: '',
-      error: `Bot klasoru kendi git deposu degil, '${before.toplevel ?? 'baska bir depo'}' deposunun icinde. Guvenlik icin guncelleme yapilmadi - Ayarlar'dan bot klasorunu kendi deposuyla gosterin.`,
+      error: `Bot klasörü kendi git deposu değil, '${before.toplevel ?? 'başka bir depo'}' deposunun içinde. Güvenlik için güncelleme yapılmadı - Ayarlar'dan bot klasörünü kendi deposuyla gösterin.`,
       info: before,
     }
   }
@@ -348,14 +348,14 @@ export async function pullBotCode(): Promise<{ ok: boolean; output: string; erro
     return {
       ok: false,
       output: '',
-      error: `Yerel degisiklikler var (${before.changedFiles.length} dosya) - cakismayi onlemek icin guncelleme yapilmadi. Once commit edin veya degisiklikleri geri alin.`,
+      error: `Yerel değişiklikler var (${before.changedFiles.length} dosya) - çakışmayı önlemek için güncelleme yapılmadı. Önce commit edin veya değişiklikleri geri alın.`,
       info: before,
     }
   }
 
   const fetchRes = await git(['fetch', '--all', '--prune'], cwd)
   if (fetchRes.code !== 0) {
-    return { ok: false, output: fetchRes.err || fetchRes.out, error: `git fetch basarisiz: ${fetchRes.err.slice(0, 300)}`, info: before }
+    return { ok: false, output: fetchRes.err || fetchRes.out, error: `git fetch başarısız: ${fetchRes.err.slice(0, 300)}`, info: before }
   }
   const pullRes = await git(['pull', '--ff-only'], cwd)
   const after = await botGitStatus()
@@ -363,7 +363,7 @@ export async function pullBotCode(): Promise<{ ok: boolean; output: string; erro
     return {
       ok: false,
       output: `${fetchRes.out}\n${pullRes.err}`.trim(),
-      error: `git pull basarisiz: ${pullRes.err.slice(0, 300)}`,
+      error: `git pull başarısız: ${pullRes.err.slice(0, 300)}`,
       info: after,
     }
   }
@@ -375,7 +375,7 @@ export async function pullBotCode(): Promise<{ ok: boolean; output: string; erro
 export async function openReleasePage(info: { htmlUrl?: string | null; repo?: string | null }): Promise<{ ok: boolean; error?: string }> {
   const repo = (info.repo || getSettings().updateRepo || '').trim()
   const url = info.htmlUrl || (repo ? `https://github.com/${repo}/releases` : '')
-  if (!url) return { ok: false, error: 'Surum adresi bilinmiyor.' }
+  if (!url) return { ok: false, error: 'Sürüm adresi bilinmiyor.' }
   try {
     await shell.openExternal(url)
     return { ok: true }

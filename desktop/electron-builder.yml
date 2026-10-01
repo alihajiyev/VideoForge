@@ -33,26 +33,29 @@ win:
       arch: [x64]
 
 nsis:
-  # Kurulum sihirbazi: kullanici klasor secebilir, masaustu + baslat menusu
-  # kisayollari olusur, uygulama kurulum sonunda acilir.
-  oneClick: false
+  # Tek tikla kurulum (sihirbaz YOK). Boylece electron-updater guncellemeyi de
+  # sessizce kurup uygulamayi yeniden baslatir; kullanici setup sihirbazi gormez.
+  oneClick: true
   perMachine: false
-  allowElevation: true
-  allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
   shortcutName: VideoForge
   runAfterFinish: true
   artifactName: 'VideoForge-Setup-${version}.${ext}'
   uninstallDisplayName: 'VideoForge ${version}'
-  # Kaldirmada kullanici verisi (ayarlar, indirilen guncellemeler) SILINMEZ.
+  # one-click kurulumda kaldirmada kullanici verisi (ayarlar) SILINMEZ.
   deleteAppDataOnUninstall: false
-  # Sihirbazin her adiminda ayni logo
+  # Kurulum/kaldirma ikonlari
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico
-  installerHeaderIcon: build/icon.ico
 
 portable:
   artifactName: 'VideoForge-${version}-portable.${ext}'
 
-publish: null
+# Uygulama ici otomatik guncelleme (electron-updater) bu bilgiyle resources/
+# app-update.yml dosyasini uretir; latest.yml de derleme cikisina yazilir.
+# Yukleme yine scripts/release.mjs ile yapilir (--publish never).
+publish:
+  provider: github
+  owner: alihajiyev
+  repo: VideoForge

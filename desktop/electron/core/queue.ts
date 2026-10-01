@@ -135,7 +135,7 @@ export async function siradakiniBaslat(): Promise<boolean> {
   const res = await startJob(istekCevir(oge))
   if (!res.ok) {
     kuyruguBildir(oge.id, 'hata', Date.now())
-    log.warn('kuyruk isi baslatilamadi:', res.error)
+    log.warn('kuyruk işi başlatılamadı:', res.error)
     return false
   }
   calisanId = oge.id

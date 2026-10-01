@@ -4,6 +4,7 @@ import { api, unwrap, type RunEvent } from '@/lib/api'
 import type {
   AppInfo,
   AppSettings,
+  AutoUpdateState,
   BotGitInfo,
   DownloadProgress,
   EngineConfig,
@@ -41,6 +42,8 @@ interface AppCtx {
   update: UpdateInfo | null
   updateChecking: boolean
   download: DownloadProgress | null
+  autoUpdate: AutoUpdateState | null
+  installAutoUpdate: () => Promise<void>
   botGit: BotGitInfo | null
   botGitBusy: boolean
   checkUpdate: () => Promise<UpdateInfo | null>
@@ -133,6 +136,7 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
   const [updateChecking, setUpdateChecking] = useState(false)
   const [download, setDownload] = useState<DownloadProgress | null>(null)
+  const [autoUpdate, setAutoUpdate] = useState<AutoUpdateState | null>(null)
   const [botGit, setBotGit] = useState<BotGitInfo | null>(null)
   const [botGitBusy, setBotGitBusy] = useState(false)
   const [queue, setQueue] = useState<KuyrukOgesi[]>([])
@@ -245,6 +249,12 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
     try {
       const info = await unwrap(api.updateCheck())
       setUpdate(info)
+      // Uygulama ici otomatik guncellemeyi de tetikle (varsa indirme baslar).
+      try {
+        setAutoUpdate(await unwrap(api.autoUpdateCheck()))
+      } catch {
+        /* otomatik guncelleme desteklenmiyorsa yoksay */
+      }
       return info
     } catch (err) {
       const failed: UpdateInfo = {
@@ -284,6 +294,14 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
     },
     [pushToast],
   )
+
+  const installAutoUpdate = useCallback(async (): Promise<void> => {
+    try {
+      await unwrap(api.autoUpdateInstall())
+    } catch (err) {
+      pushToast({ tone: 'error', title: 'Güncelleme kurulamadı', message: String(err) })
+    }
+  }, [pushToast])
 
   const launchUpdate = useCallback(
     async (filePath: string): Promise<void> => {
@@ -355,6 +373,12 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
     void refreshQueue()
     void refreshSpend()
     void refreshQuota()
+    void api
+      .autoUpdateState()
+      .then((r) => {
+        if (r.ok) setAutoUpdate(r.data)
+      })
+      .catch(() => undefined)
     return () => {
       alive = false
     }
@@ -371,6 +395,12 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
   // Indirme ilerlemesi
   useEffect(() => {
     const off = api.onUpdateProgress((progress) => setDownload(progress))
+    return off
+  }, [])
+
+  // Uygulama ici otomatik guncelleme durumu (ana surec bildirir)
+  useEffect(() => {
+    const off = api.onAutoUpdateChanged((state) => setAutoUpdate(state))
     return off
   }, [])
 
@@ -496,6 +526,8 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
       update,
       updateChecking,
       download,
+      autoUpdate,
+      installAutoUpdate,
       botGit,
       botGitBusy,
       checkUpdate,
@@ -536,6 +568,8 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
       update,
       updateChecking,
       download,
+      autoUpdate,
+      installAutoUpdate,
       botGit,
       botGitBusy,
       checkUpdate,

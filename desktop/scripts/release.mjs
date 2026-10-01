@@ -108,27 +108,43 @@ if (skipBuild) {
 }
 
 const releaseDir = path.join(root, 'release')
-const tumExeler = fs.existsSync(releaseDir)
-  ? fs
-      .readdirSync(releaseDir)
-      .filter((f) => f.toLowerCase().endsWith('.exe'))
-      .map((f) => path.join(releaseDir, f))
-  : []
+const dirDosyalari = fs.existsSync(releaseDir) ? fs.readdirSync(releaseDir) : []
+const tumExeler = dirDosyalari
+  .filter((f) => f.toLowerCase().endsWith('.exe'))
+  .map((f) => path.join(releaseDir, f))
+
+// electron-updater icin gerekli metadata (latest.yml) ve delta indirmeyi
+// saglayan .blockmap dosyalari da surumle birlikte yuklenir. latest.yml bu
+// surumun .exe adini/hash'ini tasidigi icin otomatik guncelleme bunu okur.
+const ymlDosyalari = dirDosyalari
+  .filter((f) => /^latest.*\.yml$/i.test(f))
+  .map((f) => path.join(releaseDir, f))
+const blockmapler = dirDosyalari
+  .filter((f) => f.toLowerCase().endsWith('.blockmap') && f.includes(version))
+  .map((f) => path.join(releaseDir, f))
 
 // SADECE bu surume ait dosyalar yuklenir. release/ klasoru onceki derlemelerden
 // kalan .exe dosyalarini tutar; eski dosya yuklenirse kullanici Ayarlar'da
 // yanlislikla ESKI kurulumu indirir (guncelleme dongusu / bozuk kurulum).
-const assets = tumExeler.filter((a) => path.basename(a).includes(version))
+const surumExeleri = tumExeler.filter((a) => path.basename(a).includes(version))
+const assets = [...surumExeleri, ...ymlDosyalari, ...blockmapler]
 const eskiDosyalar = tumExeler.filter((a) => !path.basename(a).includes(version))
 
 console.log(`\n[2/4] Uretilen dosyalar (surum ${version}):`)
-for (const a of assets) console.log(`   - ${path.basename(a)} (${(fs.statSync(a).size / 1048576).toFixed(1)} MB)`)
+for (const a of assets) {
+  const ad = path.basename(a)
+  const mb = fs.statSync(a).size / 1048576
+  console.log(`   - ${ad}${/\.(exe)$/i.test(ad) ? ` (${mb.toFixed(1)} MB)` : ''}`)
+}
+if (!ymlDosyalari.length) {
+  console.log('\n   ! latest.yml bulunamadi - otomatik guncelleme calismaz (electron-builder publish yapilandirmasini kontrol edin).')
+}
 if (eskiDosyalar.length) {
   console.log(`\n   ! Bu surume ait olmayan ${eskiDosyalar.length} eski .exe YUKLENMEDI:`)
   for (const a of eskiDosyalar) console.log(`     - ${path.basename(a)}`)
   console.log('     (release/ klasorunden silebilirsiniz)')
 }
-if (!assets.length) {
+if (!surumExeleri.length) {
   console.error(`\nHATA: release/ klasorunde surum ${version} icin .exe bulunamadi - derleme basarisiz olmus olabilir.`)
   process.exit(1)
 }

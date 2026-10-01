@@ -55,7 +55,7 @@ async function kontrol(): Promise<void> {
     const anahtar = `${gun} ${s.scheduleTime}`
     if (yukle() === anahtar) return
     kaydet(anahtar)
-    log.info('zamanlanmis gorev basliyor:', s.scheduleKind, s.scheduleChannel)
+    log.info('zamanlanmış görev başlıyor:', s.scheduleKind, s.scheduleChannel)
     await startJob({
       kind: s.scheduleKind,
       channelId: s.scheduleChannel,
@@ -63,7 +63,7 @@ async function kontrol(): Promise<void> {
       haftalik: s.scheduleKind === 'discover',
     })
   } catch (err) {
-    log.warn('zamanlama kontrolu hatasi:', err)
+    log.warn('zamanlama kontrolü hatası:', err)
   }
 }
 

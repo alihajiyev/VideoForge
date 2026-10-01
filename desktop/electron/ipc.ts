@@ -13,6 +13,7 @@ import { envCheck } from './data/env'
 import { forgetLink, readLibrary } from './data/library'
 import { readBotLog, weeklyData } from './data/logs'
 import { botGitStatus, checkForUpdate, downloadUpdate, launchDownloaded, openReleasePage, pullBotCode } from './update/updater'
+import { otomatikDurum, otomatikKontrol, otomatikKur } from './update/auto'
 import { groupArtifacts, listArtifacts, previewHtml } from './data/reports'
 import { harcamaOzeti, kotaBilgisi } from './data/spend'
 import {
@@ -97,7 +98,7 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.runStart, async (_e, req: JobRequest) => {
     try {
       const res = await startJob(req)
-      return res.ok ? ok(getState()) : fail(res.error || 'Islem baslatilamadi')
+      return res.ok ? ok(getState()) : fail(res.error || 'İşlem başlatılamadı')
     } catch (err) {
       return fail(String(err))
     }
@@ -214,7 +215,7 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.updateLaunch, (_e, filePath: string) => {
     try {
       const res = launchDownloaded(String(filePath || ''))
-      return res.ok ? ok(true) : fail(res.error || 'Baslatilamadi')
+      return res.ok ? ok(true) : fail(res.error || 'Başlatılamadı')
     } catch (err) {
       return fail(String(err))
     }
@@ -224,6 +225,25 @@ export function registerIpc(): void {
     try {
       const res = await openReleasePage({ repo: String(repo || '') })
       return res.ok ? ok(true) : fail(res.error || 'Acilamadi')
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+
+  /* Uygulama ici otomatik guncelleme (electron-updater): setup indirmeden,
+     sessizce indirilir ve uygulama kapaninca/yeniden baslayinca kurulur. */
+  ipcMain.handle(IPC.updateAutoState, () => ok(otomatikDurum()))
+  ipcMain.handle(IPC.updateAutoCheck, async () => {
+    try {
+      return ok(await otomatikKontrol())
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+  ipcMain.handle(IPC.updateAutoInstall, () => {
+    try {
+      const res = otomatikKur()
+      return res.ok ? ok(true) : fail(res.error || 'Kurulamadı')
     } catch (err) {
       return fail(String(err))
     }
@@ -248,7 +268,7 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.shellOpen, async (_e, target: string) => {
     try {
       if (!isSafePath(target)) return fail('Bu yola erisim izni yok.')
-      if (!fs.existsSync(target)) return fail('Yol bulunamadi.')
+      if (!fs.existsSync(target)) return fail('Yol bulunamadı.')
       const res = await shell.openPath(target)
       return res ? fail(res) : ok(true)
     } catch (err) {

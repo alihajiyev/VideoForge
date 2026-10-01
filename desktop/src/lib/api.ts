@@ -3,6 +3,7 @@ import { CHANNELS } from '@shared/channels'
 import type {
   AppInfo,
   AppSettings,
+  AutoUpdateState,
   BotGitInfo,
   DownloadProgress,
   EngineConfig,
@@ -56,6 +57,15 @@ const mockUpdate: UpdateInfo = {
   assets: [{ name: 'VideoForge-1.1.0-portable.exe', size: 111_300_000, url: 'https://example.com/a.exe', isApiUrl: false }],
   repo: 'alihajiyev/VideoForge',
   checkedAt: Date.now(),
+}
+
+const mockAutoUpdate: AutoUpdateState = {
+  durum: 'hazir',
+  current: '1.1.1',
+  version: '1.2.1',
+  pct: 100,
+  received: 113_000_000,
+  total: 113_000_000,
 }
 
 const mockGit: BotGitInfo = {
@@ -293,6 +303,10 @@ const mockApi: VideoForgeApi = {
   updateDownload: async () => ({ ok: true, data: { ok: true, path: 'C:\\tmp\\VideoForge-1.1.1-portable.exe' } }),
   updateLaunch: async () => ({ ok: true, data: true }),
   updateOpenRelease: async () => ({ ok: true, data: true }),
+  autoUpdateState: async () => ({ ok: true, data: mockAutoUpdate }),
+  autoUpdateCheck: async () => ({ ok: true, data: mockAutoUpdate }),
+  autoUpdateInstall: async () => ({ ok: true, data: true }),
+  onAutoUpdateChanged: () => () => {},
   botGitStatus: async () => ({ ok: true, data: mockGit }),
   botGitPull: async () => ({ ok: true, data: { ok: true, output: 'Already up to date.', info: mockGit } }),
   onUpdateProgress: (cb: (p: DownloadProgress) => void) => {

@@ -4,6 +4,7 @@ import type {
   AppInfo,
   AppSettings,
   Artifact,
+  AutoUpdateState,
   BotGitInfo,
   DownloadProgress,
   EngineConfig,
@@ -72,6 +73,14 @@ const api = {
     ipcRenderer.invoke(IPC.updateDownload, assetName),
   updateLaunch: (filePath: string): Promise<Result<boolean>> => ipcRenderer.invoke(IPC.updateLaunch, filePath),
   updateOpenRelease: (repo: string): Promise<Result<boolean>> => ipcRenderer.invoke(IPC.updateOpenRelease, repo),
+  autoUpdateState: (): Promise<Result<AutoUpdateState>> => ipcRenderer.invoke(IPC.updateAutoState),
+  autoUpdateCheck: (): Promise<Result<AutoUpdateState>> => ipcRenderer.invoke(IPC.updateAutoCheck),
+  autoUpdateInstall: (): Promise<Result<boolean>> => ipcRenderer.invoke(IPC.updateAutoInstall),
+  onAutoUpdateChanged: (cb: (state: AutoUpdateState) => void): (() => void) => {
+    const handler = (_e: unknown, payload: AutoUpdateState): void => cb(payload)
+    ipcRenderer.on(IPC.updateAutoChanged, handler)
+    return () => ipcRenderer.removeListener(IPC.updateAutoChanged, handler)
+  },
   botGitStatus: (fetchRemote = false): Promise<Result<BotGitInfo>> =>
     ipcRenderer.invoke(IPC.botGitStatus, fetchRemote),
   botGitPull: (): Promise<Result<{ ok: boolean; output: string; error?: string; info: BotGitInfo }>> =>
