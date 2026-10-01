@@ -919,6 +919,20 @@ async function main(): Promise<void> {
       JSON.stringify(kota),
     )
 
+    const krediler = (await win.webContents.executeJavaScript(
+      `(async () => { const r = await window.vfgui.creditsGet(); return r.ok ? { n: r.data.length, ids: r.data.map((x) => x.id), durumlar: r.data.map((x) => x.durum) } : { hata: r.error }; })()`,
+    )) as { n?: number; ids?: string[]; durumlar?: string[]; hata?: string }
+    check(
+      'Servis kredileri IPC calisti (ElevenLabs + ZapCap + Gemini)',
+      (krediler?.n ?? 0) >= 3 && Boolean(krediler?.ids?.includes('elevenlabs') && krediler?.ids?.includes('zapcap') && krediler?.ids?.includes('gemini')),
+      JSON.stringify(krediler),
+    )
+    check(
+      'Kredi durumlari gecerli deger dondurdu',
+      Boolean(krediler?.durumlar?.every((d) => ['ok', 'anahtar-yok', 'hata', 'bilgi'].includes(d))),
+      JSON.stringify(krediler?.durumlar),
+    )
+
     // Komut paleti: Ctrl+K ile acilir, overlay tiklamasiyla kapanir.
     await win.webContents.executeJavaScript(
       `(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true })); return true })()`,

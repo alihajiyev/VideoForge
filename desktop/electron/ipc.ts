@@ -16,6 +16,7 @@ import { botGitStatus, checkForUpdate, downloadUpdate, launchDownloaded, openRel
 import { otomatikDurum, otomatikKontrol, otomatikKur } from './update/auto'
 import { groupArtifacts, listArtifacts, previewHtml } from './data/reports'
 import { harcamaOzeti, kotaBilgisi } from './data/spend'
+import { kredileriGetir } from './data/credits'
 import {
   kuyrukListesi,
   kuyrugaEkle,
@@ -339,6 +340,14 @@ export function registerIpc(): void {
       const cfg = await engineConfig()
       const limitler = cfg.models.map((_, i) => (i < 3 ? 500 : 20))
       return ok(kotaBilgisi(limitler, cfg.models))
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+
+  ipcMain.handle(IPC.creditsGet, async () => {
+    try {
+      return ok(await kredileriGetir())
     } catch (err) {
       return fail(String(err))
     }

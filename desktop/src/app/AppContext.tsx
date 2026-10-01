@@ -11,6 +11,7 @@ import type {
   EnvCheck,
   HarcamaOzeti,
   JobRequest,
+  KrediServisi,
   JobState,
   KotaBilgisi,
   KuyrukOgesi,
@@ -67,6 +68,8 @@ interface AppCtx {
   refreshSpend: () => Promise<void>
   quota: KotaBilgisi | null
   refreshQuota: () => Promise<void>
+  credits: KrediServisi[]
+  refreshCredits: () => Promise<void>
   pushToast: (toast: Omit<Toast, 'id'>) => void
   dismissToast: (id: string) => void
 }
@@ -142,6 +145,7 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
   const [queue, setQueue] = useState<KuyrukOgesi[]>([])
   const [spend, setSpend] = useState<HarcamaOzeti | null>(null)
   const [quota, setQuota] = useState<KotaBilgisi | null>(null)
+  const [credits, setCredits] = useState<KrediServisi[]>([])
   const linesRef = useRef<LogLine[]>([])
 
   const pushToast = useCallback((toast: Omit<Toast, 'id'>) => {
@@ -201,6 +205,14 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
   const refreshQuota = useCallback(async () => {
     try {
       setQuota(await unwrap(api.quotaGet()))
+    } catch {
+      /* yoksay */
+    }
+  }, [])
+
+  const refreshCredits = useCallback(async () => {
+    try {
+      setCredits(await unwrap(api.creditsGet()))
     } catch {
       /* yoksay */
     }
@@ -373,6 +385,7 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
     void refreshQueue()
     void refreshSpend()
     void refreshQuota()
+    void refreshCredits()
     void api
       .autoUpdateState()
       .then((r) => {
@@ -551,6 +564,8 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
       refreshSpend,
       quota,
       refreshQuota,
+      credits,
+      refreshCredits,
       pushToast,
       dismissToast,
     }),
@@ -593,6 +608,8 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
       refreshSpend,
       quota,
       refreshQuota,
+      credits,
+      refreshCredits,
       pushToast,
       dismissToast,
     ],

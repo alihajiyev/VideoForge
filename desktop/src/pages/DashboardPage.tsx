@@ -22,6 +22,7 @@ import { GunSayisiSecici } from '@/components/ui/GunSayisiSecici'
 import { KurulumRehberi } from '@/components/dashboard/KurulumRehberi'
 import { MaliyetKarti } from '@/components/dashboard/MaliyetKarti'
 import { KotaKarti } from '@/components/dashboard/KotaKarti'
+import { KrediKarti } from '@/components/dashboard/KrediKarti'
 import type { PageKey } from '@/components/layout/Sidebar'
 import type { Artifact, EnvCheck } from '@shared/types'
 
@@ -233,6 +234,9 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
         <MaliyetKarti />
         <KotaKarti />
       </div>
+
+      {/* Servis kredileri (ElevenLabs, ZapCap, Gemini...) */}
+      <KrediKarti />
 
       {/* Son çıktılar */}
       <Panel className="p-4">

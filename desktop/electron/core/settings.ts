@@ -29,6 +29,7 @@ function defaults(): AppSettings {
     scheduleTime: '09:00',
     scheduleKind: 'discover',
     scheduleChannel: '1',
+    shortsStudioPath: '',
   }
 }
 

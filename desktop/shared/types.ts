@@ -120,6 +120,8 @@ export interface AppSettings {
   scheduleKind: 'discover' | 'weekly'
   /** Zamanlanmis gorevin kanali */
   scheduleChannel: ChannelId
+  /** ShortsStudio klasoru (Zapcap anahtarini okumak icin; bos = bot klasorunun kardesi) */
+  shortsStudioPath: string
 }
 
 /** Kuyrukta bekleyen/tamamlanan isler (coklu link isleme icin). */
@@ -250,6 +252,25 @@ export interface AutoUpdateState {
   received: number
   total: number
   error?: string
+}
+
+/** Bir hizmetin kalan kredi/kota durumu (ElevenLabs, Zapcap, Gemini...). */
+export type KrediDurum = 'ok' | 'anahtar-yok' | 'hata' | 'bilgi'
+
+export interface KrediServisi {
+  id: string
+  ad: string
+  durum: KrediDurum
+  /** Kalan miktar (varsa) */
+  kalan: number | null
+  /** Toplam miktar (varsa) */
+  toplam: number | null
+  /** Olcu birimi: 'karakter' | 'USD' | 'istek' | '' */
+  birim: string
+  detay?: string
+  hata?: string
+  /** Kotanin sifirlanacagi an (epoch ms, varsa) */
+  sifirlanmaMs?: number | null
 }
 
 export interface LibraryVideo {

@@ -53,6 +53,7 @@ export function SettingsPage(): ReactNode {
   } = useApp()
   const [botPath, setBotPath] = useState('')
   const [pyPath, setPyPath] = useState('')
+  const [ssPath, setSsPath] = useState('')
   const [charLimit, setCharLimit] = useState('')
   const [token, setToken] = useState('')
   const [repo, setRepo] = useState('')
@@ -62,7 +63,8 @@ export function SettingsPage(): ReactNode {
   useEffect(() => {
     setBotPath(settings?.videoForgePath ?? '')
     setPyPath(settings?.pythonPath ?? '')
-  }, [settings?.videoForgePath, settings?.pythonPath])
+    setSsPath(settings?.shortsStudioPath ?? '')
+  }, [settings?.videoForgePath, settings?.pythonPath, settings?.shortsStudioPath])
 
   useEffect(() => {
     setCharLimit(engine ? String(engine.charLimit) : '')
@@ -81,7 +83,7 @@ export function SettingsPage(): ReactNode {
 
   const save = async (): Promise<void> => {
     setSaving(true)
-    await saveSettings({ videoForgePath: botPath.trim(), pythonPath: pyPath.trim() })
+    await saveSettings({ videoForgePath: botPath.trim(), pythonPath: pyPath.trim(), shortsStudioPath: ssPath.trim() })
     setSaving(false)
     pushToast({ tone: 'success', title: 'Ayarlar kaydedildi', message: 'Ortam kontrolü yenilendi.' })
   }
@@ -161,6 +163,12 @@ export function SettingsPage(): ReactNode {
                 Python yolu <span className="text-fg-subtle/70">(boş ise py -3 / python otomatik bulunur)</span>
               </span>
               <Input value={pyPath} onChange={(e) => setPyPath(e.target.value)} placeholder="C:\Python312\python.exe" />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[11.5px] text-fg-subtle">
+                ShortsStudio klasörü <span className="text-fg-subtle/70">(ZapCap kredisi için; boş = bot klasörünün yanındaki ShortsStudio)</span>
+              </span>
+              <Input value={ssPath} onChange={(e) => setSsPath(e.target.value)} placeholder="C:\Users\...\Desktop\ShortsStudio" />
             </label>
             <div className="flex gap-2">
               <Button variant="primary" icon={<Save className="size-3.5" />} loading={saving} onClick={() => void save()}>

@@ -13,6 +13,7 @@ import type {
   JobRequest,
   JobState,
   KotaBilgisi,
+  KrediServisi,
   KuyrukOgesi,
   LibraryData,
   LogLine,
@@ -103,6 +104,7 @@ const api = {
   },
   spendSummary: (): Promise<Result<HarcamaOzeti>> => ipcRenderer.invoke(IPC.spendSummary),
   quotaGet: (): Promise<Result<KotaBilgisi>> => ipcRenderer.invoke(IPC.quotaGet),
+  creditsGet: (): Promise<Result<KrediServisi[]>> => ipcRenderer.invoke(IPC.creditsGet),
 
   winMinimize: (): Promise<boolean> => ipcRenderer.invoke(IPC.winMinimize),
   winMaximize: (): Promise<boolean> => ipcRenderer.invoke(IPC.winMaximize),

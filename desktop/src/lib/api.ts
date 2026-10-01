@@ -12,6 +12,7 @@ import type {
   JobRequest,
   JobState,
   KotaBilgisi,
+  KrediServisi,
   KuyrukOgesi,
   LibraryData,
   ReportPreview,
@@ -44,6 +45,7 @@ const mockSettings: AppSettings = {
   scheduleTime: '09:00',
   scheduleKind: 'discover',
   scheduleChannel: '1',
+  shortsStudioPath: '',
 }
 
 const mockUpdate: UpdateInfo = {
@@ -242,6 +244,22 @@ const mockApi: VideoForgeApi = {
   queueClear: async () => ({ ok: true, data: [] as KuyrukOgesi[] }),
   queueStartNext: async () => ({ ok: true, data: false }),
   onQueueChanged: () => () => {},
+  creditsGet: async (): Promise<Result<KrediServisi[]>> => ({
+    ok: true,
+    data: [
+      { id: 'elevenlabs', ad: 'ElevenLabs (seslendirme)', durum: 'ok', kalan: 59957, toplam: 121012, birim: 'karakter', detay: 'plan: creator' },
+      { id: 'zapcap', ad: 'ZapCap (altyazı/efekt)', durum: 'ok', kalan: 0.0056, toplam: null, birim: 'USD' },
+      {
+        id: 'gemini',
+        ad: 'Google Gemini (AI)',
+        durum: 'bilgi',
+        kalan: null,
+        toplam: null,
+        birim: 'istek',
+        detay: '7 anahtar · günlük model kotaları için “Gemini kotası” kartına bakın',
+      },
+    ],
+  }),
   spendSummary: async (): Promise<Result<HarcamaOzeti>> => ({
     ok: true,
     data: {
