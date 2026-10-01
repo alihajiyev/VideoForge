@@ -8,8 +8,11 @@ import type {
   DownloadProgress,
   EngineConfig,
   EnvCheck,
+  HarcamaOzeti,
   JobRequest,
   JobState,
+  KotaBilgisi,
+  KuyrukOgesi,
   LibraryData,
   LogLine,
   ReportPreview,
@@ -78,6 +81,19 @@ const api = {
     ipcRenderer.on(IPC.updateProgress, handler)
     return () => ipcRenderer.removeListener(IPC.updateProgress, handler)
   },
+
+  queueList: (): Promise<Result<KuyrukOgesi[]>> => ipcRenderer.invoke(IPC.queueList),
+  queueAdd: (items: unknown[]): Promise<Result<KuyrukOgesi[]>> => ipcRenderer.invoke(IPC.queueAdd, items),
+  queueRemove: (id: string): Promise<Result<KuyrukOgesi[]>> => ipcRenderer.invoke(IPC.queueRemove, id),
+  queueClear: (): Promise<Result<KuyrukOgesi[]>> => ipcRenderer.invoke(IPC.queueClear),
+  queueStartNext: (): Promise<Result<boolean>> => ipcRenderer.invoke(IPC.queueStart),
+  onQueueChanged: (cb: (items: KuyrukOgesi[]) => void): (() => void) => {
+    const handler = (_e: unknown, payload: KuyrukOgesi[]): void => cb(payload)
+    ipcRenderer.on('queue:changed', handler)
+    return () => ipcRenderer.removeListener('queue:changed', handler)
+  },
+  spendSummary: (): Promise<Result<HarcamaOzeti>> => ipcRenderer.invoke(IPC.spendSummary),
+  quotaGet: (): Promise<Result<KotaBilgisi>> => ipcRenderer.invoke(IPC.quotaGet),
 
   winMinimize: (): Promise<boolean> => ipcRenderer.invoke(IPC.winMinimize),
   winMaximize: (): Promise<boolean> => ipcRenderer.invoke(IPC.winMaximize),

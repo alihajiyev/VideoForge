@@ -22,13 +22,38 @@ function defaults(): AppSettings {
     updateRepo: DEFAULT_UPDATE_REPO,
     githubToken: '',
     gunSayisi: GUN_SAYISI_VARSAYILAN,
+    notifyOnComplete: true,
+    queueAutoStart: true,
+    onboardingDone: false,
+    scheduleEnabled: false,
+    scheduleTime: '09:00',
+    scheduleKind: 'discover',
+    scheduleChannel: '1',
   }
+}
+
+/** Zamanlama saatini gecerli "HH:MM" bicimine ceker. */
+function duzeltSaat(value: string | undefined): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((value ?? '').trim())
+  if (!m) return '09:00'
+  const h = Math.min(23, Math.max(0, Number(m[1])))
+  const dk = Math.min(59, Math.max(0, Number(m[2])))
+  return `${String(h).padStart(2, '0')}:${String(dk).padStart(2, '0')}`
 }
 
 /** Kayitli gun sayisini gecerli araliga ceker (bozuk/eski deger 7'ye doner). */
 function duzeltGunSayisi(ayar: AppSettings): AppSettings {
   const sayi = normalGunSayisi(ayar.gunSayisi)
-  return sayi === ayar.gunSayisi ? ayar : { ...ayar, gunSayisi: sayi }
+  const saat = duzeltSaat(ayar.scheduleTime)
+  const kanal = (['1', '2', '3'] as const).includes(ayar.scheduleChannel) ? ayar.scheduleChannel : '1'
+  const tur = ayar.scheduleKind === 'weekly' ? 'weekly' : 'discover'
+  return {
+    ...ayar,
+    gunSayisi: sayi,
+    scheduleTime: saat,
+    scheduleChannel: kanal,
+    scheduleKind: tur,
+  }
 }
 
 function filePath(): string {

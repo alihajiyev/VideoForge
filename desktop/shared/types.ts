@@ -106,6 +106,76 @@ export interface AppSettings {
   githubToken: string
   /** Cok gunlu plan/zincir kac gun olsun (7 sabit degil, 2-60) */
   gunSayisi: number
+  /** Is bitince masaustu bildirimi gosterilsin mi */
+  notifyOnComplete: boolean
+  /** Kuyrukta is bitince siradaki otomatik baslatilsin mi */
+  queueAutoStart: boolean
+  /** Ilk kurulum rehberi kapatildi mi */
+  onboardingDone: boolean
+  /** Gunluk otomatik calisma (uygulama acikken) aktif mi */
+  scheduleEnabled: boolean
+  /** Zamanlanmis gorev saati (HH:MM, yerel saat) */
+  scheduleTime: string
+  /** Zamanlanmis gorev turu */
+  scheduleKind: 'discover' | 'weekly'
+  /** Zamanlanmis gorevin kanali */
+  scheduleChannel: ChannelId
+}
+
+/** Kuyrukta bekleyen/tamamlanan isler (coklu link isleme icin). */
+export type KuyrukDurumu = 'bekliyor' | 'calisiyor' | 'bitti' | 'hata' | 'iptal'
+
+export interface KuyrukOgesi {
+  id: string
+  kind: JobKind
+  channelId: ChannelId
+  link?: string
+  force?: boolean
+  haftalik?: boolean
+  gunSayisi?: number
+  status: KuyrukDurumu
+  title: string
+  addedAt: number
+  startedAt: number | null
+  endedAt: number | null
+}
+
+/** Tek bir isin harcama kaydi (Modal GPU maliyeti). */
+export interface HarcamaKaydi {
+  t: number
+  baslik: string
+  kind: JobKind
+  usd: number
+  saniye: number | null
+}
+
+export interface HarcamaOzeti {
+  ok: boolean
+  /** Bu takvim ayindaki toplam harcama (USD) */
+  ayUsd: number
+  bugunUsd: number
+  /** Ay icindeki is sayisi */
+  isSayisi: number
+  /** Gunluk toplamlar (son 30 gun, eski -> yeni) */
+  gunler: { gun: string; usd: number }[]
+  /** Son kayitlar (yeni -> eski) */
+  son: HarcamaKaydi[]
+  /** Ayni turdeki islerin ortalama maliyeti (is oncesi tahmin icin) */
+  ortalama: Record<string, number>
+}
+
+/** Gemini gunluk kota gostergesi (tahmini). */
+export interface KotaBilgisi {
+  ok: boolean
+  /** Yerel tarih (YYYY-MM-DD) */
+  tarih: string
+  /** Bugun sayilan AI cagrisi (tahmini) */
+  aiCagrisi: number
+  /** Kotanin sifirlanacagi an (epoch ms, Pasifik gece yarisi) */
+  sifirlanmaMs: number
+  /** Gunluk istek limitleri (kuvvetli -> zayif modeller) */
+  limitler: number[]
+  modeller: string[]
 }
 
 export interface UpdateAsset {
@@ -240,4 +310,10 @@ export interface RunHistoryItem {
   startedAt: number | null
   endedAt: number | null
   exitCode: number | null
+  /** Botun bildirdigi maliyet metni (orn. "$0.012") */
+  cost: string | null
+  /** Sure (ms) */
+  durationMs: number | null
+  /** Is sonunda bulunan cikti dosyalari */
+  artifacts: Artifact[]
 }

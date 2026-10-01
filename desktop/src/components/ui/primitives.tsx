@@ -6,8 +6,7 @@ type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline'
 type ButtonSize = 'sm' | 'md' | 'lg'
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary:
-    'bg-brand text-black hover:bg-brand-hi shadow-[0_10px_30px_-12px_rgb(245_158_11/0.65)] border border-transparent',
+  primary: 'bg-brand text-black hover:bg-brand-hi border border-transparent',
   secondary: 'bg-[var(--surface-2)] text-fg border border-border hover:border-border-strong hover:bg-[var(--surface-3)]',
   ghost: 'bg-transparent text-fg-muted hover:text-fg hover:bg-[var(--surface-2)] border border-transparent',
   danger: 'bg-danger-soft text-danger border border-[color-mix(in_oklab,var(--danger)_35%,transparent)] hover:bg-danger hover:text-white',
@@ -98,15 +97,15 @@ export function SectionTitle({
   icon?: ReactNode
 }): ReactNode {
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="flex items-start gap-2.5">
-        {icon ? <div className="mt-0.5 text-brand">{icon}</div> : null}
-        <div>
-          <h2 className="text-[14px] font-semibold tracking-[-0.01em] text-fg">{title}</h2>
-          {subtitle ? <p className="mt-0.5 text-[12px] text-fg-subtle">{subtitle}</p> : null}
+    <div className="flex items-center justify-between gap-4">
+      <div className="flex min-w-0 items-center gap-2.5">
+        {icon ? <span className="shrink-0 text-fg-subtle">{icon}</span> : null}
+        <div className="min-w-0">
+          <h2 className="truncate text-[13.5px] font-semibold tracking-[-0.01em] text-fg">{title}</h2>
+          {subtitle ? <p className="mt-0.5 truncate text-[11.5px] text-fg-subtle">{subtitle}</p> : null}
         </div>
       </div>
-      {right}
+      {right ? <div className="shrink-0">{right}</div> : null}
     </div>
   )
 }
@@ -234,19 +233,21 @@ export function StatCard({
   value,
   hint,
   icon,
-  tone = 'neutral',
 }: {
   label: string
   value: ReactNode
   hint?: string
   icon?: ReactNode
+  /** Geriye donuk uyumluluk icin kabul edilir; gorsel renk kullanilmaz. */
   tone?: Tone
 }): ReactNode {
+  // Renkli tonlu ikon kutulari kaldirildi: 4 kart x 4 renk gozu yoruyordu.
+  // Kartlar sade; vurgu yalnizca sayida.
   return (
     <Panel className="px-3.5 py-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11.5px] font-medium tracking-wide text-fg-subtle uppercase">{label}</span>
-        {icon ? <span className={cn('grid size-6 place-items-center rounded-[7px] border', TONES[tone])}>{icon}</span> : null}
+      <div className="flex items-center gap-2 text-fg-subtle">
+        {icon ? <span className="shrink-0">{icon}</span> : null}
+        <span className="truncate text-[11.5px] font-medium">{label}</span>
       </div>
       <div className="num mt-1.5 text-[19px] font-semibold tracking-[-0.02em] text-fg">{value}</div>
       {hint ? <div className="mt-0.5 text-[11.5px] text-fg-subtle">{hint}</div> : null}
@@ -266,10 +267,10 @@ export function EmptyState({
   action?: ReactNode
 }): ReactNode {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center">
-      {icon ? <div className="mb-1 text-fg-subtle opacity-70">{icon}</div> : null}
+    <div className="flex flex-col items-center justify-center gap-1.5 px-6 py-10 text-center">
+      {icon ? <div className="mb-1 text-fg-subtle opacity-60">{icon}</div> : null}
       <p className="text-[13px] font-medium text-fg-muted">{title}</p>
-      {message ? <p className="max-w-md text-[12px] text-fg-subtle">{message}</p> : null}
+      {message ? <p className="max-w-sm text-[11.5px] leading-relaxed text-fg-subtle">{message}</p> : null}
       {action ? <div className="mt-2">{action}</div> : null}
     </div>
   )

@@ -43,6 +43,18 @@ export function planPath(root: string): string {
   return path.join(root, 'haftalik_plan.json')
 }
 
+/**
+ * Arayuzun kalici veri dosyasi (ayar disi: harcama, gecmis, kuyruk, zamanlama).
+ * Testler/otomasyon VF_DATA_DIR ile kendi gecici klasorune yonlendirebilir;
+ * boylece gercek kullanici verisi kirletilmez.
+ */
+export function veriDosyasi(name: string): string {
+  const override = (process.env.VF_DATA_DIR || '').trim()
+  const dir = override || app.getPath('userData')
+  ensureDir(dir)
+  return path.join(dir, name)
+}
+
 export function ensureDir(p: string): void {
   try {
     fs.mkdirSync(p, { recursive: true })

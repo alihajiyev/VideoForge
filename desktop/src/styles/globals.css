@@ -39,9 +39,9 @@
   --danger: #fb7185;
   --danger-soft: rgb(251 113 133 / 0.14);
 
-  --ring: rgb(245 158 11 / 0.5);
-  --glow: radial-gradient(70% 55% at 12% -5%, rgb(245 158 11 / 0.13), transparent 65%),
-    radial-gradient(55% 45% at 92% 0%, rgb(34 211 238 / 0.09), transparent 70%);
+  --ring: rgb(245 158 11 / 0.75);
+  /* Cok hafif isik: eskiden belirgindi ve okumayi zorlastiriyordu. */
+  --glow: radial-gradient(60% 45% at 8% -8%, rgb(245 158 11 / 0.06), transparent 70%);
 }
 
 [data-theme='light'] {
@@ -77,9 +77,8 @@
   --danger: #dc2626;
   --danger-soft: rgb(220 38 38 / 0.1);
 
-  --ring: rgb(217 119 6 / 0.4);
-  --glow: radial-gradient(70% 55% at 12% -5%, rgb(217 119 6 / 0.07), transparent 65%),
-    radial-gradient(55% 45% at 92% 0%, rgb(8 145 178 / 0.05), transparent 70%);
+  --ring: rgb(217 119 6 / 0.65);
+  --glow: radial-gradient(60% 45% at 8% -8%, rgb(217 119 6 / 0.04), transparent 70%);
 }
 
 @theme inline {
@@ -119,9 +118,11 @@
   --radius-lg: 14px;
   --radius-xl: 18px;
 
-  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.35), 0 14px 34px -16px rgb(0 0 0 / 0.55);
-  --shadow-pop: 0 26px 64px -20px rgb(0 0 0 / 0.7), 0 2px 8px rgb(0 0 0 / 0.45);
-  --shadow-glow: 0 14px 44px -16px rgb(245 158 11 / 0.5);
+  /* Sade, modern golgeler: eski surumdeki agir golge + gradyan panel yuzeyi
+     gozu yoruyordu. Artik paneller duz ve neredeyse golgesiz. */
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.22);
+  --shadow-pop: 0 18px 44px -18px rgb(0 0 0 / 0.62), 0 1px 3px rgb(0 0 0 / 0.4);
+  --shadow-glow: 0 10px 28px -14px rgb(245 158 11 / 0.4);
 
   --animate-fade-in: fade-in 0.18s ease-out;
   --animate-rise: rise 0.24s cubic-bezier(0.22, 1, 0.36, 1);
@@ -158,7 +159,8 @@
     color: var(--fg);
     font-family: var(--font-sans);
     font-size: 13.5px;
-    line-height: 1.5;
+    line-height: 1.55;
+    letter-spacing: 0.002em;
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
     user-select: none;
@@ -172,7 +174,20 @@
 
   :focus-visible {
     outline: 2px solid var(--ring);
-    outline-offset: 1px;
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* Hareket azaltma tercihi: animasyon ve gecisleri pratik olarak kapat. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 
   ::selection {
@@ -207,7 +222,7 @@
   }
 
   .panel {
-    background: linear-gradient(180deg, color-mix(in oklab, var(--surface) 97%, white 3%), var(--surface));
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-panel);

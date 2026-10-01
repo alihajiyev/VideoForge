@@ -19,7 +19,7 @@ export function LogsPage(): ReactNode {
       <Panel className="p-4">
         <SectionTitle
           title="bot_log.txt"
-          subtitle={log.data?.ok ? `${log.data.totalLines} satir · ${formatBytes(log.data.size)} · ${formatRelative(log.data.mtime)}` : 'Log dosyasi okunuyor'}
+          subtitle={log.data?.ok ? `${log.data.totalLines} satır · ${formatBytes(log.data.size)} · ${formatRelative(log.data.mtime)}` : 'Günlük dosyası okunuyor'}
           icon={<ScrollText className="size-4" />}
           right={
             <div className="flex items-center gap-2">
@@ -30,7 +30,7 @@ export function LogsPage(): ReactNode {
                 <option value="5000">Son 5000</option>
               </Select>
               <Button size="sm" variant={live ? 'primary' : 'secondary'} onClick={() => setLive((v) => !v)}>
-                {live ? 'Canli' : 'Duraklatildi'}
+                {live ? 'Canlı' : 'Duraklatıldı'}
               </Button>
               <Button size="sm" variant="ghost" icon={<RefreshCw className={cn('size-3.5', log.loading && 'animate-spin')} />} onClick={() => log.reload()} />
               <Button size="sm" variant="ghost" icon={<ExternalLink className="size-3.5" />} onClick={() => void api.shellOpen(log.data?.path ?? '')} />
@@ -39,23 +39,23 @@ export function LogsPage(): ReactNode {
         />
         <div className="relative mt-3">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-subtle" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Log icinde ara (orn. PROHIBITED, hata, GPU)" className="h-8 pl-8 text-[12px]" />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Günlükte ara (örn. PROHIBITED, hata, GPU)" className="h-8 pl-8 text-[12px]" />
         </div>
       </Panel>
 
       <Panel className="overflow-hidden">
         {log.loading && !log.data ? (
           <div className="flex items-center justify-center gap-2 py-14 text-[12px] text-fg-subtle">
-            <Spinner /> Log okunuyor...
+            <Spinner /> Günlük okunuyor...
           </div>
         ) : !log.data?.ok ? (
           <EmptyState
             icon={<ScrollText className="size-6" />}
-            title="Log dosyasi bulunamadi"
-            message={log.data?.error ?? 'Bot ilk kez calistiginda bot_log.txt olusur.'}
+            title="Günlük dosyası bulunamadı"
+            message={log.data?.error ?? 'Bot ilk kez çalıştığında bot_log.txt oluşur.'}
           />
         ) : highlighted.length === 0 ? (
-          <EmptyState icon={<Search className="size-6" />} title="Eslesen satir yok" message="Arama terimini degistirin." />
+          <EmptyState icon={<Search className="size-6" />} title="Eşleşen satır yok" message="Arama terimini değiştirin." />
         ) : (
           <div className="max-h-[calc(100vh-320px)] overflow-y-auto px-3 py-2 font-mono text-[11.5px] leading-[1.7]" data-selectable>
             {highlighted.map((line, idx) => {
@@ -82,7 +82,7 @@ export function LogsPage(): ReactNode {
 
       <Panel className="flex flex-wrap items-center gap-3 px-4 py-3 text-[11.5px] text-fg-subtle">
         <Badge tone="neutral">dosya: {log.data?.path ?? '—'}</Badge>
-        <span>Oturum ayraci satirlari (=====) her bot baslangicinda eklenir.</span>
+        <span>Oturum ayracı satırları (=====) her bot başlangıcında eklenir.</span>
       </Panel>
     </div>
   )

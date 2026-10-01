@@ -10,6 +10,9 @@ import { broadcast } from '../core/events'
 import { log } from '../core/logger'
 import { botPath, desktopDir, ensureDir, planPath } from '../core/paths'
 import { getSettings } from '../core/settings'
+import { gecmisListesi, gecmiseEkle } from '../core/history'
+import { bildir } from '../core/notify'
+import { aiCagrisiEkle, harcamaEkle, maliyetSayisi } from '../data/spend'
 import { scanArtifactsSince } from '../data/reports'
 import { resolvePython } from './locate'
 import { parseLine } from './parser'
@@ -19,7 +22,18 @@ let current: JobState | null = null
 let child: ChildProcess | null = null
 let cancelled = false
 let lineCounter = 0
-const history: RunHistoryItem[] = []
+
+/** Gemini/AI cagrisi sayaci (kota gostergesi icin islenirken sayilir). */
+let aiSayaci = 0
+
+/** Is bitiminde tetiklenen kancalar (kuyruk bu kancayi kullanir). */
+type JobEndCallback = (state: JobState) => void
+const endListeners = new Set<JobEndCallback>()
+
+export function onJobEnd(cb: JobEndCallback): () => void {
+  endListeners.add(cb)
+  return () => endListeners.delete(cb)
+}
 
 /**
  * DURDURMA (Stop) ALTYAPISI
@@ -104,6 +118,7 @@ function emitState(): void {
 function push(level: LogLevel, text: string, stage?: string, artifactName?: string): void {
   if (!current) return
   const line = { i: ++lineCounter, t: Date.now(), level, text }
+  if (level === 'ai') aiSayaci += 1
   current.lines.push(line)
   if (current.lines.length > MAX_LOG_LINES) current.lines.splice(0, current.lines.length - MAX_LOG_LINES)
   broadcast(IPC.runEvent, { type: 'line', line })
@@ -156,8 +171,8 @@ export function buildSteps(req: JobRequest, base: string[]): { steps: JobStep[];
         args.push('--gun', String(req.gun), '--gun-toplam', String(req.gunToplam || req.gunSayisi || GUN_SAYISI_VARSAYILAN))
       }
       return {
-        steps: [{ label: `${ch?.name ?? 'Kanal'} isleniyor`, cmd: args }],
-        title: ch ? `${ch.name} - ${ch.niche}` : 'Kanal islemi',
+        steps: [{ label: `${ch?.name ?? 'Kanal'} işleniyor`, cmd: args }],
+        title: ch ? `${ch.name} - ${ch.niche}` : 'Kanal işlemi',
         subtitle: req.link ? req.link : script,
       }
     }
@@ -167,9 +182,9 @@ export function buildSteps(req: JobRequest, base: string[]): { steps: JobStep[];
       const args = [...base, 'kesif.py', '--chn', req.channelId || '1', '--evet']
       if (planMode) args.push('--haftalik', String(gun))
       return {
-        steps: [{ label: 'Kesif (video onerisi)', cmd: args }],
-        title: 'Kesif - Kanal Analizi',
-        subtitle: planMode ? `${gun} gunluk plan` : 'Tek seferlik oneri',
+        steps: [{ label: 'Keşif (video önerisi)', cmd: args }],
+        title: 'Keşif - Kanal Analizi',
+        subtitle: planMode ? `${gun} günlük plan` : 'Tek seferlik öneri',
       }
     }
     case 'weekly': {
@@ -180,15 +195,15 @@ export function buildSteps(req: JobRequest, base: string[]): { steps: JobStep[];
       const isletArgs = [...base, 'haftalik_islet.py', '--evet']
       return {
         steps: [
-          { label: `1. Kesif - ${gun} video bulunuyor`, cmd: kesifArgs },
+          { label: `1. Keşif - ${gun} video bulunuyor`, cmd: kesifArgs },
           {
             label: '2. Temizle + SEO + ses zinciri',
             cmd: isletArgs,
             continueWhen: () => fs.existsSync(planPath(b)),
           },
         ],
-        title: `${gun} Gunluk Zincir - ${ch?.name ?? chn}`,
-        subtitle: 'Kesif -> temizle -> SEO -> ses',
+        title: `${gun} Günlük Zincir - ${ch?.name ?? chn}`,
+        subtitle: 'Keşif -> temizle -> SEO -> ses',
       }
     }
     case 'clean': {
@@ -286,7 +301,7 @@ export function getState(): JobState | null {
 }
 
 export function getHistory(): RunHistoryItem[] {
-  return history.slice(0, 30)
+  return gecmisListesi()
 }
 
 export function isRunning(): boolean {
@@ -320,6 +335,7 @@ export async function startJob(req: JobRequest): Promise<{ ok: boolean; error?: 
   const stages = STAGES[req.kind]
 
   cancelled = false
+  aiSayaci = 0
   trackedPids.clear()
   killCurrentStep = null
   clearCancelSentinel()
@@ -380,7 +396,8 @@ export async function startJob(req: JobRequest): Promise<{ ok: boolean; error?: 
     current.error = cancelled ? null : lastCode === 0 ? null : `Cikis kodu ${lastCode}`
     current.status = cancelled ? 'cancelled' : lastCode === 0 ? 'done' : 'error'
     if (current.artifacts.length) current.stageIndex = current.stages.length - 1
-    history.unshift({
+    const sureMs = current.endedAt && current.startedAt ? current.endedAt - current.startedAt : null
+    gecmiseEkle({
       id: current.id,
       kind: current.kind,
       title: current.title,
@@ -388,8 +405,22 @@ export async function startJob(req: JobRequest): Promise<{ ok: boolean; error?: 
       startedAt: current.startedAt,
       endedAt: current.endedAt,
       exitCode: current.exitCode,
+      cost: current.stats.cost,
+      durationMs: sureMs,
+      artifacts: current.artifacts,
     })
-    if (history.length > 30) history.pop()
+    // Maliyet defteri + gunluk AI kotasi sayaci (Panel ve kota gostergesi kullanir).
+    const usd = maliyetSayisi(current.stats.cost)
+    if (usd > 0) {
+      harcamaEkle({
+        t: current.endedAt ?? Date.now(),
+        baslik: current.title,
+        kind: current.kind,
+        usd,
+        saniye: sureMs ? Math.round(sureMs / 1000) : null,
+      })
+    }
+    if (aiSayaci > 0) aiCagrisiEkle(aiSayaci)
     push(
       current.status === 'done' ? 'ok' : current.status === 'cancelled' ? 'warn' : 'err',
       current.status === 'done'
@@ -400,14 +431,34 @@ export async function startJob(req: JobRequest): Promise<{ ok: boolean; error?: 
     )
     emitState()
     broadcast(IPC.runEvent, { type: 'end', state: snapshot(current) })
+    const biten = current
     clearCancelSentinel()
 
-    const folders = new Set(current.artifacts.map((a) => path.dirname(a.path)))
+    const folders = new Set(biten.artifacts.map((a) => path.dirname(a.path)))
     for (const folder of folders) {
       try {
         ensureDir(folder)
       } catch {
         /* yoksay */
+      }
+    }
+
+    // Bildirim: is bitince masaustu bildirimi (Ayarlar'dan kapatilabilir).
+    const ozet =
+      biten.status === 'done'
+        ? `${biten.artifacts.length} çıktı dosyası hazır${biten.stats.cost ? ` · ${biten.stats.cost}` : ''}`
+        : biten.status === 'cancelled'
+          ? 'İşlem durduruldu'
+          : 'İşlem hatalarla bitti'
+    bildir(biten.title, ozet)
+
+    // Kuyruk kancalari: siradaki bekleyen is burada (en sonda) baslatilir; boylece
+    // yeni isin iptal dosyasi eski isin temizligiyle karismaz.
+    for (const cb of endListeners) {
+      try {
+        cb(biten)
+      } catch (err) {
+        log.warn('is bitis kancasi hatasi:', err)
       }
     }
   })()

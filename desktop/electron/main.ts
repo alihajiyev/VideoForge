@@ -6,6 +6,8 @@ import { getSettings } from './core/settings'
 import { log } from './core/logger'
 import { emitWindowState, registerWindowIpc, setMainWindow } from './core/window'
 import { cancelJob } from './python/runner'
+import { kuyrukBaslat } from './core/queue'
+import { zamanlayiciBaslat } from './core/scheduler'
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL
 
@@ -124,6 +126,8 @@ app.whenReady().then(() => {
   applyTheme(getSettings().mode)
   registerIpc()
   registerWindowIpc()
+  kuyrukBaslat()
+  zamanlayiciBaslat()
   createWindow()
   log.info('VideoForge GUI baslatildi', app.isPackaged ? '(uretim)' : '(dev)')
 

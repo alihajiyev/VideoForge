@@ -7,8 +7,11 @@ import type {
   DownloadProgress,
   EngineConfig,
   EnvCheck,
+  HarcamaOzeti,
   JobRequest,
   JobState,
+  KotaBilgisi,
+  KuyrukOgesi,
   LibraryData,
   ReportPreview,
   RunHistoryItem,
@@ -33,6 +36,13 @@ const mockSettings: AppSettings = {
   updateRepo: 'alihajiyev/VideoForge',
   githubToken: '',
   gunSayisi: 7,
+  notifyOnComplete: true,
+  queueAutoStart: true,
+  onboardingDone: false,
+  scheduleEnabled: false,
+  scheduleTime: '09:00',
+  scheduleKind: 'discover',
+  scheduleChannel: '1',
 }
 
 const mockUpdate: UpdateInfo = {
@@ -40,7 +50,7 @@ const mockUpdate: UpdateInfo = {
   current: '1.0.0',
   latest: '1.1.0',
   available: true,
-  notes: '- Yeni: link kuyrugu\n- Duzeltme: TTS uzunluk hesabi',
+  notes: '- Yeni: link kuyruğu\n- Düzeltme: TTS uzunluk hesabı',
   publishedAt: new Date().toISOString(),
   htmlUrl: 'https://github.com/alihajiyev/VideoForge/releases/tag/v1.1.0',
   assets: [{ name: 'VideoForge-1.1.0-portable.exe', size: 111_300_000, url: 'https://example.com/a.exe', isApiUrl: false }],
@@ -80,11 +90,11 @@ const mockInfo: AppInfo = {
 
 const mockEnv: EnvCheck[] = [
   { id: 'python', label: 'Python 3.10+', ok: true, detail: 'py -3 (Python 3.12)' },
-  { id: 'botfiles', label: 'VideoForge dosyalari', ok: true, detail: '7 dosya dogrulandi' },
+  { id: 'botfiles', label: 'VideoForge dosyaları', ok: true, detail: '7 dosya doğrulandı' },
   { id: 'modal', label: 'modal paketi', ok: true, detail: '1.5.5' },
   { id: 'genai', label: 'google-genai', ok: true, detail: '2.24.0' },
   { id: 'ffmpeg', label: 'ffmpeg', ok: true, detail: 'ffmpeg version 7.1' },
-  { id: 'cookies', label: 'cookies.txt', ok: false, detail: '12 gun once guncellendi', fix: 'cookies.txt yenileyin' },
+  { id: 'cookies', label: 'cookies.txt', ok: false, detail: '12 gün önce güncellendi', fix: 'cookies.txt yenileyin' },
 ]
 
 const mockEngine: EngineConfig = {
@@ -111,7 +121,7 @@ const mockLibrary: LibraryData = {
   ],
   oneriler: [
     { video_id: 'aBc123XyZ-_', skor: 8.4, tip: 'KAZANAN', kanal: '1', tarih: '2026-09-28 06:40:00' },
-    { video_id: 'zZ9Y8x7W6v5', skor: 3.1, tip: 'COP', kanal: '3', tarih: '2026-09-28 06:41:12' },
+    { video_id: 'zZ9Y8x7W6v5', skor: 3.1, tip: 'ÇÖP', kanal: '3', tarih: '2026-09-28 06:41:12' },
   ],
   settings: { char_limit: '500', working_model: 'gemini-flash-lite-latest' },
   counts: { videos: 2, oneriler: 2 },
@@ -147,10 +157,10 @@ let mockJob: JobState | null = null
 function mockStateSnapshot(req: JobRequest): Omit<JobState, 'lines'> & { lineCount: number } {
   const ch = CHANNELS.find((c) => c.id === (req.channelId || '1'))
   const stages = [
-    { key: 'download', label: 'Indirme', hint: 'yt-dlp + cookies.txt' },
+    { key: 'download', label: 'İndirme', hint: 'yt-dlp + cookies.txt' },
     { key: 'transcript', label: 'Transkript', hint: 'Altyazi / Modal GPU' },
-    { key: 'upload', label: 'Bulut Yukleme', hint: 'Video -> Modal' },
-    { key: 'ai', label: 'AI Pipeline', hint: 'Ses metni + baslik + etiket' },
+    { key: 'upload', label: 'Bulut Yükleme', hint: 'Video -> Modal' },
+    { key: 'ai', label: 'AI Pipeline', hint: 'Ses metni + başlık + etiket' },
     { key: 'tts', label: 'Seslendirme', hint: 'ElevenLabs' },
     { key: 'gpu', label: 'GPU Temizlik', hint: 'ProPainter' },
     { key: 'seo', label: 'Kapak + SEO', hint: 'Thumbnail + HTML' },
@@ -174,12 +184,12 @@ const mockApi: VideoForgeApi = {
     mockJob = {
       id: 'mock-1',
       kind: req.kind,
-      title: ch ? `${ch.name} - ${ch.niche}` : 'Kesif',
+      title: ch ? `${ch.name} - ${ch.niche}` : 'Keşif',
       subtitle: req.link || '',
       status: 'running',
       stages: [],
       stageIndex: 0,
-      stepLabel: 'Basliyor',
+      stepLabel: 'Başlıyor',
       startedAt: Date.now(),
       endedAt: null,
       exitCode: null,
@@ -193,14 +203,14 @@ const mockApi: VideoForgeApi = {
     let i = 0
     const script: [string, string][] = [
       ['step', 'Video yerel bilgisayarda indiriliyor (cookies.txt ile)...'],
-      ['ok', 'Indirme tamamlandi'],
-      ['step', 'Transkript cekiliyor...'],
-      ['ok', 'Transkript hazir (4820 karakter)'],
-      ['info', 'Sunucu aktif edildi. Yerelden gelen video isleniyor...'],
-      ['ai', 'Ses metni olusturuluyor...'],
+      ['ok', 'İndirme tamamlandı'],
+      ['step', 'Transkript çekiliyor...'],
+      ['ok', 'Transkript hazır (4820 karakter)'],
+      ['info', 'Sunucu aktif edildi. Yerelden gelen video işleniyor...'],
+      ['ai', 'Ses metni oluşturuluyor...'],
       ['ok', 'Hook OK'],
       ['ok', 'Uzunluk OK'],
-      ['tts', 'ElevenLabs ile seslendirme hazirlaniyor...'],
+      ['tts', 'ElevenLabs ile seslendirme hazırlanıyor...'],
       ['gpu', 'Toplam 640 Frame tespit edildi. (FPS: 30.00)'],
     ]
     const timer = setInterval(() => {
@@ -216,6 +226,45 @@ const mockApi: VideoForgeApi = {
   runCancel: async () => ({ ok: true, data: true }),
   runState: async () => ({ ok: true, data: mockJob }),
   runHistory: async () => ({ ok: true, data: [] as RunHistoryItem[] }),
+  queueList: async () => ({ ok: true, data: [] as KuyrukOgesi[] }),
+  queueAdd: async (items) => ({ ok: true, data: items as KuyrukOgesi[] }),
+  queueRemove: async () => ({ ok: true, data: [] as KuyrukOgesi[] }),
+  queueClear: async () => ({ ok: true, data: [] as KuyrukOgesi[] }),
+  queueStartNext: async () => ({ ok: true, data: false }),
+  onQueueChanged: () => () => {},
+  spendSummary: async (): Promise<Result<HarcamaOzeti>> => ({
+    ok: true,
+    data: {
+      ok: true,
+      ayUsd: 1.284,
+      bugunUsd: 0.096,
+      isSayisi: 6,
+      gunler: [
+        { gun: '2026-09-24', usd: 0.18 },
+        { gun: '2026-09-25', usd: 0.31 },
+        { gun: '2026-09-26', usd: 0.12 },
+        { gun: '2026-09-27', usd: 0.4 },
+        { gun: '2026-09-28', usd: 0.17 },
+        { gun: '2026-09-29', usd: 0.096 },
+      ],
+      son: [
+        { t: Date.now() - 3600_000, baslik: 'Kino Sekrety - Film sırları', kind: 'channel', usd: 0.096, saniye: 412 },
+        { t: Date.now() - 7_200_000, baslik: '7 Günlük Zincir - Kino Sekrety', kind: 'weekly', usd: 0.17, saniye: 733 },
+      ],
+      ortalama: { channel: 0.09, weekly: 0.17, discover: 0.02 },
+    },
+  }),
+  quotaGet: async (): Promise<Result<KotaBilgisi>> => ({
+    ok: true,
+    data: {
+      ok: true,
+      tarih: '2026-09-30',
+      aiCagrisi: 34,
+      sifirlanmaMs: Date.now() + 3 * 3600_000,
+      limitler: [500, 500, 500, 20, 20],
+      modeller: mockEngine.models,
+    },
+  }),
   libraryList: async () => ({ ok: true, data: mockLibrary }),
   libraryForget: async () => ({ ok: true, data: { ok: true, deleted: 1 } }),
   reportsList: async () => ({ ok: true, data: mockGroups }),
@@ -230,7 +279,7 @@ const mockApi: VideoForgeApi = {
         { label: 'Tags', text: 'arjantin, ada, gizem' },
         { label: 'Voiceover', text: 'Знаете ли вы, что...' },
       ],
-      text: 'Ornek rapor icerigi (tarayici onizleme modu).',
+      text: 'Örnek rapor içeriği (tarayıcı önizleme modu).',
     },
   }),
   weeklyPlan: async () => ({ ok: true, data: { ok: true, plan: [], results: [] } }),
@@ -238,10 +287,10 @@ const mockApi: VideoForgeApi = {
   engineSetCharLimit: async (v: number) => ({ ok: true, data: { ...mockEngine, charLimit: v } }),
   logsRead: async () => ({
     ok: true,
-    data: { ok: true, path: mockInfo.logPath, size: 1024, mtime: Date.now(), lines: ['[12:00:00] Oturum basladi', '[12:00:01] › Islem suruyor'], totalLines: 2 },
+    data: { ok: true, path: mockInfo.logPath, size: 1024, mtime: Date.now(), lines: ['[12:00:00] Oturum başladı', '[12:00:01] › İşlem sürüyor'], totalLines: 2 },
   }),
   updateCheck: async () => ({ ok: true, data: mockUpdate }),
-  updateDownload: async () => ({ ok: true, data: { ok: true, path: 'C:\\tmp\\VideoForge-1.1.0-portable.exe' } }),
+  updateDownload: async () => ({ ok: true, data: { ok: true, path: 'C:\\tmp\\VideoForge-1.1.1-portable.exe' } }),
   updateLaunch: async () => ({ ok: true, data: true }),
   updateOpenRelease: async () => ({ ok: true, data: true }),
   botGitStatus: async () => ({ ok: true, data: mockGit }),

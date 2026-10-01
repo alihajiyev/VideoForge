@@ -35,6 +35,13 @@ export const IPC = {
   shellOpen: 'shell:open',
   shellReveal: 'shell:reveal',
   shellOpenExternal: 'shell:openExternal',
+  queueList: 'queue:list',
+  queueAdd: 'queue:add',
+  queueRemove: 'queue:remove',
+  queueClear: 'queue:clear',
+  queueStart: 'queue:start',
+  spendSummary: 'spend:summary',
+  quotaGet: 'quota:get',
 } as const
 
 /** Botun ui.py ciktilarindaki seviye ikonlari. */

@@ -32,7 +32,7 @@ export function GunSayisiSecici({
   return (
     <div className={className}>
       <label className="text-[11.5px] font-medium text-fg-muted" htmlFor={id}>
-        Kac gunluk plan?
+        Kaç günlük plan?
       </label>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         <Input
@@ -43,7 +43,7 @@ export function GunSayisiSecici({
           max={GUN_SAYISI_MAX}
           value={value}
           disabled={disabled}
-          aria-label="Kac gunluk plan"
+          aria-label="Kaç günlük plan"
           onChange={(e) => onChange(Number(e.target.value), false)}
           onBlur={() => onChange(gun, true)}
           onKeyDown={(e) => {
@@ -70,9 +70,8 @@ export function GunSayisiSecici({
         ))}
       </div>
       {hint ? (
-        <p className="mt-1 text-[10.5px] text-fg-subtle">
-          {gun} video uretilir; skor sirasi = paylasim sirasi. {GUN_SAYISI_MIN}-{GUN_SAYISI_MAX} arasi
-          (hafta adlari 7. gunden sonra bastan dongu yapar).
+        <p className="mt-1 text-[10.5px] leading-relaxed text-fg-subtle">
+          {gun} video üretilir; skor sırası = paylaşım sırası ({GUN_SAYISI_MIN}-{GUN_SAYISI_MAX}).
         </p>
       ) : null}
     </div>

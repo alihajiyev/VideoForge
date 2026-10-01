@@ -32,7 +32,7 @@ export function LibraryPage(): ReactNode {
     try {
       const res = await unwrap(api.libraryForget(link))
       if (res.ok) {
-        pushToast({ tone: 'success', title: 'Kayit silindi', message: `${res.deleted ?? 0} kayit kaldirildi` })
+        pushToast({ tone: 'success', title: 'Kayıt silindi', message: `${res.deleted ?? 0} kayıt kaldırıldı` })
         library.reload()
       } else {
         pushToast({ tone: 'error', title: 'Silinemedi', message: res.error })
@@ -48,8 +48,8 @@ export function LibraryPage(): ReactNode {
     <div className="space-y-3.5">
       <Panel className="p-4">
         <SectionTitle
-          title="Kutuphane"
-          subtitle="bot.db icerigi: islenen linkler ve kesif puanlari"
+          title="Kütüphane"
+          subtitle="bot.db içeriği: işlenen linkler ve keşif puanları"
           icon={<Database className="size-4" />}
           right={
             <Button size="sm" variant="ghost" icon={<RefreshCw className={cn('size-3.5', library.loading && 'animate-spin')} />} onClick={() => library.reload()}>
@@ -59,7 +59,7 @@ export function LibraryPage(): ReactNode {
         />
         {library.data && !library.data.ok ? (
           <p className="mt-3 rounded-[10px] border border-[color-mix(in_oklab,var(--warn)_30%,transparent)] bg-warn-soft px-3 py-2 text-[12px] text-warn">
-            {library.data.error ?? 'bot.db okunamadi'}
+            {library.data.error ?? 'bot.db okunamadı'}
           </p>
         ) : null}
 
@@ -74,7 +74,7 @@ export function LibraryPage(): ReactNode {
                   tab === key ? 'bg-brand-soft text-brand' : 'text-fg-subtle hover:bg-[var(--surface-2)] hover:text-fg-muted',
                 )}
               >
-                {key === 'videos' ? `Islenen videolar (${library.data?.counts.videos ?? 0})` : `Kesif onerileri (${library.data?.counts.oneriler ?? 0})`}
+                {key === 'videos' ? `İşlenen videolar (${library.data?.counts.videos ?? 0})` : `Keşif önerileri (${library.data?.counts.oneriler ?? 0})`}
               </button>
             ))}
           </div>
@@ -92,14 +92,14 @@ export function LibraryPage(): ReactNode {
           </div>
         ) : tab === 'videos' ? (
           videos.length === 0 ? (
-            <EmptyState icon={<Database className="size-6" />} title="Kayitli video yok" message="Islenen her link bot.db'ye yazilir; ayni link tekrar islenmez." />
+            <EmptyState icon={<Database className="size-6" />} title="Kayıtlı video yok" message="İşlenen her link bot.db'ye yazılır; aynı link tekrar işlenmez." />
           ) : (
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-border text-[11px] tracking-wide text-fg-subtle uppercase">
                   <th className="px-4 py-2 font-medium">Video ID / link</th>
-                  <th className="px-4 py-2 font-medium">Kayit zamani</th>
-                  <th className="px-4 py-2 font-medium">Islem</th>
+                  <th className="px-4 py-2 font-medium">Kayıt zamanı</th>
+                  <th className="px-4 py-2 font-medium">İşlem</th>
                 </tr>
               </thead>
               <tbody>
@@ -115,7 +115,7 @@ export function LibraryPage(): ReactNode {
                         icon={<Trash2 className="size-3.5" />}
                         onClick={() => void forget(v.link)}
                       >
-                        Kaydi sil
+                        Kaydı sil
                       </Button>
                     </td>
                   </tr>
@@ -126,8 +126,8 @@ export function LibraryPage(): ReactNode {
         ) : oneriler.length === 0 ? (
           <EmptyState
             icon={<Sparkles className="size-6" />}
-            title="Kesif onerisi yok"
-            message="Kesif modulu calistiginda bulunan videolar burada puanlariyla listelenir."
+            title="Keşif önerisi yok"
+            message="Keşif modülü çalıştığında bulunan videolar burada puanlarıyla listelenir."
           />
         ) : (
           <table className="w-full text-left">
@@ -135,7 +135,7 @@ export function LibraryPage(): ReactNode {
               <tr className="border-b border-border text-[11px] tracking-wide text-fg-subtle uppercase">
                 <th className="px-4 py-2 font-medium">Video ID</th>
                 <th className="px-4 py-2 font-medium">Puan</th>
-                <th className="px-4 py-2 font-medium">Sinif</th>
+                <th className="px-4 py-2 font-medium">Sınıf</th>
                 <th className="px-4 py-2 font-medium">Kanal</th>
                 <th className="px-4 py-2 font-medium">Tarih</th>
               </tr>
@@ -155,8 +155,7 @@ export function LibraryPage(): ReactNode {
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-2">
-                    <Badge tone={o.skor >= 6 ? 'success' : o.skor >= 4 ? 'warn' : 'danger'}>{o.tip || (o.skor >= 6 ? 'KAZANAN' : o.skor >= 4 ? 'GRI' : 'COP')}</Badge>
+                  <td className="px-4 py-2">                      <Badge tone={o.skor >= 6 ? 'success' : o.skor >= 4 ? 'warn' : 'danger'}>{o.tip || (o.skor >= 6 ? 'KAZANAN' : o.skor >= 4 ? 'ORTA' : 'ÇÖP')}</Badge>
                   </td>
                   <td className="px-4 py-2 text-[11.5px] text-fg-muted">kanal {o.kanal}</td>
                   <td className="num px-4 py-2 text-[11.5px] text-fg-muted">{formatDateTime(o.tarih)}</td>

@@ -14,6 +14,15 @@ import { forgetLink, readLibrary } from './data/library'
 import { readBotLog, weeklyData } from './data/logs'
 import { botGitStatus, checkForUpdate, downloadUpdate, launchDownloaded, openReleasePage, pullBotCode } from './update/updater'
 import { groupArtifacts, listArtifacts, previewHtml } from './data/reports'
+import { harcamaOzeti, kotaBilgisi } from './data/spend'
+import {
+  kuyrukListesi,
+  kuyrugaEkle,
+  kuyruktanCikar,
+  kuyruguTemizle,
+  siradakiniBaslat,
+  type KuyrukGirdi,
+} from './core/queue'
 
 function ok<T>(data: T): { ok: true; data: T } {
   return { ok: true, data }
@@ -252,6 +261,64 @@ export function registerIpc(): void {
       if (!isSafePath(target)) return fail('Bu yola erisim izni yok.')
       shell.showItemInFolder(target)
       return ok(true)
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+
+  ipcMain.handle(IPC.queueList, () => {
+    try {
+      return ok(kuyrukListesi())
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+
+  ipcMain.handle(IPC.queueAdd, (_e, items: KuyrukGirdi[]) => {
+    try {
+      return ok(kuyrugaEkle(Array.isArray(items) ? items : []))
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+
+  ipcMain.handle(IPC.queueRemove, (_e, id: string) => {
+    try {
+      return ok(kuyruktanCikar(String(id || '')))
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+
+  ipcMain.handle(IPC.queueClear, () => {
+    try {
+      return ok(kuyruguTemizle())
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+
+  ipcMain.handle(IPC.queueStart, async () => {
+    try {
+      return ok(await siradakiniBaslat())
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+
+  ipcMain.handle(IPC.spendSummary, () => {
+    try {
+      return ok(harcamaOzeti())
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+
+  ipcMain.handle(IPC.quotaGet, async () => {
+    try {
+      const cfg = await engineConfig()
+      const limitler = cfg.models.map((_, i) => (i < 3 ? 500 : 20))
+      return ok(kotaBilgisi(limitler, cfg.models))
     } catch (err) {
       return fail(String(err))
     }

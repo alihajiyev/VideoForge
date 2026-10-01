@@ -10,18 +10,19 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/app/AppContext'
-import { Badge } from '@/components/ui/primitives'
 
 export type PageKey = 'dashboard' | 'run' | 'library' | 'reports' | 'discover' | 'logs' | 'settings'
 
-const NAV: { key: PageKey; label: string; icon: ReactNode; hint: string }[] = [
-  { key: 'dashboard', label: 'Panel', icon: <LayoutDashboard className="size-4" />, hint: 'Genel durum' },
-  { key: 'run', label: 'Calistir', icon: <Play className="size-4" />, hint: 'Canli islem' },
-  { key: 'library', label: 'Kutuphane', icon: <Library className="size-4" />, hint: 'Islenen videolar' },
-  { key: 'reports', label: 'Cikti & Rapor', icon: <FileText className="size-4" />, hint: 'SEO + videolar' },
-  { key: 'discover', label: 'Kesif', icon: <Compass className="size-4" />, hint: 'Video onerisi' },
-  { key: 'logs', label: 'Loglar', icon: <ScrollText className="size-4" />, hint: 'bot_log.txt' },
-  { key: 'settings', label: 'Ayarlar', icon: <Settings className="size-4" />, hint: 'Motor + tema' },
+/** Yan menu: tek satir, sade. (Eski surumde her ogede ikinci bir aciklama satiri
+ *  vardi; menu kalabalik ve yorucu gorunuyordu.) */
+const NAV: { key: PageKey; label: string; icon: ReactNode }[] = [
+  { key: 'dashboard', label: 'Panel', icon: <LayoutDashboard className="size-4" /> },
+  { key: 'run', label: 'Çalıştır', icon: <Play className="size-4" /> },
+  { key: 'discover', label: 'Keşif', icon: <Compass className="size-4" /> },
+  { key: 'library', label: 'Kütüphane', icon: <Library className="size-4" /> },
+  { key: 'reports', label: 'Çıktılar', icon: <FileText className="size-4" /> },
+  { key: 'logs', label: 'Günlük', icon: <ScrollText className="size-4" /> },
+  { key: 'settings', label: 'Ayarlar', icon: <Settings className="size-4" /> },
 ]
 
 export function Sidebar({ page, onNavigate }: { page: PageKey; onNavigate: (page: PageKey) => void }): ReactNode {
@@ -29,7 +30,7 @@ export function Sidebar({ page, onNavigate }: { page: PageKey; onNavigate: (page
   const problems = env.filter((e) => !e.ok).length
 
   return (
-    <nav className="flex w-[212px] shrink-0 flex-col border-r border-border bg-[var(--canvas-2)] px-2.5 py-3">
+    <nav className="flex w-[188px] shrink-0 flex-col border-r border-border bg-[var(--canvas-2)] px-2 py-2.5">
       <div className="flex flex-col gap-0.5">
         {NAV.map((item) => {
           const active = page === item.key
@@ -37,42 +38,33 @@ export function Sidebar({ page, onNavigate }: { page: PageKey; onNavigate: (page
             <button
               key={item.key}
               onClick={() => onNavigate(item.key)}
+              title={item.label}
               className={cn(
-                'group relative flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left transition-colors',
+                'flex items-center gap-2.5 rounded-[9px] px-2.5 py-[7px] text-left transition-colors',
                 active
-                  ? 'bg-[var(--surface-2)] text-fg shadow-[inset_0_0_0_1px_var(--border)]'
+                  ? 'bg-[var(--surface-2)] text-fg'
                   : 'text-fg-muted hover:bg-[var(--surface-2)] hover:text-fg',
               )}
             >
-              {active ? <span className="absolute top-1/2 left-0 h-5 w-[3px] -translate-y-1/2 rounded-full bg-brand" /> : null}
-              <span className={cn('transition-colors', active ? 'text-brand' : 'text-fg-subtle group-hover:text-fg-muted')}>
+              <span className={cn('shrink-0 transition-colors', active ? 'text-brand' : 'text-fg-subtle')}>
                 {item.icon}
               </span>
-              <span className="flex-1">
-                <span className="block text-[12.5px] font-medium">{item.label}</span>
-                <span className="block text-[10.5px] text-fg-subtle">{item.hint}</span>
-              </span>
+              <span className="flex-1 truncate text-[12.5px] font-medium">{item.label}</span>
               {item.key === 'run' && job?.status === 'running' ? (
-                <span className="size-1.5 animate-pulse rounded-full bg-brand" />
+                <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-brand" />
               ) : null}
-              {item.key === 'settings' && problems > 0 ? <Badge tone="warn">{problems}</Badge> : null}
+              {item.key === 'settings' && problems > 0 ? (
+                <span className="num shrink-0 rounded-full bg-warn-soft px-1.5 text-[10.5px] font-semibold text-warn">
+                  {problems}
+                </span>
+              ) : null}
             </button>
           )
         })}
       </div>
 
-      <div className="mt-auto flex flex-col gap-2 px-1">
-        <div className="hairline" />
-        <div className="space-y-1 text-[10.5px] text-fg-subtle">
-          <div className="flex items-center justify-between">
-            <span>surum</span>
-            <span className="num text-fg-muted">{info?.version ?? '—'}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span>electron</span>
-            <span className="num text-fg-muted">{info?.electron ?? '—'}</span>
-          </div>
-        </div>
+      <div className="mt-auto px-2 pt-3 text-[10.5px] text-fg-subtle">
+        VideoForge {info?.version ?? '—'}
       </div>
     </nav>
   )

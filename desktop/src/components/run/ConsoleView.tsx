@@ -30,8 +30,8 @@ const LEVEL_GLYPH: Record<LogLevel, string> = {
 }
 
 const FILTERS: { key: 'all' | 'important' | 'errors'; label: string }[] = [
-  { key: 'all', label: 'Tumu' },
-  { key: 'important', label: 'Onemli' },
+  { key: 'all', label: 'Tümü' },
+  { key: 'important', label: 'Önemli' },
   { key: 'errors', label: 'Sadece hata' },
 ]
 
@@ -87,11 +87,11 @@ export function ConsoleView({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Loglarda ara..."
+            placeholder="Kayıtlarda ara..."
             className="h-8 pl-8 text-[12px]"
           />
         </div>
-        <IconButton onClick={() => copy(text)} title="Loglari kopyala">
+        <IconButton onClick={() => copy(text)} title="Kayıtları kopyala">
           <Copy className={cn('size-3.5', copied && 'text-success')} />
         </IconButton>
         {onClear ? (
@@ -108,7 +108,7 @@ export function ConsoleView({
 
       <div ref={scrollRef} className={cn('overflow-y-auto bg-[var(--canvas)]/40 px-2.5 py-2 font-mono text-[11.5px] leading-[1.65]', height)} data-selectable>
         {visible.length === 0 ? (
-          <p className="px-1 py-6 text-center text-[12px] text-fg-subtle">Gosterilecek log yok.</p>
+          <p className="px-1 py-6 text-center text-[12px] text-fg-subtle">Gösterilecek kayıt yok.</p>
         ) : (
           visible.map((line) => (
             <div key={line.i} className="flex gap-2 whitespace-pre-wrap">

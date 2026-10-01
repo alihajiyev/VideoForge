@@ -33,6 +33,11 @@ import { groupArtifacts, listArtifacts, previewHtml, scanArtifactsSince } from '
 
 const ROOT = path.resolve(__dirname, '..')
 
+// Testler gercek kullanici verisini (harcama defteri, is gecmisi, kuyruk,
+// zamanlama) kirletmesin: arayuz veri dosyalari gecici bir klasore yonlendirilir.
+// (Ayarlar/settings.json bilincli olarak gercek klasorde kalir; testler onu okur.)
+process.env.VF_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-data-'))
+
 let passed = 0
 let failed = 0
 const failures: string[] = []
@@ -63,6 +68,15 @@ function pidAlive(pid: number | null | undefined): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * Turkce metin normalizasyonu. `String.toLowerCase()` "İ" harfini
+ * "i + birlestirici nokta" (U+0307) yapar ve karsilastirmalar basarisiz olur;
+ * Turkce yerel ayariyla kucultme bu sorunu ortadan kaldirir.
+ */
+function tr(s: string): string {
+  return s.toLocaleLowerCase('tr')
 }
 
 /** pid kapanana kadar bekler (durdurma testinde surec agaci gercekten oldu mu). */
@@ -347,13 +361,13 @@ async function main(): Promise<void> {
     )
     const discOff = buildSteps({ kind: 'discover', channelId: '2' }, base)
     check('Plan modu kapaliyken --haftalik yok', !discOff.steps[0].cmd.includes('--haftalik'), discOff.steps[0].cmd.join(' '))
-    check('Plan modu kapaliyken alt yazi tek seferlik', discOff.subtitle === 'Tek seferlik oneri', discOff.subtitle)
+    check('Plan modu kapaliyken alt yazi tek seferlik', discOff.subtitle === 'Tek seferlik öneri', discOff.subtitle)
     const wk = buildSteps({ kind: 'weekly', channelId: '1' }, base)
     check('Cok gunlu zincir 2 adimli', wk.steps.length === 2 && wk.steps[0].cmd.join(' ').includes('--haftalik 7') && wk.steps[1].cmd.join(' ').includes('haftalik_islet.py'), wk.steps.map((s) => s.label).join(' -> '))
     const wk14 = buildSteps({ kind: 'weekly', channelId: '3', gunSayisi: 14 }, base)
     check(
       'Zincir gun sayisi komuta geciyor (14)',
-      wk14.steps[0].cmd.join(' ').includes('--haftalik 14') && wk14.steps[0].label.includes('14 video') && wk14.title.includes('14 Gunluk'),
+      wk14.steps[0].cmd.join(' ').includes('--haftalik 14') && wk14.steps[0].label.includes('14 video') && wk14.title.includes('14 Günlük'),
       `${wk14.steps[0].cmd.join(' ')} | ${wk14.title}`,
     )
     check('Zincir plan dosyasina bagli', typeof wk.steps[1].continueWhen === 'function')
@@ -370,7 +384,7 @@ async function main(): Promise<void> {
     // Panel/Kesif sayfasindan gelen gunSayisi zincire ve etiketlere gecmeli.
     const wk12 = buildSteps({ kind: 'weekly', channelId: '2', haftalik: true, gunSayisi: 12 }, base)
     check('Zincir 12 gun ile kuruldu (--haftalik 12)', wk12.steps[0].cmd.join(' ').includes('--haftalik 12'), wk12.steps[0].cmd.join(' '))
-    check('Zincir 12 gun etiketlere yansidi', wk12.steps[0].label.includes('12 video') && wk12.title.includes('12 Gunluk'), `${wk12.steps[0].label} | ${wk12.title}`)
+    check('Zincir 12 gun etiketlere yansidi', wk12.steps[0].label.includes('12 video') && wk12.title.includes('12 Günlük'), `${wk12.steps[0].label} | ${wk12.title}`)
 
     /* Gun sayisi ayari: kaydedilir ve gecersiz degerler duzeltilir. */
     setSettings({ gunSayisi: 99 })
@@ -489,38 +503,42 @@ async function main(): Promise<void> {
     // Not: gizli pencerede innerText boyanmamis (ekran disi) bolumleri disladigi icin
     // icerik dogrulamalari textContent uzerinden yapilir; innerText ayrica kontrol edilir.
     const dom1 = (await win.webContents.executeJavaScript('document.body.innerText')) as string
-    const dom1lc = ((await win.webContents.executeJavaScript('document.body.textContent')) as string).toLowerCase()
+    const dom1lc = tr((await win.webContents.executeJavaScript('document.body.textContent')) as string)
     check('React arayuzu render edildi', dom1.length > 200, `innerText ${dom1.length} karakter`)
-    check('Panel basligi gorunur', dom1lc.includes('islem baslat') && dom1lc.includes('kino sekrety'), '')
-    check('Yan menu ogeleri gorunur', ['panel', 'calistir', 'kutuphane', 'ayarlar'].every((t) => dom1lc.includes(t)), '')
+    check('Panel basligi gorunur', dom1lc.includes('işlem başlat') && dom1lc.includes('kino sekrety'), '')
+    check(
+      'Yan menu ogeleri gorunur',
+      ['panel', 'çalıştır', 'keşif', 'kütüphane', 'çıktılar', 'günlük', 'ayarlar'].every((t) => dom1lc.includes(t)),
+      '',
+    )
     check('Ortam durumu karti gorunur', dom1lc.includes('ortam durumu'), '')
-    check('Bot.db istatistikleri gorunur', dom1lc.includes('islenen video') && dom1lc.includes('kesif onerisi'), '')
+    check('Bot.db istatistikleri gorunur', dom1lc.includes('işlenen video') && dom1lc.includes('keşif önerisi'), '')
 
     // Sayfa gecisi: Ayarlar
     const navOk = await win.webContents.executeJavaScript(
       `(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent && x.textContent.includes('Ayarlar')); if (!b) return false; b.click(); return true; })()`,
     )
     await sleep(800)
-    const dom2 = ((await win.webContents.executeJavaScript('document.body.textContent')) as string).toLowerCase()
+    const dom2 = tr((await win.webContents.executeJavaScript('document.body.textContent')) as string)
     check('Ayarlar sayfasina gecis calisti', navOk === true, String(navOk))
-    check('Motor konfigurasyonu paneli gorunur', dom2.includes('motor konfigurasyonu') && dom2.includes('gemini model'), '')
+    check('Motor konfigurasyonu paneli gorunur', dom2.includes('motor yapılandırması') && dom2.includes('gemini model'), '')
     check('Ortam kontrolleri listesi gorunur', dom2.includes('ortam kontrolleri'), '')
     check('Model sirasi (RPD etiketleri) gorunur', dom2.includes('gemini-flash-lite-latest') && dom2.includes('rpd 500'), '')
-    check('Uygulama guncellemesi paneli gorunur', dom2.includes('uygulama guncellemesi') && dom2.includes('guncellemeleri kontrol et'), '')
-    check('Surum deposu alani gorunur', dom2.includes('surum deposu (owner/repo)') && dom2.includes('github token'), '')
-    check('Otomatik guncelleme anahtari gorunur', dom2.includes('acilista otomatik kontrol et'), '')
-    check('Bot kodu guncellemesi paneli gorunur', dom2.includes('bot kodu guncellemesi (git)') && dom2.includes('bot kodunu guncelle'), '')
+    check('Uygulama guncellemesi paneli gorunur', dom2.includes('uygulama güncellemesi') && dom2.includes('güncellemeleri kontrol et'), '')
+    check('Surum deposu alani gorunur', dom2.includes('sürüm deposu (owner/repo)') && dom2.includes('github token'), '')
+    check('Otomatik guncelleme anahtari gorunur', dom2.includes('açılışta otomatik kontrol et'), '')
+    check('Bot kodu guncellemesi paneli gorunur', dom2.includes('bot kodu güncellemesi (git)') && dom2.includes('bot kodunu güncelle'), '')
     check('Git durum satirlari gorunur', dom2.includes('son commit') && dom2.includes('uzak fark') && dom2.includes('dal'), '')
 
     // Kesif sayfasi: gun sayisi artik SECILEBILIR (7 sabit degil)
     const navKesif = await win.webContents.executeJavaScript(
-      `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.closest('nav') && /kesif/i.test(x.textContent || '')); if (!b) return false; b.click(); return true; })()`,
+      `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.closest('nav') && /keşif/i.test(x.textContent || '')); if (!b) return false; b.click(); return true; })()`,
     )
     await sleep(800)
     check('Kesif sayfasina gecis calisti', navKesif === true, String(navKesif))
-    const domKesif = ((await win.webContents.executeJavaScript('document.body.textContent')) as string).toLowerCase()
-    check('Cok gunlu plan modu anahtari gorunur', domKesif.includes('cok gunlu plan modu'), '')
-    check('Gun sayisi sorusu gorunur', domKesif.includes('kac gunluk plan'), '')
+    const domKesif = tr((await win.webContents.executeJavaScript('document.body.textContent')) as string)
+    check('Cok gunlu plan modu anahtari gorunur', domKesif.includes('çok günlü plan modu'), '')
+    check('Gun sayisi sorusu gorunur', domKesif.includes('kaç günlük plan'), '')
     check('Hazir gun secenekleri gorunur (3/7/10/14/30)', ['3', '7', '10', '14', '30'].every((n) => domKesif.includes(n)), '')
     check('Sacilan haftalik ifadesi kalmadi', !domKesif.includes('haftalik mod'), '')
     const gunInput = (await win.webContents.executeJavaScript(
@@ -541,8 +559,8 @@ async function main(): Promise<void> {
          return document.body.textContent || '';
        })()`,
     )) as string | null
-    check('Gun sayisi 10 yazilinca arayuz 10 gunluk plan gosterir', Boolean(gun10Ui && gun10Ui.toLowerCase().includes('10 gunluk plan olustur')), (gun10Ui ?? '').slice(0, 0))
-    check('Gun sayisi 10 yazilinca zincir butonu da 10', Boolean(gun10Ui && gun10Ui.toLowerCase().includes('10 gunluk zinciri baslat')), '')
+    check('Gun sayisi 10 yazilinca arayuz 10 gunluk plan gosterir', Boolean(gun10Ui && tr(gun10Ui).includes('10 günlük plan oluştur')), (gun10Ui ?? '').slice(0, 0))
+    check('Gun sayisi 10 yazilinca zincir butonu da 10', Boolean(gun10Ui && tr(gun10Ui).includes('10 günlük zinciri başlat')), '')
     // Logo GERCEKTEN yuklendi mi? (file:// altinda './logo.png' cozulmezse
     // naturalWidth 0 kalir - bu, surucu kokune kacma hatasini yakalar.)
     const logoImg = (await win.webContents.executeJavaScript(
@@ -559,7 +577,7 @@ async function main(): Promise<void> {
     // Tema degisimi: baslik cubugundaki gercek buton uzerinden (kullanici akisi)
     const themeOk = await win.webContents.executeJavaScript(
       `(async () => {
-         const btn = [...document.querySelectorAll('button')].find((b) => (b.getAttribute('title') || '').includes('Aydinlik tema'));
+         const btn = [...document.querySelectorAll('button')].find((b) => (b.getAttribute('title') || '').includes('Aydınlık tema'));
          if (!btn) return 'buton bulunamadi';
          btn.click();
          await new Promise((r) => setTimeout(r, 600));
@@ -569,7 +587,7 @@ async function main(): Promise<void> {
     check('Tema degisimi (baslik cubugu butonu)', themeOk === 'light', String(themeOk))
     const themeBack = await win.webContents.executeJavaScript(
       `(async () => {
-         const btn = [...document.querySelectorAll('button')].find((b) => (b.getAttribute('title') || '').includes('Karanlik tema'));
+         const btn = [...document.querySelectorAll('button')].find((b) => (b.getAttribute('title') || '').includes('Karanlık tema'));
          if (btn) btn.click();
          await new Promise((r) => setTimeout(r, 600));
          return document.documentElement.dataset.theme;
@@ -587,8 +605,8 @@ async function main(): Promise<void> {
     const bridgeStatus = await waitForStatus(60_000)
     check('Kopru isi tamamlandi', bridgeStatus === 'done', `durum: ${bridgeStatus}`)
     await sleep(1200)
-    const dom3 = ((await win.webContents.executeJavaScript('document.body.textContent')) as string).toLowerCase()
-    check('Arayuzde is sonucu gorunur', dom3.includes('tamamlandi') || dom3.includes('calisiyor'), '')
+    const dom3 = tr((await win.webContents.executeJavaScript('document.body.textContent')) as string)
+    check('Arayuzde is sonucu gorunur', dom3.includes('tamamlandı') || dom3.includes('çalışıyor'), '')
     const runs = await win.webContents.executeJavaScript(`(async () => { const r = await window.vfgui.reportsList(); return r.ok ? r.data.length : -1; })()`)
     check('Kopru uzerinden cikti listesi alindi', typeof runs === 'number' && runs >= 0, `${runs} grup`)
 
@@ -626,24 +644,24 @@ async function main(): Promise<void> {
     section('13b) Tum sayfalar gercekten ciziliyor mu (menu uzerinden gezinti)')
     const SAYFALAR: { nav: string; ad: string; isaretler: string[] }[] = [
       { nav: 'Panel', ad: 'Panel', isaretler: ['ortam durumu'] },
-      { nav: 'Calistir', ad: 'Calistir', isaretler: ['aktif islem yok', 'gecmis'] },
-      { nav: 'Kutuphane', ad: 'Kutuphane', isaretler: ['bot.db icerigi'] },
-      { nav: 'Cikti', ad: 'Cikti & Rapor', isaretler: ['cikti dosyalari'] },
-      { nav: 'Kesif', ad: 'Kesif', isaretler: ['kesif modulu'] },
-      { nav: 'Loglar', ad: 'Loglar', isaretler: ['bot_log.txt'] },
-      { nav: 'Ayarlar', ad: 'Ayarlar', isaretler: ['gorunum', 'yollar ve python'] },
+      { nav: 'Çalıştır', ad: 'Çalıştır', isaretler: ['aktif işlem yok', 'geçmiş'] },
+      { nav: 'Kütüphane', ad: 'Kütüphane', isaretler: ['bot.db içeriği'] },
+      { nav: 'Çıktılar', ad: 'Çıktılar & Rapor', isaretler: ['çıktı dosyaları'] },
+      { nav: 'Keşif', ad: 'Keşif', isaretler: ['keşif modülü'] },
+      { nav: 'Günlük', ad: 'Günlük', isaretler: ['bot_log.txt'] },
+      { nav: 'Ayarlar', ad: 'Ayarlar', isaretler: ['görünüm', 'yollar ve python'] },
     ]
     for (const sayfa of SAYFALAR) {
       const tiklandi = (await win.webContents.executeJavaScript(
         `(() => {
-           const b = [...document.querySelectorAll('nav button')].find((x) => (x.textContent || '').trim().toLowerCase().startsWith(${JSON.stringify(sayfa.nav.toLowerCase())}));
+           const b = [...document.querySelectorAll('nav button')].find((x) => (x.textContent || '').trim().toLocaleLowerCase('tr').startsWith(${JSON.stringify(sayfa.nav.toLocaleLowerCase('tr'))}));
            if (!b) return false;
            b.click();
            return true;
          })()`,
       )) as boolean
       await sleep(800)
-      const sayfaMetni = ((await win.webContents.executeJavaScript('document.body.textContent')) as string).toLowerCase()
+      const sayfaMetni = tr((await win.webContents.executeJavaScript('document.body.textContent')) as string)
       const bulunan = sayfa.isaretler.filter((i) => sayfaMetni.includes(i))
       check(`${sayfa.ad} sayfasi acildi ve ici cizildi`, tiklandi && bulunan.length > 0, tiklandi ? `beklenen: ${sayfa.isaretler.join(' | ')} -> ${bulunan.join(', ') || 'HICBIRI YOK'}` : 'menu butonu bulunamadi')
     }
@@ -805,13 +823,13 @@ async function main(): Promise<void> {
          el.dispatchEvent(new Event('input', { bubbles: true }));
          await new Promise((r) => setTimeout(r, 900));
          const bul = (re) => ([...document.querySelectorAll('button')].find((b) => re.test(b.textContent || '')) || {}).textContent || '';
-         return { alan: true, deger: el.value, zincir: bul(/gunluk zincir/i), plan: bul(/gunluk plan olustur/i) };
+         return { alan: true, deger: el.value, zincir: bul(/günlük zincir/i), plan: bul(/günlük plan oluştur/i) };
        })()`,
     )) as { alan?: boolean; deger?: string; zincir?: string; plan?: string } | null
     check('Gun sayisi alanina yazilan deger alanda gorunuyor (12)', panelAlan?.deger === '12', String(panelAlan?.deger))
     check('Yazilan gun sayisi kendiliginden kaydedildi (12)', getSettings().gunSayisi === 12, `alan=${String(panelAlan?.deger)} ayar=${getSettings().gunSayisi}`)
-    check('Panel zincir dugmesi secilen gunu gosteriyor', /12 gunluk zincir/i.test(panelAlan?.zincir ?? ''), String(panelAlan?.zincir))
-    check('Panel plan dugmesi secilen gunu gosteriyor', /12 gunluk plan olustur/i.test(panelAlan?.plan ?? ''), String(panelAlan?.plan))
+    check('Panel zincir dugmesi secilen gunu gosteriyor', /12 günlük zincir/i.test(panelAlan?.zincir ?? ''), String(panelAlan?.zincir))
+    check('Panel plan dugmesi secilen gunu gosteriyor', /12 günlük plan oluştur/i.test(panelAlan?.plan ?? ''), String(panelAlan?.plan))
 
     // Hazir secenek butonlari da (tek tiklamayla) kaydetmeli: 14
     const panelHazir = (await win.webContents.executeJavaScript(
@@ -842,18 +860,81 @@ async function main(): Promise<void> {
 
     // Zincir dugmesine gercekten bas (yazilan 12 gun ile): ana surecteki is 12 gun kurulmali.
     const zincirBasildi = (await win.webContents.executeJavaScript(
-      `(() => { const b = [...document.querySelectorAll('button')].find((x) => /gunluk zincir/i.test(x.textContent || '')); if (!b) return false; b.click(); return true; })()`,
+      `(() => { const b = [...document.querySelectorAll('button')].find((x) => /günlük zincir/i.test(x.textContent || '')); if (!b) return false; b.click(); return true; })()`,
     )) as boolean
     await sleep(1600)
     const panelJob = getState()
     check('Panel zincir dugmesi isi baslatti', zincirBasildi === true && panelJob !== null, `durum: ${panelJob?.status}`)
-    check('Panelden baslayan is secilen gun sayisini kullaniyor (12)', /12 Gunluk/i.test(panelJob?.title ?? ''), String(panelJob?.title))
+    check('Panelden baslayan is secilen gun sayisini kullaniyor (12)', /12 Günlük/i.test(panelJob?.title ?? ''), String(panelJob?.title))
     check('Panel zinciri 2 adimli kuruldu (kesif + isletme)', (panelJob?.stages.length ?? 0) >= 2, `${panelJob?.stages.length} asama`)
     const panelSon = await waitForStatus(90_000)
     check('Panel zinciri tamamlandi (sahte bot)', panelSon === 'done', `durum: ${panelSon}`)
     check('Panel zinciri plan dosyasini uretti', fs.existsSync(planPath(panelBot)), planPath(panelBot))
     forceRemove(panelBot)
     setSettings({ videoForgePath: realBot })
+
+    /* ---------------- 13g. Yeni ozellikler: kuyruk / harcama / kota / palet -------- */
+    section('13g) Kuyruk, harcama ozeti, kota ve komut paleti')
+
+    const kuyrukEklendi = (await win.webContents.executeJavaScript(
+      `(async () => { const r = await window.vfgui.queueAdd([{ kind: 'discover', channelId: '1', gunSayisi: 5 }]); return r.ok ? r.data.length : -1; })()`,
+    )) as number
+    check('Kuyruk IPC is ekledi', kuyrukEklendi >= 1, `${kuyrukEklendi} oge`)
+
+    const kuyrukGorunur = (await win.webContents.executeJavaScript(
+      `(async () => { const r = await window.vfgui.queueList(); return r.ok ? r.data.filter((o) => o.status === 'bekliyor').length : -1; })()`,
+    )) as number
+    check('Kuyruk IPC bekleyen isi listeliyor', kuyrukGorunur >= 1, `${kuyrukGorunur} bekleyen`)
+
+    const kuyrukBos = (await win.webContents.executeJavaScript(
+      `(async () => { const r = await window.vfgui.queueClear(); return r.ok ? r.data.length : -1; })()`,
+    )) as number
+    check('Kuyruk temizleme calisti', kuyrukBos === 0, `${kuyrukBos} oge`)
+
+    const harcama = (await win.webContents.executeJavaScript(
+      `(async () => { const r = await window.vfgui.spendSummary(); return r.ok ? { ay: r.data.ayUsd, gunler: r.data.gunler.length, ort: Object.keys(r.data.ortalama).length } : { hata: r.error }; })()`,
+    )) as { ay?: number; gunler?: number; ort?: number; hata?: string }
+    check(
+      'Harcama ozeti IPC calisti',
+      typeof harcama?.ay === 'number' && typeof harcama?.gunler === 'number' && harcama?.hata === undefined,
+      JSON.stringify(harcama),
+    )
+
+    const kota = (await win.webContents.executeJavaScript(
+      `(async () => { const r = await window.vfgui.quotaGet(); return r.ok ? { sayi: r.data.aiCagrisi, limit: r.data.limitler.length, sifir: r.data.sifirlanmaMs > Date.now() } : { hata: r.error }; })()`,
+    )) as { sayi?: number; limit?: number; sifir?: boolean; hata?: string }
+    check(
+      'Kota gostergesi IPC calisti',
+      typeof kota?.sayi === 'number' && (kota?.limit ?? 0) >= 1 && kota?.sifir === true,
+      JSON.stringify(kota),
+    )
+
+    // Komut paleti: Ctrl+K ile acilir, overlay tiklamasiyla kapanir.
+    await win.webContents.executeJavaScript(
+      `(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true })); return true })()`,
+    )
+    await sleep(500)
+    // Not: arama alani placeholder'i textContent'e girmez; bu yuzden diyalog
+    // dugumu ve komut etiketleri uzerinden dogrulanir.
+    const paletAcik = (await win.webContents.executeJavaScript(
+      `(() => { const d = document.querySelector('[role="dialog"]'); return d ? (d.textContent || '') : null })()`,
+    )) as string | null
+    check(
+      'Komut paleti Ctrl+K ile acildi',
+      Boolean(paletAcik && tr(paletAcik).includes('sayfasına git')),
+      paletAcik ? `${paletAcik.length} karakter` : 'diyalog yok',
+    )
+    await win.webContents.executeJavaScript(
+      `(() => { const d = document.querySelector('[role="dialog"]'); if (!d) return false; d.click(); return true })()`,
+    )
+    await sleep(400)
+    const paletKapali = await win.webContents.executeJavaScript(`document.querySelector('[role="dialog"]') === null`)
+    check('Komut paleti kapatildi', paletKapali === true, String(paletKapali))
+
+    const gecmisDetay = await win.webContents.executeJavaScript(
+      `(async () => { const r = await window.vfgui.runHistory(); if (!r.ok || !r.data.length) return { hata: 'kayit yok' }; const i = r.data[0]; return { dizi: Array.isArray(i.artifacts), sure: typeof i.durationMs }; })()`,
+    ) as { dizi?: boolean; sure?: string; hata?: string }
+    check('Gecmis kaydi cikti listesi tasiyor', gecmisDetay?.dizi === true, gecmisDetay?.hata ?? String(gecmisDetay?.sure))
 
     check('Renderer konsol hatasi yok', rendererErrors.length === 0, rendererErrors.slice(0, 3).join(' | '))
 

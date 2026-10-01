@@ -8,8 +8,11 @@ import type {
   DownloadProgress,
   EngineConfig,
   EnvCheck,
+  HarcamaOzeti,
   JobRequest,
   JobState,
+  KotaBilgisi,
+  KuyrukOgesi,
   LogLine,
   RunHistoryItem,
   UpdateInfo,
@@ -52,6 +55,15 @@ interface AppCtx {
   startJob: (req: JobRequest) => Promise<boolean>
   cancelJob: () => Promise<void>
   refreshHistory: () => Promise<void>
+  queue: KuyrukOgesi[]
+  queueAdd: (items: unknown[]) => Promise<void>
+  queueRemove: (id: string) => Promise<void>
+  queueClear: () => Promise<void>
+  queueStartNext: () => Promise<void>
+  spend: HarcamaOzeti | null
+  refreshSpend: () => Promise<void>
+  quota: KotaBilgisi | null
+  refreshQuota: () => Promise<void>
   pushToast: (toast: Omit<Toast, 'id'>) => void
   dismissToast: (id: string) => void
 }
@@ -123,6 +135,9 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
   const [download, setDownload] = useState<DownloadProgress | null>(null)
   const [botGit, setBotGit] = useState<BotGitInfo | null>(null)
   const [botGitBusy, setBotGitBusy] = useState(false)
+  const [queue, setQueue] = useState<KuyrukOgesi[]>([])
+  const [spend, setSpend] = useState<HarcamaOzeti | null>(null)
+  const [quota, setQuota] = useState<KotaBilgisi | null>(null)
   const linesRef = useRef<LogLine[]>([])
 
   const pushToast = useCallback((toast: Omit<Toast, 'id'>) => {
@@ -151,7 +166,7 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
     try {
       setEngine(await unwrap(api.engineConfig()))
     } catch (err) {
-      pushToast({ tone: 'error', title: 'Motor ayarlari okunamadi', message: String(err) })
+      pushToast({ tone: 'error', title: 'Motor ayarları okunamadı', message: String(err) })
     }
   }, [pushToast])
 
@@ -162,6 +177,68 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
       /* yoksay */
     }
   }, [])
+
+  const refreshQueue = useCallback(async () => {
+    try {
+      setQueue(await unwrap(api.queueList()))
+    } catch {
+      /* yoksay */
+    }
+  }, [])
+
+  const refreshSpend = useCallback(async () => {
+    try {
+      setSpend(await unwrap(api.spendSummary()))
+    } catch {
+      /* yoksay */
+    }
+  }, [])
+
+  const refreshQuota = useCallback(async () => {
+    try {
+      setQuota(await unwrap(api.quotaGet()))
+    } catch {
+      /* yoksay */
+    }
+  }, [])
+
+  const queueAdd = useCallback(
+    async (items: unknown[]) => {
+      try {
+        setQueue(await unwrap(api.queueAdd(items)))
+        pushToast({ tone: 'success', title: 'Kuyruğa eklendi', message: `${items.length} iş sıraya alındı.` })
+      } catch (err) {
+        pushToast({ tone: 'error', title: 'Kuyruğa eklenemedi', message: String(err) })
+      }
+    },
+    [pushToast],
+  )
+
+  const queueRemove = useCallback(async (id: string) => {
+    try {
+      setQueue(await unwrap(api.queueRemove(id)))
+    } catch {
+      /* yoksay */
+    }
+  }, [])
+
+  const queueClear = useCallback(async () => {
+    try {
+      setQueue(await unwrap(api.queueClear()))
+    } catch {
+      /* yoksay */
+    }
+  }, [])
+
+  const queueStartNext = useCallback(async () => {
+    try {
+      const basladi = await unwrap(api.queueStartNext())
+      if (!basladi) pushToast({ tone: 'warn', title: 'Başlatılamadı', message: 'Çalışan bir iş var ya da kuyruk boş.' })
+      void refreshQueue()
+    } catch (err) {
+      pushToast({ tone: 'error', title: 'Başlatılamadı', message: String(err) })
+    }
+  }, [pushToast, refreshQueue])
 
   const checkUpdate = useCallback(async (): Promise<UpdateInfo | null> => {
     setUpdateChecking(true)
@@ -195,13 +272,13 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
       try {
         const res = await unwrap(api.updateDownload(assetName))
         if (!res.ok || !res.path) {
-          pushToast({ tone: 'error', title: 'Indirme basarisiz', message: res.error })
+          pushToast({ tone: 'error', title: 'İndirme başarısız', message: res.error })
           return null
         }
-        pushToast({ tone: 'success', title: 'Guncelleme indirildi', message: 'Baslatmak icin "Yeni surumu baslat" dugmesine basin.' })
+        pushToast({ tone: 'success', title: 'Güncelleme indirildi', message: 'Başlatmak için "Yeni sürümü başlat" düğmesine basın.' })
         return res.path
       } catch (err) {
-        pushToast({ tone: 'error', title: 'Indirme basarisiz', message: String(err) })
+        pushToast({ tone: 'error', title: 'İndirme başarısız', message: String(err) })
         return null
       }
     },
@@ -213,7 +290,7 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
       try {
         await unwrap(api.updateLaunch(filePath))
       } catch (err) {
-        pushToast({ tone: 'error', title: 'Yeni surum baslatilamadi', message: String(err) })
+        pushToast({ tone: 'error', title: 'Yeni sürüm başlatılamadı', message: String(err) })
       }
     },
     [pushToast],
@@ -224,7 +301,7 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
       setBotGit(await unwrap(api.botGitStatus(fetchRemote)))
     } catch (err) {
       setBotGit(null)
-      pushToast({ tone: 'warn', title: 'Git durumu okunamadi', message: String(err) })
+      pushToast({ tone: 'warn', title: 'Git durumu okunamadı', message: String(err) })
     }
   }, [pushToast])
 
@@ -234,14 +311,14 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
       const res = await unwrap(api.botGitPull())
       setBotGit(res.info)
       if (res.ok) {
-        pushToast({ tone: 'success', title: 'Bot kodu guncellendi', message: res.info.commit ? `Son commit: ${res.info.commit}` : undefined })
+        pushToast({ tone: 'success', title: 'Bot kodu güncellendi', message: res.info.commit ? `Son commit: ${res.info.commit}` : undefined })
         void refreshEnv()
         void refreshEngine()
       } else {
-        pushToast({ tone: 'warn', title: 'Bot kodu guncellenemedi', message: res.error })
+        pushToast({ tone: 'warn', title: 'Bot kodu güncellenemedi', message: res.error })
       }
     } catch (err) {
-      pushToast({ tone: 'error', title: 'Git hatasi', message: String(err) })
+      pushToast({ tone: 'error', title: 'Git hatası', message: String(err) })
     } finally {
       setBotGitBusy(false)
     }
@@ -267,7 +344,7 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
         }
         setHistory(h)
       } catch (err) {
-        pushToast({ tone: 'error', title: 'Baslatma hatasi', message: String(err) })
+        pushToast({ tone: 'error', title: 'Başlatma hatası', message: String(err) })
       } finally {
         if (alive) setReady(true)
       }
@@ -275,6 +352,9 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
     void refreshEnv()
     void refreshEngine()
     void refreshBotGit()
+    void refreshQueue()
+    void refreshSpend()
+    void refreshQuota()
     return () => {
       alive = false
     }
@@ -291,6 +371,12 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
   // Indirme ilerlemesi
   useEffect(() => {
     const off = api.onUpdateProgress((progress) => setDownload(progress))
+    return off
+  }, [])
+
+  // Kuyruk degisimleri (ana surec bildirir)
+  useEffect(() => {
+    const off = api.onQueueChanged((items) => setQueue(items))
     return off
   }, [])
 
@@ -329,17 +415,20 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
           tone: status === 'done' ? 'success' : status === 'cancelled' ? 'warn' : 'error',
           title:
             status === 'done'
-              ? 'Islem tamamlandi'
+              ? 'İşlem tamamlandı'
               : status === 'cancelled'
-                ? 'Islem durduruldu'
-                : 'Islem hata ile bitti',
-          message: status === 'done' ? `${found} cikti dosyasi hazir` : undefined,
+                ? 'İşlem durduruldu'
+                : 'İşlem hata ile bitti',
+          message: status === 'done' ? `${found} çıktı dosyası hazır` : undefined,
         })
         void refreshHistory()
+        void refreshSpend()
+        void refreshQuota()
+        void refreshQueue()
       }
     })
     return off
-  }, [pushToast, refreshHistory])
+  }, [pushToast, refreshHistory, refreshSpend, refreshQuota, refreshQueue])
 
   const saveSettings = useCallback(
     async (patch: Partial<AppSettings>) => {
@@ -377,7 +466,7 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
         await unwrap(api.runStart(req))
         return true
       } catch (err) {
-        pushToast({ tone: 'error', title: 'Islem baslatilamadi', message: err instanceof Error ? err.message : String(err) })
+        pushToast({ tone: 'error', title: 'İşlem başlatılamadı', message: err instanceof Error ? err.message : String(err) })
         return false
       }
     },
@@ -388,7 +477,7 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
     try {
       await unwrap(api.runCancel())
     } catch (err) {
-      pushToast({ tone: 'error', title: 'Durdurulamadi', message: String(err) })
+      pushToast({ tone: 'error', title: 'Durdurulamadı', message: String(err) })
     }
   }, [pushToast])
 
@@ -421,6 +510,15 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
       startJob,
       cancelJob,
       refreshHistory,
+      queue,
+      queueAdd,
+      queueRemove,
+      queueClear,
+      queueStartNext,
+      spend,
+      refreshSpend,
+      quota,
+      refreshQuota,
       pushToast,
       dismissToast,
     }),
@@ -452,6 +550,15 @@ export function AppProvider({ children }: { children: ReactNode }): ReactNode {
       startJob,
       cancelJob,
       refreshHistory,
+      queue,
+      queueAdd,
+      queueRemove,
+      queueClear,
+      queueStartNext,
+      spend,
+      refreshSpend,
+      quota,
+      refreshQuota,
       pushToast,
       dismissToast,
     ],

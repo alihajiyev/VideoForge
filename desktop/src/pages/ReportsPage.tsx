@@ -3,7 +3,7 @@ import { Eye, FileText, FolderOpen, Image, Music, RefreshCw, Search, Video } fro
 import { api, unwrap } from '@/lib/api'
 import { useResource } from '@/lib/hooks'
 import { useApp } from '@/app/AppContext'
-import { ARTIFACT_LABEL, formatBytes, formatRelative, cn } from '@/lib/utils'
+import { ARTIFACT_LABEL, fileUrl, formatBytes, formatRelative, cn } from '@/lib/utils'
 import { Badge, Button, EmptyState, Input, Panel, SectionTitle, Spinner } from '@/components/ui/primitives'
 import type { Artifact, ReportPreview } from '@shared/types'
 
@@ -14,6 +14,21 @@ function Icon({ kind }: { kind: Artifact['kind'] }): ReactNode {
   if (kind === 'thumb') return <Image className={cls} />
   if (kind === 'report') return <FileText className={cls} />
   return <FolderOpen className={cls} />
+}
+
+/** Kapak gorseli: dosya bulunamaz/silinirse kirik resim yerine ikon gosterir. */
+function KapakResmi({ src, alt }: { src: string; alt: string }): ReactNode {
+  const [hata, setHata] = useState(false)
+  if (hata) {
+    return (
+      <div className="flex aspect-video w-full items-center justify-center bg-[var(--surface-3)] text-fg-subtle">
+        <Image className="size-5" />
+      </div>
+    )
+  }
+  return (
+    <img src={src} alt={alt} loading="lazy" onError={() => setHata(true)} className="aspect-video w-full object-cover" />
+  )
 }
 
 export function ReportsPage(): ReactNode {
@@ -33,13 +48,23 @@ export function ReportsPage(): ReactNode {
 
   const active = groups.find((g) => g.key === sel) ?? groups[0] ?? null
 
+  /** Kapak galerisi: tum grup kapaklarindan en yeni 8 tanesi (A/B karsilastirma). */
+  const kapaklar = useMemo(
+    () =>
+      (reports.data ?? [])
+        .flatMap((g) => g.items.filter((i) => i.kind === 'thumb').map((i) => ({ ...i, is: g.title })))
+        .sort((a, b) => b.mtime - a.mtime)
+        .slice(0, 8),
+    [reports.data],
+  )
+
   const openPreview = async (path: string): Promise<void> => {
     setLoadingPreview(true)
     setPreview(null)
     try {
       setPreview(await unwrap(api.reportsPreview(path)))
     } catch (err) {
-      pushToast({ tone: 'error', title: 'Rapor okunamadi', message: String(err) })
+      pushToast({ tone: 'error', title: 'Rapor okunamadı', message: String(err) })
     } finally {
       setLoadingPreview(false)
     }
@@ -50,8 +75,8 @@ export function ReportsPage(): ReactNode {
       <Panel className="overflow-hidden">
         <div className="border-b border-border p-3.5">
           <SectionTitle
-            title="Cikti dosyalari"
-            subtitle={`${groups.length} is klasoru`}
+            title="Çıktı dosyaları"
+            subtitle={`${groups.length} iş klasörü`}
             icon={<FolderOpen className="size-4" />}
             right={
               <Button size="sm" variant="ghost" icon={<RefreshCw className={cn('size-3.5', reports.loading && 'animate-spin')} />} onClick={() => reports.reload()} />
@@ -59,16 +84,16 @@ export function ReportsPage(): ReactNode {
           />
           <div className="relative mt-3">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-subtle" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Baslik veya klasor ara..." className="h-8 pl-8 text-[12px]" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Başlık veya klasör ara..." className="h-8 pl-8 text-[12px]" />
           </div>
         </div>
         <div className="max-h-[calc(100vh-230px)] overflow-y-auto">
           {reports.loading && !reports.data ? (
             <div className="flex items-center justify-center gap-2 py-14 text-[12px] text-fg-subtle">
-              <Spinner /> Masaustu taraniyor...
+              <Spinner /> Masaüstü taranıyor...
             </div>
           ) : groups.length === 0 ? (
-            <EmptyState icon={<FolderOpen className="size-6" />} title="Cikti bulunamadi" message="Masaustunde _CLEAN.mp4, _VOICEOVER.mp3, _SEO.html veya Kesif-Rapor dosyasi yok." />
+            <EmptyState icon={<FolderOpen className="size-6" />} title="Çıktı bulunamadı" message="Masaüstünde _CLEAN.mp4, _VOICEOVER.mp3, _SEO.html veya Keşif-Rapor dosyası yok." />
           ) : (
             groups.map((g) => (
               <button
@@ -83,7 +108,7 @@ export function ReportsPage(): ReactNode {
                 )}
               >
                 <p className={cn('truncate text-[12.5px] font-medium', active?.key === g.key ? 'text-brand' : 'text-fg')} title={g.title}>
-                  {g.title || 'Isimsiz is'}
+                  {g.title || 'İsimsiz iş'}
                 </p>
                 <div className="mt-1 flex items-center gap-2 text-[10.5px] text-fg-subtle">
                   <span>{formatBytes(g.totalBytes)}</span>
@@ -105,12 +130,37 @@ export function ReportsPage(): ReactNode {
 
       {!active ? (
         <Panel className="p-6">
-          <EmptyState icon={<FileText className="size-7" />} title="Soldan bir is secin" message="Secilen isin tum ciktilari (video, ses, kapak, SEO raporu) burada gorunur." />
+          <EmptyState icon={<FileText className="size-7" />} title="Soldan bir iş seçin" message="Seçilen işin tüm çıktıları (video, ses, kapak, SEO raporu) burada görünür." />
         </Panel>
       ) : (
         <div className="space-y-3.5">
+          {kapaklar.length > 0 ? (
+            <Panel className="p-4">
+              <SectionTitle
+                title="Kapak galerisi"
+                subtitle="Son üretilen kapaklar · karşılaştır ve seç"
+                icon={<Image className="size-4" />}
+              />
+              <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+                {kapaklar.map((k) => (
+                  <button
+                    key={k.path}
+                    onClick={() => void api.shellOpen(k.path)}
+                    title={`${k.is} · ${k.name}`}
+                    className="group overflow-hidden rounded-[10px] border border-border bg-[var(--surface-2)] text-left transition-colors hover:border-border-strong"
+                  >
+                    <KapakResmi src={fileUrl(k.path)} alt={k.is || k.name} />
+                    <p className="truncate px-2 py-1.5 text-[11px] text-fg-muted group-hover:text-fg" title={k.is}>
+                      {k.is || k.name}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </Panel>
+          ) : null}
+
           <Panel className="p-4">
-            <SectionTitle title={active.title || 'Is'} subtitle={active.dir} icon={<FileText className="size-4" />} />
+            <SectionTitle title={active.title || 'İş'} subtitle={active.dir} icon={<FileText className="size-4" />} />
             <div className="mt-3 grid gap-2 md:grid-cols-2">
               {active.items.map((item) => (
                 <div key={item.path} className="rounded-[10px] border border-border bg-[var(--surface-2)] px-3 py-2.5">
@@ -126,14 +176,14 @@ export function ReportsPage(): ReactNode {
                   </p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     <Button size="sm" icon={<Eye className="size-3.5" />} onClick={() => void api.shellOpen(item.path)}>
-                      Ac
+                      Aç
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => void api.shellReveal(item.path)}>
-                      Klasorde goster
+                      Klasörde göster
                     </Button>
                     {item.kind === 'seo' ? (
                       <Button size="sm" variant="outline" loading={loadingPreview} onClick={() => void openPreview(item.path)}>
-                        Onizle
+                        Önizle
                       </Button>
                     ) : null}
                   </div>
@@ -144,7 +194,7 @@ export function ReportsPage(): ReactNode {
 
           {preview || loadingPreview ? (
             <Panel className="p-4">
-              <SectionTitle title="SEO raporu onizlemesi" subtitle={preview?.ok ? preview.title || 'baslik yok' : 'yukleniyor'} icon={<FileText className="size-4" />} />
+              <SectionTitle title="SEO raporu önizlemesi" subtitle={preview?.ok ? preview.title || 'başlık yok' : 'yükleniyor'} icon={<FileText className="size-4" />} />
               {loadingPreview ? (
                 <div className="flex items-center gap-2 py-8 text-[12px] text-fg-subtle">
                   <Spinner /> Rapor okunuyor...
@@ -181,7 +231,7 @@ export function ReportsPage(): ReactNode {
                   )}
                 </div>
               ) : (
-                <p className="mt-2 text-[12px] text-danger">{preview?.error ?? 'Okunamadi'}</p>
+                <p className="mt-2 text-[12px] text-danger">{preview?.error ?? 'Okunamadı'}</p>
               )}
             </Panel>
           ) : null}
