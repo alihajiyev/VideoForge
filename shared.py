@@ -37,6 +37,14 @@ class _TeeLogger:
             except Exception:
                 pass
 
+    def __getattr__(self, name):
+        # isatty, reconfigure, encoding, buffer gibi gercek stdout ozelliklerini
+        # oldugu gibi terminale devret; aksi halde sarilan stdout'u kullanan
+        # scriptler (ornegin haftalik_islet.py sys.stdout.reconfigure) kirilir.
+        if name == "terminal":
+            raise AttributeError(name)
+        return getattr(self.terminal, name)
+
 
 def _setup_file_logging():
     try:
