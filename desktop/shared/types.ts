@@ -63,6 +63,9 @@ export interface JobRequest {
   gun?: number
   /** Tek video islenirken: planin toplam gun sayisi. */
   gunToplam?: number
+  /** N gunluk uretimde: DB'de islenmis gorunse bile YENIDEN uretilecek gunler ("1,2,3").
+   *  MP3'suz/eksik kalan gunleri duzeltmek icin (bot --yeniden-gun ile ayni). */
+  yenidenGun?: string
 }
 
 export interface JobState {

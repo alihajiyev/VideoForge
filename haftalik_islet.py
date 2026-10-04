@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from constants import link_kayitlimi, init_db
 from functions.ui import header, footer_done, footer_fail, info, ok, warn, err
+from functions.tts_kontrol import SISTEMIK_ISARET, yerel_on_kontrol
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PLAN_FILE = os.path.join(BASE_DIR, "haftalik_plan.json")
@@ -59,6 +60,67 @@ def iptal_edildi():
     """
     yol = os.environ.get("VIDEOFORGE_CANCEL_FILE")
     return bool(yol) and os.path.exists(yol)
+
+
+def tts_on_kontrol():
+    """Zinciri baslatmadan once ElevenLabs abonelik/odeme durumunu kontrol et.
+
+    Gercek vaka (2026-10-04): abonelik 'past_due' iken 7 gunun her birinde TTS
+    401 payment_issue dondu; kod bunu uyari sayip devam ettigi icin gun basina
+    $0.28-$0.44 GPU harcandi ve hicbir gunun MP3'u cikmadi (ShortsStudio hep
+    atlandi). Artik zincir GPU'ya/indirmeye hic girmeden net mesajla durur.
+    Yalnizca KESIN odeme sorununda engellenir; ag hatasi zinciri bloklamaz.
+    Donus: (True, '') ya da (False, 'net Turkce mesaj').
+    """
+    return yerel_on_kontrol()
+
+
+def sistemik_hata_mi(cikti):
+    """Bot ciktisinda tum gunlerde tekrarlanacak sistemik hata isareti var mi?
+
+    VideoForge bulut katmani (functions/tts_kontrol.py SISTEMIK_ISARET) TTS/
+    abonelik hatasinda bu isareti hata metnine koyar. Isaret gorulurse kalan
+    gunler bu hata yuzunden bosuna kosardi; zincir durdurulur.
+    """
+    return SISTEMIK_ISARET in (cikti or "")
+
+
+def sistemik_hata_ozeti(cikti, sinir=600):
+    """Sistemik hata satirini cikti metninden cek (ozet/kayit icin)."""
+    for satir in (cikti or "").splitlines():
+        if SISTEMIK_ISARET in satir:
+            return satir.strip()[:sinir]
+    return "ElevenLabs ses (TTS) hatasi - tum gunlerde tekrarlanir (abonelik/odeme kontrol et)."
+
+
+def yeniden_gunleri_ayristir(deger):
+    """'--yeniden-gun 1,2,3' degerini gun kumesine cevir (gecersiz parcalar atilir)."""
+    kume = set()
+    for parca in str(deger or "").split(","):
+        parca = parca.strip()
+        if parca.isdigit():
+            kume.add(int(parca))
+    return kume
+
+
+def link_kaydi_sil(link):
+    """DB'deki 'islenmis' kaydini sil (--yeniden-gun icin).
+
+    Kanal scriptleri de ayni kayda bakip "Bu link daha once islenmis!" diyerek
+    durur; bir gunu yeniden uretmek icin kaydin kaldirilmasi SART.
+    """
+    try:
+        import sqlite3
+        from constants import DB_PATH, _video_id_cek, init_db
+        init_db()
+        vid = _video_id_cek(link)
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("DELETE FROM videos WHERE link = ? OR link LIKE ?", (vid, f"%{vid}%"))
+            conn.commit()
+        return True
+    except Exception as e:
+        warn(f"DB kaydi silinemedi ({link}): {e}")
+        return False
 
 # Kesif kanal no -> VideoForge bot scripti (VideoForge-Baslat.bat ile ayni eslesme)
 CHN_SCRIPT = {
@@ -303,12 +365,13 @@ def main():
     parser.add_argument("--studio-atla", action="store_true", help="3. adimi (ShortsStudio montaji) atla, sadece VideoForge")
     parser.add_argument("--sadece-studio", type=int, default=0, help="SADECE 3. adim: verilen gunun Gun klasorunu montajla (VideoForge atlanir, DB'ye bakilmaz). Ornek: --sadece-studio 1 --chn 2")
     parser.add_argument("--chn", default=None, help="--sadece-studio ile kullanilir: hedef kanal no (yoksa plandan alinir)")
+    parser.add_argument("--yeniden-gun", default=None, help="DB'de islenmis gorunse bile bu gunleri YENIDEN uret (or. --yeniden-gun 1,2,3). MP3'suz/eksik kalan gunleri duzeltmek icin: kayit silinir, gun bastan uretilir.")
     args = parser.parse_args()
 
     if not os.path.exists(PLAN_FILE):
         err(f"Plan bulunamadi: {PLAN_FILE}")
         print("Once sunu calistir:  python kesif.py --gun 10   (10 gunluk plan icin)")
-        return
+        sys.exit(1)
 
     with open(PLAN_FILE, "r", encoding="utf-8") as f:
         plan = json.load(f)
@@ -319,11 +382,11 @@ def main():
     if args.sadece_studio:
         if str(chn) not in CHN_STUDIO_NO:
             err(f"Kanal {chn} icin ShortsStudio eslesmesi yok.")
-            return
+            sys.exit(1)
         kilit_ok, kilit_msg = kilit_al()
         if not kilit_ok:
             err(kilit_msg)
-            return
+            sys.exit(1)
         try:
             print(f" [Adim 3/3] ShortsStudio montaji (Gun {args.sadece_studio}, kanal {chn})...")
             studio_ok, studio_bilgi = studio_islet(args.sadece_studio, chn, plan_toplam(plan))
@@ -333,14 +396,15 @@ def main():
             ok(f"✅ Gun {args.sadece_studio} final hazir: {studio_bilgi}")
         else:
             err(f"❌ Montaj olmadi: {studio_bilgi}")
+            sys.exit(1)
         return
     script = CHN_SCRIPT.get(chn)
     if not script:
         err(f"Kanal {chn} icin bot eslesmesi yok.")
-        return
+        sys.exit(1)
     if not os.path.exists(os.path.join(BASE_DIR, script)):
         err(f"Bot scripti bulunamadi: {script}")
-        return
+        sys.exit(1)
 
     videolar = sorted(plan.get("videolar", []), key=lambda v: v.get("gun", 99))
     toplam = plan_toplam(plan, len(videolar))
@@ -348,11 +412,18 @@ def main():
     kanal_ad = plan.get("kanal_ad", f"Kanal {chn}")
 
     init_db()
+    # --yeniden-gun: bu gunler DB'de islenmis olsa bile kaydi silinip bastan uretilir
+    yeniden = yeniden_gunleri_ayristir(args.yeniden_gun)
     # Daha once islenmisler atlanir (kaldigin yerden devam bedava gelir)
     kuyruk = []
     atlanan = 0
     for v in videolar:
         if v.get("gun", 1) < args.basla:
+            continue
+        if v.get("gun") in yeniden:
+            link_kaydi_sil(v["link"])
+            print(f"🔁 Gun {v['gun']} --yeniden-gun ile YENIDEN uretilecek (DB kaydi silindi).")
+            kuyruk.append(v)
             continue
         if link_kayitlimi(v["link"]):
             print(f"⏭️ Gun {v['gun']} atlandi (daha once islenmis): {v.get('baslik', '?')[:50]}")
@@ -363,6 +434,15 @@ def main():
     if not kuyruk:
         ok("Islenecek video kalmadi (hepsi islenmis ya da baslangic gununden once).")
         return
+
+    # TTS ON KONTROLU (ucretsiz): abonelik odemesi dustuyse 7 gunu bosuna kosma.
+    # Yalnizca KESIN odeme sorununda durur; ag/ucnokta hatasi zinciri bloklamaz.
+    tts_ok, tts_mesaj = tts_on_kontrol()
+    if not tts_ok:
+        err("🛑 ElevenLabs odeme sorunu: haftalik zincir BASLATILMADI (bosuna indirme/transkript/GPU yapilmadi).")
+        print(f"   {tts_mesaj}")
+        footer_fail("ElevenLabs abonelik/odeme sorunu - zincir durduruldu")
+        sys.exit(1)  # uygulama bunu 'tamamlandi' sanmasin
 
     studio_var = studio_mevcut(studio_dir_bul()) and not args.studio_atla
     adimlar = "Kesif ✓ → VideoForge → ShortsStudio" if studio_var else "Kesif ✓ → VideoForge (ShortsStudio ATLANDI)"
@@ -385,12 +465,13 @@ def main():
     kilit_ok, kilit_msg = kilit_al()
     if not kilit_ok:
         err(kilit_msg)
-        return
+        sys.exit(1)
 
     basarili, basarisiz = [], []
     studio_eksik = []  # VideoForge OK ama ShortsStudio basarisiz
     final_haritasi = {}  # gun -> final dosya adi
     kesildi = False
+    sistemik_hata = ""  # tum gunlerde tekrarlanan hata (or. TTS/abonelik) -> zincir durur
     for i, v in enumerate(kuyruk, 1):
         gun = v["gun"]
         if iptal_edildi():
@@ -405,12 +486,37 @@ def main():
         print(f" [Adim 2/3] VideoForge temizlik + SEO + ses...")
         cmd = [sys.executable, "-m", "modal", "run", script,
                "--link", v["link"], "--gun", str(gun), "--gun-toplam", str(toplam)]
+        gun_cikti = []
         try:
-            r = subprocess.run(cmd, cwd=BASE_DIR)
-            ok_code = (r.returncode == 0 and link_kayitlimi(v["link"]))
+            # Ciktiyi CANLI goster + topla: TTS/abonelik gibi tum gunlerde
+            # tekrarlanacak hata varsa kalan gunleri bosuna kosmayalim.
+            r_env = dict(os.environ)
+            r_env["PYTHONUTF8"] = "1"  # emoji basan bot ciktisi cp1254'te cokmesin
+            proc = subprocess.Popen(cmd, cwd=BASE_DIR, env=r_env,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            while True:
+                satir = proc.stdout.readline()
+                if not satir and proc.poll() is not None:
+                    break
+                if satir:
+                    metin = satir.decode("utf-8", errors="replace")
+                    gun_cikti.append(metin)
+                    print(metin, end="" if metin.endswith("\n") else "\n")
+            ok_code = (proc.wait() == 0 and link_kayitlimi(v["link"]))
         except Exception as e:
             warn(f"Calistirma hatasi: {e}")
             ok_code = False
+        if sistemik_hata_mi("".join(gun_cikti)):
+            # Or. ElevenLabs odeme/abonelik hatasi: her gun ayni sekilde patlar.
+            # Kalan gunleri kosmak para/zaman kaybi olur; kilit birakilir, kalan
+            # gunler sonraki kosuda otomatik devam eder (link kaydedilmedi).
+            sistemik_hata = sistemik_hata_ozeti("".join(gun_cikti))
+            basarisiz.append(gun)
+            print("\n" + "🛑" * 3)
+            err("HAFTALIK ZINCIR DURDURULDU: sistemik ses (TTS) hatasi - kalan gunler de ayni hatayla patlardi.")
+            err(f"   {sistemik_hata}")
+            err(f"   Sorunu cozup ayni komutu tekrar calistir; Gun {gun} ve sonrasi kaldigi yerden devam eder.")
+            break
         if not ok_code:
             err(f"❌ Gun {gun} basarisiz (atlandi, DB'ye islenmedi). Sonraki videoya geciliyor...")
             basarisiz.append(gun)
@@ -441,13 +547,17 @@ def main():
         print(f"  ❌ Basarisiz gunler: {basarisiz} (linkler islenmedi sayilir, tekrar kosuda otomatik denenir)")
     for g in sorted(final_haritasi, key=int):
         print(f"     Gun {g} → {final_haritasi[g]}")
+    if sistemik_hata:
+        print(f"  🛑 Zincir sistemik hata yuzunden erken durduruldu: {sistemik_hata}")
+        print("     (Ses/abonelik sorunu cozulunce ayni komutu tekrar calistir; kalan gunler otomatik devam eder.)")
     print(f"  📁 Gun klasorleri + finaller masaustunde: {desktop}")
     try:
         sonuc_file = sonuc_dosyasi(chn)
         with open(sonuc_file, "w", encoding="utf-8") as f:
             json.dump({"chn": chn, "kanal_ad": kanal_ad, "tarih": time.strftime("%Y-%m-%d %H:%M"),
                        "tam_final": basarili, "studio_eksik": studio_eksik,
-                       "basarisiz": basarisiz, "finaller": final_haritasi},
+                       "basarisiz": basarisiz, "finaller": final_haritasi,
+                       "sistemik_hata": sistemik_hata},
                       f, indent=2, ensure_ascii=False)
         print(f"  💾 Sonuc haritasi: {sonuc_file}")
     except Exception as e:
@@ -455,8 +565,12 @@ def main():
     kilit_birak()
     if kesildi:
         footer_fail("Kullanici durdurdu - kalan gunler sonraki kosuda otomatik devam eder")
+    elif sistemik_hata:
+        footer_fail("Sistemik ses hatasi - zincir durduruldu (sorunu cozunce kaldigi yerden devam eder)")
+        sys.exit(1)  # sessiz 'tamamlandi' yok: ciktilar eksik
     elif basarisiz or studio_eksik:
         footer_fail("Kosu bitti, eksik gunler var")
+        sys.exit(1)
     else:
         footer_done(f"Plan tamamlandi! {len(basarili)} gun final hazir 🎉")
 

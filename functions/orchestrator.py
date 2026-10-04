@@ -17,6 +17,7 @@ from functions.transcribe import api_ile_transkript_cek
 from functions.gemini_func import gemini_uret, evaluate_topic, run_voice_pipeline, fix_length, reset_gemini_call_stats, gemini_usage_summary, _LAST_HARD_BLOCK
 from functions.seo_builder import build_seo_html
 from functions.tts_func import tts_verify
+from functions.tts_kontrol import SISTEMIK_ISARET, abonelik_durumu, odeme_sorunu_var_mi, odeme_mesaji, tts_hata_mesaji
 
 def fix_ii(text):
     text = re.sub(r'\*+', '', text)
@@ -538,6 +539,15 @@ def run_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, system_p
     if not tam_metin:
         print(f"❌ [Bulut] Transkript yok, islem durduruluyor.")
         return {"prompt_user": False, "score": 0, "error": "Transcript fetch failed", "video_bytes": None, "seo_html": "", "audio_bytes": None, "title": clean_title, "gpu_wall_time": 0, "num_chunks": 0}
+    # ON KONTROL (ucretsiz): ElevenLabs odemesi dustuyse Gemini/GPU'ya hic girmeden dur.
+    # Gercek vaka (2026-10-04): 'past_due' abonelikte TTS 401 dondu ama pipeline devam
+    # edip GPU parasi harcandi; MP3 cikmadigi icin gunler boyu ShortsStudio atlandi.
+    if SETTINGS.get("ELEVENLABS_ENABLED"):
+        _abonelik = abonelik_durumu(ELEVENLABS_API_KEY)
+        if odeme_sorunu_var_mi(_abonelik):
+            _mesaj = odeme_mesaji(_abonelik)
+            print(f"🛑 [Bulut] {_mesaj}")
+            return {"prompt_user": False, "score": 0, "error": f"{SISTEMIK_ISARET}: {_mesaj}", "video_bytes": None, "seo_html": "", "audio_bytes": None, "title": clean_title, "gpu_wall_time": 0, "num_chunks": 0}
     if eval_topic and not force:
         score = evaluate_topic(tam_metin, raw_title, channel_name)
         print(f"📊 [Bulut] Konu puani: {score}/10")
@@ -659,6 +669,7 @@ def run_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, system_p
     seo_html_str = ""
 
     audio_bytes = None
+    tts_hata = None  # TTS istisnasi (fail-fast mesajinda kullanilir)
     voiceover_text = ""  # TTS blogu hata verse de asagida tanimli kalsin (NameError onlendi)
     if SETTINGS["ELEVENLABS_ENABLED"]:
         try:
@@ -705,7 +716,20 @@ def run_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, system_p
             else:
                 print(f"⚠️ [Bulut] Seslendirme metni bulunamadi ({v_key} etiketi yok).")
         except Exception as e:
+            tts_hata = e
             print(f"⚠️ [Bulut] ElevenLabs hatasi: {e}")
+
+    # SES ZORUNLU (fail-fast): TTS uretilemediyse GPU'ya HIC GIRME.
+    # Eskiden bu hata yalnizca uyariydi: 4x L4 GPU yine calisir, Gun klasorune
+    # MP3 yazilmaz ve ShortsStudio gunler boyu atlanirdi (gercek vaka 2026-10-04).
+    # Artik video URETILMEDEN net abonelik/odeme mesajiyla durur; boylece bosuna
+    # GPU parasi harcanmaz ve gunluk zincir kalan gunlerle devam etmez.
+    if SETTINGS["ELEVENLABS_ENABLED"] and not audio_bytes:
+        _abonelik = abonelik_durumu(ELEVENLABS_API_KEY)
+        _mesaj = tts_hata_mesaji(tts_hata, _abonelik)
+        print(f"🛑 [Bulut] {_mesaj}")
+        print("🛑 [Bulut] GPU temizligi ve cikti yazimi BASLATILMADI (bosuna para harcanmadi).")
+        return {"prompt_user": False, "score": 0, "error": _mesaj, "video_bytes": None, "seo_html": "", "audio_bytes": None, "title": clean_title, "gpu_wall_time": 0, "num_chunks": 0}
 
     # ПопкорнФакты self-test: voiceover must not outlast the source video.
     # Measure the real MP3 duration; if too long, recalculate the char

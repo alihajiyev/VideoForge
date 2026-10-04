@@ -387,6 +387,10 @@ async function main(): Promise<void> {
       `${wk14.steps[0].cmd.join(' ')} | ${wk14.title}`,
     )
     check('Zincir plan dosyasina bagli', typeof wk.steps[1].continueWhen === 'function')
+    const wkYeniden = buildSteps({ kind: 'weekly', channelId: '1', yenidenGun: '1,2,3' }, base)
+    check('Yeniden uretim gunleri komuta geciyor (--yeniden-gun 1,2,3)', wkYeniden.steps[1].cmd.join(' ').includes('--yeniden-gun 1,2,3'), wkYeniden.steps[1].cmd.join(' '))
+    const wkYenidenBos = buildSteps({ kind: 'weekly', channelId: '1', yenidenGun: '   ' }, base)
+    check('Bos yeniden-gun komuta eklenmiyor', !wkYenidenBos.steps[1].cmd.includes('--yeniden-gun'), wkYenidenBos.steps[1].cmd.join(' '))
 
     section('8b) Gun sayisi normalizasyonu (7 sabit degil)')
     check('normalGunSayisi(10) -> 10', normalGunSayisi(10) === 10, String(normalGunSayisi(10)))

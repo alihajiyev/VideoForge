@@ -193,6 +193,9 @@ export function buildSteps(req: JobRequest, base: string[]): { steps: JobStep[];
       const ch = channelById(chn)
       const kesifArgs = [...base, 'kesif.py', '--haftalik', String(gun), '--chn', chn, '--evet']
       const isletArgs = [...base, 'haftalik_islet.py', '--evet']
+      // Bozuk/eksik kalan gunleri yeniden uret: DB kaydi silinip gun bastan islenir.
+      const yeniden = (req.yenidenGun ?? '').trim()
+      if (yeniden) isletArgs.push('--yeniden-gun', yeniden)
       return {
         steps: [
           { label: `1. Keşif - ${gun} video bulunuyor`, cmd: kesifArgs },

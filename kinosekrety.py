@@ -1,10 +1,12 @@
 import json
 import os
+import sys
 from shared import *
 from functions.gemini_func import evaluate_topic
 from functions.transcribe import api_ile_transkript_cek, transkript_cek, transkript_cek_zamanli, yt_dlp_ile_alt_yazi_cek
 from constants import platform_tespit_et
 from functions.ui import header, footer_done, footer_fail, info, ok, warn, err, step, bar, C
+from functions.tts_kontrol import SISTEMIK_ISARET, yerel_on_kontrol
 from bulut_kanali import app, cloud_orchestrator, cloud_transcribe  # #2: ortak bulut katmani
 
 PROMPT = """You write Russian scripts for YouTube Shorts about Marvel/DC.
@@ -80,6 +82,14 @@ CHANNEL_NAME = "Kino Sekrety"
 
 @app.local_entrypoint()
 def main(link: str = None, gun: int = 0, gun_toplam: int = 0):
+    # ON KONTROL (ucretsiz): ElevenLabs odemesi dustuyse indirme/transkript/GPU'ya
+    # hic girmeden dur (gercek vaka 2026-10-04: 'past_due' abonelikte 3 gun GPU
+    # harcandi ve hicbir Gun klasorune MP3 cikmadi).
+    tts_ok, tts_mesaj = yerel_on_kontrol()
+    if not tts_ok:
+        err(f"🛑 {tts_mesaj}")
+        footer_fail("ElevenLabs abonelik/odeme sorunu - islem baslatilmadi")
+        sys.exit(1)
     subprocess.run(["python", "-m", "pip", "install", "-U", "--quiet", "yt-dlp", "openai-whisper", "SpeechRecognition", "curl_cffi"], capture_output=True)
     ensure_fresh_ytdlp()
     header("☁️  VIDEO INDIRICI & AI TEMIZLEYICI (KINO SEKRETY) ☁️", "Kino Sekrety kanali secildi")
@@ -169,9 +179,11 @@ def main(link: str = None, gun: int = 0, gun_toplam: int = 0):
                                           voice_prompt=VOICE_PROMPT, title_prompt=TITLE_PROMPT, tags_prompt=TAGS_PROMPT)
     if response.get("error"):
         err(f"Islem iptal edildi: {response['error']}")
+        if SISTEMIK_ISARET in str(response["error"]):
+            print("🛑 Bu hata tum gunlerde tekrarlanir (abonelik/odeme). Once sorunu coz; islenmeyen gunler sonraki kosuda otomatik devam eder.")
         beep(False)
         footer_fail("Bulut islemi basarisiz")
-        return
+        sys.exit(1)  # cikti uretilmedi: uygulama bunu 'tamamlandi' sanmasin
     out_dir = desktop_path
     if gun > 0:
         out_dir = os.path.join(desktop_path, f"Gun{gun}_{guvenli_klasor_adi(response['title'])}_{rand_num}")

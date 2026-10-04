@@ -109,9 +109,29 @@ async function elevenlabs(key: string): Promise<KrediServisi> {
     character_limit?: number
     tier?: string
     next_character_count_reset_unix?: number
+    status?: string
+    has_open_invoices?: boolean
   }
   const limit = Number(d.character_limit ?? 0)
   const used = Number(d.character_count ?? 0)
+  // Odeme sorunu (or. past_due): TTS 401 payment_issue doner ve bot artik
+  // GPU'ya girmeden durur (fail-fast). Karta bunu KIRMIZI durumla yansit;
+  // aksi halde kart "ok / kalan karakter var" gorunup gercek neden gizleniyordu.
+  const abonelikDurum = (d.status ?? '').trim().toLowerCase()
+  const odemeSorunlu = ['past_due', 'unpaid', 'incomplete', 'incomplete_expired'].includes(abonelikDurum)
+  if (odemeSorunlu) {
+    return {
+      id: 'elevenlabs',
+      ad,
+      durum: 'hata',
+      kalan: null,
+      toplam: null,
+      birim: 'karakter',
+      hata: `Ödeme sorunu: abonelik "${abonelikDurum}"${d.has_open_invoices ? ' · ödenmemiş fatura var' : ''}. Ses (TTS) üretilemez; bot boşuna GPU harcamadan durur. Bekleyen faturayı ElevenLabs > Billing'den tamamlayın.`,
+      detay: d.tier ? `plan: ${d.tier}` : undefined,
+      baglanti: 'https://elevenlabs.io/app/subscription',
+    }
+  }
   return {
     id: 'elevenlabs',
     ad,
@@ -119,7 +139,7 @@ async function elevenlabs(key: string): Promise<KrediServisi> {
     kalan: Number.isFinite(limit) && limit > 0 ? Math.max(0, limit - used) : null,
     toplam: limit > 0 ? limit : null,
     birim: 'karakter',
-    detay: d.tier ? `plan: ${d.tier}` : undefined,
+    detay: d.tier ? `plan: ${d.tier}${abonelikDurum ? ` · durum: ${abonelikDurum}` : ''}` : undefined,
     sifirlanmaMs: d.next_character_count_reset_unix ? d.next_character_count_reset_unix * 1000 : null,
   }
 }

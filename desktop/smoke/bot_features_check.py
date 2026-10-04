@@ -394,6 +394,69 @@ kontrol("Yon bagimli eski cap'ler kalmadi",
 kontrol("Kanal 3 artik 4K indirmiyor (ciplak 'best' kalmadi)", '"format": "best"' not in kino_s_kaynak)
 
 # --------------------------------------------------------------------------
+bolum("J) TTS/abonelik dayanikliligi (MP3'suz video URETILMEZ: fail-fast)")
+# Gercek vaka (2026-10-04): ElevenLabs aboneligi 'past_due' iken gunluk zincir
+# 3 gun boyunca GPU harcadi, hicbir Gun klasorune MP3 yazilmadi ve ShortsStudio
+# her gun ".mp3 bulunamadi" ile atlandi. Bu bolum ayni senaryonun sessizce
+# tekrarlanmadigini dogrular: on kontrol + TTS fail-fast + zincir durdurma.
+from functions import tts_kontrol  # noqa: E402
+kontrol("Odeme sorunu: 'past_due' sistemik sayilir", tts_kontrol.odeme_sorunu_var_mi({"status": "past_due"}))
+kontrol("Odeme sorunu: 'unpaid' sistemik sayilir", tts_kontrol.odeme_sorunu_var_mi({"status": "unpaid"}))
+kontrol("Odeme sorunu: 'active' engellemez", not tts_kontrol.odeme_sorunu_var_mi({"status": "active"}))
+kontrol("Odeme sorunu: ulasilamayan durum (None) engellemez", not tts_kontrol.odeme_sorunu_var_mi(None))
+_odeme_mesaj = tts_kontrol.odeme_mesaji({"status": "past_due", "has_open_invoices": True})
+kontrol("Odeme mesaji durum + fatura + cozum icerir",
+        "past_due" in _odeme_mesaj and "fatura" in _odeme_mesaj and "elevenlabs.io" in _odeme_mesaj)
+_tts_hata = tts_kontrol.tts_hata_mesaji("401 payment_issue")
+kontrol("401 payment_issue metni sistemik isaretli + fail-fast anlatir",
+        tts_kontrol.SISTEMIK_ISARET in _tts_hata and "GPU BASLATILMADI" in _tts_hata)
+kontrol("Sistemik isaret sabiti degismedi", tts_kontrol.SISTEMIK_ISARET == "VIDEOFORGE-SISTEMIK-TTS-HATASI")
+kontrol("Yerel on kontrol fonksiyonu var (kanal scriptleri + zincir kullanir)", callable(getattr(tts_kontrol, "yerel_on_kontrol", None)))
+_orch = oku("functions/orchestrator.py")
+kontrol("Orkestrator TTS on kontrolu yapar (abonelik_durumu)", "abonelik_durumu(" in _orch)
+kontrol("Orkestrator: ses yoksa hata dondurur (fail-fast)", "not audio_bytes" in _orch and "tts_hata_mesaji(" in _orch)
+_ff = _orch.find("tts_hata_mesaji(")
+_gpu = _orch.find("bot = VideoCleanerClass()")
+kontrol("Fail-fast GPU cagrisindan ONCE", 0 <= _ff < _gpu)
+_hk = oku("haftalik_islet.py")
+kontrol("Zincir on kontrolu odeme durumunu sorgular", "tts_on_kontrol" in _hk and "yerel_on_kontrol" in _hk)
+kontrol("Zincir bot ciktisini canli toplar (sistemik hata tespiti)", "gun_cikti" in _hk)
+kontrol("Zincir sistemik hatada kalan gunleri durdurur", "sistemik_hata_mi(" in _hk and "break" in _hk)
+kontrol("Sistemik hata isaretli ciktiyla yakalanir", haftalik_islet.sistemik_hata_mi(
+    "⚠️ [Bulut] ElevenLabs hatasi: 401 " + tts_kontrol.SISTEMIK_ISARET + ": ElevenLabs abonelik/odeme hatasi"))
+kontrol("Normal cikti sistemik hata sayilmaz", not haftalik_islet.sistemik_hata_mi(
+    "✅ Gun 1 VideoForge tamamlandi.\n🎬 ShortsStudio montaji basliyor.\n📁 final_123.mp4"))
+for _ad, _dosya in (("Kanal 1", "kinosekrety.py"), ("Kanal 2", "faktza15.py"), ("Kanal 3", "kinok_syjet.py")):
+    _kanal_kaynak = oku(_dosya)
+    kontrol(f"{_ad}: sistemik TTS hatasi kanal scriptinde net duyurulur", "SISTEMIK_ISARET" in _kanal_kaynak)
+    kontrol(f"{_ad}: kosu basinda ucretsiz TTS on kontrolu yapar", "yerel_on_kontrol()" in _kanal_kaynak)
+    kontrol(f"{_ad}: hatada sifir olmayan cikis kodu (app 'tamamlandi' sanmasin)", "sys.exit(1)" in _kanal_kaynak)
+kontrol("Zincir eksik/sistemik gunde sifir olmayan cikis kodu verir", "sys.exit(1)" in _hk)
+kontrol("Zincir --yeniden-gun parametresi sunar", "--yeniden-gun" in _hk)
+kontrol("Yeniden gun ayristirma (1, 2,x,3 -> {1,2,3})", haftalik_islet.yeniden_gunleri_ayristir("1, 2,x,3") == {1, 2, 3})
+kontrol("Yeniden gun ayristirma bos deger -> bos kume", haftalik_islet.yeniden_gunleri_ayristir(None) == set())
+# Gecici DB ile kayit silme davranisi (GERCEK bot.db'ye DOKUNMAZ)
+import sqlite3 as _sqlite3  # noqa: E402
+import constants as _constants  # noqa: E402
+_gecici_db = os.path.join(gecici("vf_db_"), "bot.db")
+_eski_db_yolu = _constants.DB_PATH
+try:
+    _constants.DB_PATH = _gecici_db
+    with _sqlite3.connect(_gecici_db) as _conn:
+        _conn.execute("CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, link TEXT UNIQUE NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        _conn.execute("INSERT INTO videos (link) VALUES ('dQw4w9WgXcQ')")
+        _conn.commit()
+    _silindi = haftalik_islet.link_kaydi_sil("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    with _sqlite3.connect(_gecici_db) as _conn:
+        _kalan = _conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+    kontrol("--yeniden-gun: DB kaydi silinir (yeniden uretim mumkun)", _silindi and _kalan == 0)
+finally:
+    _constants.DB_PATH = _eski_db_yolu
+_kredi = oku(os.path.join("desktop", "electron", "data", "credits.ts"))
+kontrol("Kredi kartinda past_due -> kirmizi hata + fatura mesaji",
+        "odemeSorunlu" in _kredi and "'past_due'" in _kredi and "has_open_invoices" in _kredi)
+
+# --------------------------------------------------------------------------
 for y in temizlenecek:
     shutil.rmtree(y, ignore_errors=True)
 

@@ -109,6 +109,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
   const { env, envLoading, refreshEnv, startJob, job, info } = useApp()
   const [channelId, setChannelId] = useState<string>('1')
   const [link, setLink] = useState('')
+  const [yenidenGun, setYenidenGun] = useState('')
   const [busy, setBusy] = useState<'' | 'kesif' | 'link' | 'uretim'>('')
 
   const reports = useResource(() => unwrap(api.reportsList()), [job?.endedAt], { intervalMs: 15000 })
@@ -125,7 +126,13 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
     } else if (tur === 'link') {
       ok = await startJob({ kind: 'channel', channelId: channelId as '1' | '2' | '3', link: link.trim() })
     } else {
-      ok = await startJob({ kind: 'weekly', channelId: channelId as '1' | '2' | '3', haftalik: true, gunSayisi })
+      ok = await startJob({
+        kind: 'weekly',
+        channelId: channelId as '1' | '2' | '3',
+        haftalik: true,
+        gunSayisi,
+        yenidenGun: yenidenGun.trim() || undefined,
+      })
     }
     setBusy('')
     if (ok) onNavigate('run')
@@ -236,6 +243,13 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
         >
           <KanalSecici value={channelId} onChange={setChannelId} disabled={running} id="uretim-kanal" />
           <GunSayisiSecici value={gunSayisi} onChange={setGunSayisi} disabled={running} id="gun-sayisi-uretim" hint={false} />
+          <Input
+            value={yenidenGun}
+            onChange={(e) => setYenidenGun(e.target.value.replace(/[^\d,\s]/g, ''))}
+            disabled={running}
+            placeholder="Yeniden üretilecek günler (örn. 1,2,3) — boş = kalan günler"
+            aria-label="Yeniden üretilecek günler"
+          />
           <Button
             variant="primary"
             icon={<Layers className="size-3.5" />}
