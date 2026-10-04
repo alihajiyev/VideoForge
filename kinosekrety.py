@@ -111,7 +111,10 @@ def main(link: str = None, gun: int = 0, gun_toplam: int = 0):
     current_dir = os.getcwd()
     cookies_path = os.path.join(current_dir, "cookies.txt")
     if platform == "youtube":
-        ydl_opts = {"format": "bestvideo[height<=1440]/bestvideo", "outtmpl": local_video_path, "cookiefile": cookies_path, "quiet": True, "noplaylist": True, "remote_components": {"ejs:github"}}
+        # Cap'i GENISLIK+YUKSEKLIK ile ver: dikey Short'ta 1080p'nin height'i 1920'dir;
+        # eski height<=1440 cap'i dikeyde sessizce 720x1280'e dusuruyordu.
+        # [ext=mp4] tercihi: dosya adi sabit .mp4 kaliyor (bot bu yolu bekliyor).
+        ydl_opts = {"format": "bestvideo[width<=1920][height<=1920][ext=mp4]/bestvideo[width<=1920][height<=1920]/bestvideo", "outtmpl": local_video_path, "cookiefile": cookies_path, "quiet": True, "noplaylist": True, "remote_components": {"ejs:github"}}
     else:
         ydl_opts = {"format": "best", "outtmpl": local_video_path, "cookiefile": cookies_path, "quiet": True, "noplaylist": True}
     try:

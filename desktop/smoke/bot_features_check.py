@@ -371,6 +371,29 @@ else:
     print("  NOT   ShortsStudio/zapcap.py bulunamadi, kontrol atlandi.")
 
 # --------------------------------------------------------------------------
+bolum("I) Indirme cozunurluk politikasi (dikey videoda gercek 1080p)")
+# Dikey Short'ta 1080p'nin height'i 1920'dir; eski height<=1080/1440 cap'leri
+# dikeyde sessizce 608/720p seciyordu. Cap artik genislik+yukseklik ile ve
+# [ext=mp4] tercihiyle dosya adi sabit .mp4 kaliyor (bot bu yolu bekliyor).
+CAP = "bestvideo[width<=1920][height<=1920]"
+TEK = f'"{CAP}[ext=mp4]/{CAP}/bestvideo"'
+CIFT = f'"{CAP}[ext=mp4]+bestaudio[ext=m4a]/{CAP}+bestaudio/best"'
+kino_kaynak = oku("kinosekrety.py")
+fakt_kaynak = oku("faktza15.py")
+kino_s_kaynak = oku("kinok_syjet.py")
+temiz_kaynak = oku("temizle.py")
+kontrol("Kanal 1 indirmesi dikey 1080p + .mp4 tercihi", TEK in kino_kaynak)
+kontrol("Kanal 2 indirmesi dikey 1080p + .mp4 tercihi", TEK in fakt_kaynak)
+kontrol("Kanal 3 indirmesi dikey 1080p + ses (m4a) tercihi", CIFT in kino_s_kaynak)
+kontrol("Kanal 3 merge cikisi mp4 (dosya adi .mp4 kalir)", '"merge_output_format": "mp4"' in kino_s_kaynak)
+kontrol("Temizleyici indirmesi dikey 1080p + ses (m4a) tercihi", CIFT in temiz_kaynak)
+kontrol("Yon bagimli eski cap'ler kalmadi",
+        "bestvideo[height<=1440]/bestvideo" not in kino_kaynak and
+        "bestvideo[height<=1080]/bestvideo" not in fakt_kaynak and
+        "bestvideo[height<=1080]+bestaudio/best" not in temiz_kaynak)
+kontrol("Kanal 3 artik 4K indirmiyor (ciplak 'best' kalmadi)", '"format": "best"' not in kino_s_kaynak)
+
+# --------------------------------------------------------------------------
 for y in temizlenecek:
     shutil.rmtree(y, ignore_errors=True)
 

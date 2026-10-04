@@ -105,7 +105,11 @@ def main(link: str = None, gun: int = 0, gun_toplam: int = 0):
     local_video_path = os.path.join(local_tmp_dir, f"yerel_raw_{rand_num}.mp4")
     current_dir = os.getcwd()
     cookies_path = os.path.join(current_dir, "cookies.txt")
-    ydl_opts = {"format": "best", "outtmpl": local_video_path, "cookiefile": cookies_path, "quiet": True, "noplaylist": True, "remote_components": {"ejs:github"}}
+    # Eskiden "best" idi: 4K'ya kadar indirip GPU maliyetini sisiriyordu.
+    # Artik dikey/yatay fark etmeksizin 1080p tavani. Video+ses ayri gelip
+    # birlestirildigi icin merge_output_format sart: onsuz dosya "...mp4.webm"
+    # adiyla yaziliyor ve botun bekledigi .mp4 yolu bulunamiyor (test edildi).
+    ydl_opts = {"format": "bestvideo[width<=1920][height<=1920][ext=mp4]+bestaudio[ext=m4a]/bestvideo[width<=1920][height<=1920]+bestaudio/best", "merge_output_format": "mp4", "outtmpl": local_video_path, "cookiefile": cookies_path, "quiet": True, "noplaylist": True, "remote_components": {"ejs:github"}}
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             video_info = ydl.extract_info(link, download=True)

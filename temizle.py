@@ -110,7 +110,10 @@ else:
         title_res = subprocess.run([sys.executable, "-m", "yt_dlp", "--print", "title", "--cookies", "cookies.txt", "--remote-components", "ejs:github", "--quiet", "--no-playlist", "--no-progress", link], capture_output=True, text=True)
         raw_title = title_res.stdout.strip() or "video"
         # Video + ses birlikte indir (subprocess, merge saglam)
-        subprocess.run([sys.executable, "-m", "yt_dlp", "-f", "bestvideo[height<=1080]+bestaudio/best", "--merge-output-format", "mp4", "-o", video_path, "--cookies", "cookies.txt", "--remote-components", "ejs:github", "--quiet", "--no-playlist", "--no-progress", link], check=True)
+        # Cap'i GENISLIK+YUKSEKLIK ile ver: dikey Short'ta 1080p'nin height'i 1920'dir;
+        # eski height<=1080 cap'i dikeyde 608x1080'e dusuruyordu. mp4+m4a tercih
+        # edilir ki --merge-output-format mp4 ile isim ve kap gercek mp4 kalsin.
+        subprocess.run([sys.executable, "-m", "yt_dlp", "-f", "bestvideo[width<=1920][height<=1920][ext=mp4]+bestaudio[ext=m4a]/bestvideo[width<=1920][height<=1920]+bestaudio/best", "--merge-output-format", "mp4", "-o", video_path, "--cookies", "cookies.txt", "--remote-components", "ejs:github", "--quiet", "--no-playlist", "--no-progress", link], check=True)
         if not os.path.exists(video_path):
             print(f"{C.RED}❌ Video indirilemedi!{C.RESET}")
             return

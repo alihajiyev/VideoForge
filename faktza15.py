@@ -104,7 +104,10 @@ def main(link: str = None, gun: int = 0, gun_toplam: int = 0):
     title_res = subprocess.run(title_cmd, capture_output=True, text=True)
     raw_title = title_res.stdout.strip() or "video"
     if platform == "youtube":
-        dl_cmd = ["python", "-m", "yt_dlp", "-f", "bestvideo[height<=1080]/bestvideo", "-o", video_path, "--cookies", cookies_path, "--remote-components", "ejs:github", "--quiet", "--no-playlist", "--no-progress", link]
+        # Cap'i GENISLIK+YUKSEKLIK ile ver: dikey Short'ta 1080p'nin height'i 1920'dir;
+        # eski height<=1080 cap'i dikeyde sessizce 608x1080'e dusuruyordu.
+        # [ext=mp4] tercihi: dosya adi sabit .mp4 kaliyor (bot bu yolu bekliyor).
+        dl_cmd = ["python", "-m", "yt_dlp", "-f", "bestvideo[width<=1920][height<=1920][ext=mp4]/bestvideo[width<=1920][height<=1920]/bestvideo", "-o", video_path, "--cookies", cookies_path, "--remote-components", "ejs:github", "--quiet", "--no-playlist", "--no-progress", link]
     else:
         dl_cmd = ["python", "-m", "yt_dlp", "-f", "best", "-o", video_path, "--cookies", cookies_path, "--quiet", "--no-playlist", "--no-progress", link]
     subprocess.run(dl_cmd, check=True)
