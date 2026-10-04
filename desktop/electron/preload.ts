@@ -9,6 +9,7 @@ import type {
   DownloadProgress,
   EngineConfig,
   EnvCheck,
+  GizliAnahtarlar,
   HarcamaOzeti,
   JobRequest,
   JobState,
@@ -105,6 +106,8 @@ const api = {
   spendSummary: (): Promise<Result<HarcamaOzeti>> => ipcRenderer.invoke(IPC.spendSummary),
   quotaGet: (): Promise<Result<KotaBilgisi>> => ipcRenderer.invoke(IPC.quotaGet),
   creditsGet: (): Promise<Result<KrediServisi[]>> => ipcRenderer.invoke(IPC.creditsGet),
+  secretsGet: (): Promise<Result<GizliAnahtarlar>> => ipcRenderer.invoke(IPC.secretsGet),
+  secretsSet: (patch: Partial<GizliAnahtarlar>): Promise<Result<GizliAnahtarlar>> => ipcRenderer.invoke(IPC.secretsSet, patch),
 
   winMinimize: (): Promise<boolean> => ipcRenderer.invoke(IPC.winMinimize),
   winMaximize: (): Promise<boolean> => ipcRenderer.invoke(IPC.winMaximize),

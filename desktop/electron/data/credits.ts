@@ -4,6 +4,7 @@ import type { KrediServisi } from '@shared/types'
 import { botPath } from '../core/paths'
 import { getSettings } from '../core/settings'
 import { log } from '../core/logger'
+import { harcamaOzeti } from './spend'
 
 /**
  * SERVIS KREDILERI
@@ -166,6 +167,25 @@ function gemini(env: Record<string, string>): KrediServisi {
   }
 }
 
+/**
+ * Modal (GPU bulut): resmi bakiye API'si yalnizca Team/Enterprise planinda
+ * acik oldugu icin gercek bakiye cekilemez. Bunun yerine uygulamanin kendi
+ * harcama defterinden bu ayin TAHMINI Modal harcamasi gosterilir; gercek
+ * bakiye icin modal.com/billing adresine yonlendirme metni verilir.
+ */
+function modal(ayUsd: number): KrediServisi {
+  return {
+    id: 'modal',
+    ad: 'Modal (GPU bulut)',
+    durum: 'bilgi',
+    kalan: Number.isFinite(ayUsd) ? ayUsd : null,
+    toplam: null,
+    // 'USD-tahmini': kart bunu "bu ay tahmini harcama" olarak etiketler.
+    birim: 'USD-tahmini',
+    detay: 'Modal resmi bakiye API’si Team planında açık; değer uygulamanın GPU harcama defterinden. Gerçek bakiye: modal.com/billing',
+  }
+}
+
 /** Tum servislerin kalan kredisini paralel sorgular. */
 export async function kredileriGetir(): Promise<KrediServisi[]> {
   const root = botPath(getSettings().videoForgePath)
@@ -175,6 +195,7 @@ export async function kredileriGetir(): Promise<KrediServisi[]> {
     elevenlabs((env.ELEVENLABS_API_KEY || '').trim()),
     zapcap(zc.key, zc.kaynak),
   ])
+  const ayUsd = harcamaOzeti().ayUsd
   log.info('krediler sorgulandi:', el.durum, zp.durum)
-  return [el, zp, gemini(env)]
+  return [el, zp, modal(ayUsd), gemini(env)]
 }

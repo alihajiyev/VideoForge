@@ -3,13 +3,16 @@ import {
   AlertTriangle,
   Bell,
   CalendarClock,
+  Captions,
   CheckCircle2,
   CloudDownload,
-  Cpu,
+  Eye,
+  EyeOff,
   ExternalLink,
   FolderOpen,
   Gauge,
   GitBranch,
+  KeyRound,
   MonitorSmartphone,
   Moon,
   PackageCheck,
@@ -19,12 +22,55 @@ import {
   Sun,
   Sparkles,
   Terminal,
+  Volume2,
 } from 'lucide-react'
 import { CHANNELS } from '@shared/channels'
 import { api, unwrap } from '@/lib/api'
 import { useApp } from '@/app/AppContext'
 import { cn, formatBytes } from '@/lib/utils'
 import { Badge, Button, Input, KeyValue, Panel, Progress, SectionTitle, Select, Spinner, Switch } from '@/components/ui/primitives'
+import type { AltyaziMotoru, GizliAnahtarlar } from '@shared/types'
+
+/** Gizli metin alani: varsayilan olarak maskeli, goz simgesiyle acilir. */
+function SecretInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+}): ReactNode {
+  const [acik, setAcik] = useState(false)
+  return (
+    <div className="relative">
+      <Input
+        type={acik ? 'text' : 'password'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete="off"
+        spellCheck={false}
+        className="pr-9 font-mono text-[12px]"
+      />
+      <button
+        type="button"
+        onClick={() => setAcik((v) => !v)}
+        title={acik ? 'Gizle' : 'Göster'}
+        className="absolute top-1/2 right-2 -translate-y-1/2 text-fg-subtle transition-colors hover:text-fg"
+      >
+        {acik ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+      </button>
+    </div>
+  )
+}
+
+const MOTOR_ETIKET: Record<AltyaziMotoru, string> = {
+  auto: 'Otomatik (varsayılan: 3. kanal yerel, diğerleri ZapCap)',
+  zapcap: 'ZapCap (şablon ile profesyonel altyazı)',
+  yerel: 'Yerel karaoke (ücretsiz, ZapCap gerekmez)',
+  remotion: 'Remotion (karaoke kompozit)',
+}
 
 export function SettingsPage(): ReactNode {
   const {
@@ -59,6 +105,50 @@ export function SettingsPage(): ReactNode {
   const [repo, setRepo] = useState('')
   const [saving, setSaving] = useState(false)
   const [downloadedPath, setDownloadedPath] = useState<string | null>(null)
+  const [sec, setSec] = useState<GizliAnahtarlar | null>(null)
+  const [secSaving, setSecSaving] = useState(false)
+
+  useEffect(() => {
+    void api
+      .secretsGet()
+      .then((r) => {
+        if (r.ok) setSec(r.data)
+      })
+      .catch(() => undefined)
+  }, [])
+
+  const secKoy = (patch: Partial<GizliAnahtarlar>): void => setSec((prev) => (prev ? { ...prev, ...patch } : prev))
+
+  const secKaydet = async (): Promise<void> => {
+    if (!sec) return
+    setSecSaving(true)
+    try {
+      const next = await unwrap(
+        api.secretsSet({
+          geminiApiKeys: sec.geminiApiKeys,
+          elevenlabsApiKey: sec.elevenlabsApiKey,
+          transcriptApiKey: sec.transcriptApiKey,
+          zapcapApiKey: sec.zapcapApiKey,
+          zapcapTemplateId: sec.zapcapTemplateId,
+          altyaziMotoru: sec.altyaziMotoru,
+          voiceCh1: sec.voiceCh1,
+          voiceCh2: sec.voiceCh2,
+          voiceCh3: sec.voiceCh3,
+        }),
+      )
+      setSec(next)
+      pushToast({
+        tone: 'success',
+        title: 'Anahtarlar kaydedildi',
+        message: next.shortsStudioFound ? '.env ve ShortsStudio config.py güncellendi.' : '.env güncellendi (ShortsStudio klasörü bulunamadı).',
+      })
+      void refreshEnv()
+    } catch (err) {
+      pushToast({ tone: 'error', title: 'Kaydedilemedi', message: String(err) })
+    } finally {
+      setSecSaving(false)
+    }
+  }
 
   useEffect(() => {
     setBotPath(settings?.videoForgePath ?? '')
@@ -182,6 +272,115 @@ export function SettingsPage(): ReactNode {
         </Panel>
       </div>
 
+      {/* ---------------- API anahtarları + sesler + altyazı ---------------- */}
+      <Panel className="p-4">
+        <SectionTitle
+          title="API anahtarları ve servisler"
+          subtitle="Uygulamadan değiştir · botun .env dosyasına yazılır"
+          icon={<KeyRound className="size-4" />}
+          right={
+            sec ? (
+              <Badge tone={sec.shortsStudioFound ? 'success' : 'warn'}>
+                {sec.shortsStudioFound ? 'ShortsStudio bağlı' : 'ShortsStudio yok'}
+              </Badge>
+            ) : null
+          }
+        />
+        {!sec ? (
+          <div className="flex items-center gap-2 py-8 text-[12px] text-fg-subtle">
+            <Spinner /> Anahtarlar okunuyor...
+          </div>
+        ) : (
+          <>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <label className="block lg:col-span-2">
+                <span className="mb-1 block text-[11.5px] text-fg-subtle">Gemini API anahtarları (virgülle ayırın)</span>
+                <SecretInput value={sec.geminiApiKeys} onChange={(v) => secKoy({ geminiApiKeys: v })} placeholder="AQ.Ab8... , AQ.Ab8..." />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11.5px] text-fg-subtle">ElevenLabs API anahtarı</span>
+                <SecretInput value={sec.elevenlabsApiKey} onChange={(v) => secKoy({ elevenlabsApiKey: v })} placeholder="sk_..." />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11.5px] text-fg-subtle">
+                  Transcript API anahtarı <span className="text-fg-subtle/70">(yedek transkript; opsiyonel)</span>
+                </span>
+                <SecretInput value={sec.transcriptApiKey} onChange={(v) => secKoy({ transcriptApiKey: v })} placeholder="(opsiyonel)" />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11.5px] text-fg-subtle">ZapCap API anahtarı</span>
+                <SecretInput value={sec.zapcapApiKey} onChange={(v) => secKoy({ zapcapApiKey: v })} placeholder="ZapCap anahtarı" />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11.5px] text-fg-subtle">
+                  ZapCap şablon ID <span className="text-fg-subtle/70">(altyazı stili)</span>
+                </span>
+                <Input
+                  value={sec.zapcapTemplateId}
+                  onChange={(e) => secKoy({ zapcapTemplateId: e.target.value })}
+                  className="font-mono text-[12px]"
+                  placeholder="6255949c-..."
+                />
+              </label>
+              <label className="block lg:col-span-2">
+                <span className="mb-1 flex items-center gap-1.5 text-[11.5px] text-fg-subtle">
+                  <Captions className="size-3.5" /> Altyazı motoru
+                </span>
+                <Select value={sec.altyaziMotoru} onChange={(e) => secKoy({ altyaziMotoru: e.target.value as AltyaziMotoru })}>
+                  {(Object.keys(MOTOR_ETIKET) as AltyaziMotoru[]).map((k) => (
+                    <option key={k} value={k}>
+                      {MOTOR_ETIKET[k]}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            </div>
+
+            <div className="mt-4 border-t border-border pt-3.5">
+              <p className="flex items-center gap-1.5 text-[12px] font-medium text-fg-muted">
+                <Volume2 className="size-3.5 text-brand" /> Kanal sesleri (ElevenLabs voice ID)
+              </p>
+              <div className="mt-2 grid gap-3 lg:grid-cols-3">
+                {CHANNELS.map((ch, i) => {
+                  const alan = (['voiceCh1', 'voiceCh2', 'voiceCh3'] as const)[i]
+                  return (
+                    <label key={ch.id} className="block">
+                      <span className="mb-1 block text-[11.5px] text-fg-subtle">
+                        {ch.id} · {ch.name}
+                      </span>
+                      <Input
+                        value={sec[alan]}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          if (alan === 'voiceCh1') secKoy({ voiceCh1: v })
+                          else if (alan === 'voiceCh2') secKoy({ voiceCh2: v })
+                          else secKoy({ voiceCh3: v })
+                        }}
+                        className="font-mono text-[12px]"
+                        placeholder="voice_id"
+                      />
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="mt-3.5 flex flex-wrap items-center gap-2">
+              <Button variant="primary" icon={<Save className="size-3.5" />} loading={secSaving} onClick={() => void secKaydet()}>
+                Anahtarları kaydet
+              </Button>
+              <Badge tone="neutral" className="font-mono">
+                {sec.envPath}
+              </Badge>
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-fg-subtle">
+              Değerler bot klasöründeki <span className="font-mono">.env</span> dosyasına yazılır; ZapCap anahtarı, şablon ve altyazı motoru ayrıca
+              ShortsStudio <span className="font-mono">functions/config.py</span> dosyasına işlenir. Anahtarları sohbette/ekran görüntüsünde paylaşmayın.
+            </p>
+          </>
+        )}
+      </Panel>
+
       <Panel className="p-4">
         <SectionTitle
           title="Motor yapılandırması"
@@ -236,15 +435,6 @@ export function SettingsPage(): ReactNode {
                     Kaydet
                   </Button>
                 </div>
-              </div>
-              <div className="mt-3 rounded-[10px] border border-border bg-[var(--surface-2)] p-3">
-                <p className="flex items-center gap-2 text-[11.5px] font-medium text-fg-muted">
-                  <Cpu className="size-3.5 text-violet" /> İşlem profili
-                </p>
-                <KeyValue label="Akıllı yazı filtresi" value={engine.smartTextFilter ? 'açık' : 'kapalı'} />
-                <KeyValue label="Kanal 3 metin modu" value="soru cümlesi yasak (sinematik anlatıcı)" />
-                <KeyValue label="Kapak görseli" value="YuNet yüz + CLIP konu skoru" />
-                <KeyValue label="Zaman haritası" value="Whisper kelime zamanları" />
               </div>
             </div>
           </div>
@@ -629,20 +819,14 @@ export function SettingsPage(): ReactNode {
         </Panel>
 
         <Panel className="p-4">
-          <SectionTitle title="Uygulama bilgisi" subtitle="Yol ve sürüm ayrıntıları" />
+          <SectionTitle title="Uygulama bilgisi" subtitle={`VideoForge ${info?.version ?? '—'} · Electron ${info?.electron ?? '—'}`} />
           <div className="mt-2">
-            <KeyValue label="Uygulama sürümü" value={info?.version ?? '—'} />
-            <KeyValue label="Electron / Node" value={`${info?.electron ?? '—'} / ${info?.node ?? '—'}`} />
             <KeyValue label="Bot klasörü" value={info?.videoForgePath ?? '—'} />
-            <KeyValue label="Veritabanı" value={info?.dbPath ?? '—'} />
-            <KeyValue label="Log dosyası" value={info?.logPath ?? '—'} />
-            <KeyValue label="cookies.txt" value={info?.cookiesPath ?? '—'} />
             <KeyValue label="Ayar klasörü" value={info?.userData ?? '—'} />
           </div>
           <p className="mt-3 rounded-[10px] border border-border bg-[var(--surface-2)] px-3 py-2 text-[11.5px] text-fg-subtle leading-relaxed">
-            Anahtarlar artık kodun içinde değil: <span className="font-mono text-fg-muted">.env</span> dosyasından okunur ve
-            <span className="font-mono text-fg-muted"> .env</span> sürüm kontrolüne girmez. Anahtarları sohbette veya ekran
-            görüntülerinde paylaşmayın.
+            Anahtarları yukarıdaki <span className="text-fg-muted">“API anahtarları ve servisler”</span> bölümünden değiştirebilirsin; değerler botun{' '}
+            <span className="font-mono text-fg-muted">.env</span> dosyasına yazılır ve sürüm kontrolüne girmez.
           </p>
         </Panel>
       </div>

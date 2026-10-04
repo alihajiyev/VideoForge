@@ -2,7 +2,7 @@ import { app, ipcMain, nativeTheme, shell } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { IPC } from '@shared/constants'
-import type { AppInfo, AppSettings, JobRequest } from '@shared/types'
+import type { AppInfo, AppSettings, GizliAnahtarlar, JobRequest } from '@shared/types'
 import { botPath, cookiesPath, dbPath, desktopDir, logPath } from './core/paths'
 import { getSettings, setSettings } from './core/settings'
 import { log } from './core/logger'
@@ -17,6 +17,7 @@ import { otomatikDurum, otomatikKontrol, otomatikKur } from './update/auto'
 import { groupArtifacts, listArtifacts, previewHtml } from './data/reports'
 import { harcamaOzeti, kotaBilgisi } from './data/spend'
 import { kredileriGetir } from './data/credits'
+import { gizliAnahtarlariGetir, gizliAnahtarlariYaz } from './data/secrets'
 import {
   kuyrukListesi,
   kuyrugaEkle,
@@ -348,6 +349,22 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.creditsGet, async () => {
     try {
       return ok(await kredileriGetir())
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+
+  ipcMain.handle(IPC.secretsGet, () => {
+    try {
+      return ok(gizliAnahtarlariGetir())
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+
+  ipcMain.handle(IPC.secretsSet, (_e, patch: Partial<GizliAnahtarlar>) => {
+    try {
+      return ok(gizliAnahtarlariYaz(patch ?? {}))
     } catch (err) {
       return fail(String(err))
     }

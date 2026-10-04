@@ -1,4 +1,5 @@
 ﻿import json
+import os
 from shared import *
 from functions.gemini_func import evaluate_topic
 from functions.transcribe import api_ile_transkript_cek, transkript_cek, transkript_cek_zamanli, yt_dlp_ile_alt_yazi_cek
@@ -62,7 +63,8 @@ Rules:
 
 Write ONLY the tags, one line."""
 
-VOICE_ID = "M1CSR3PJBsfWU6ZquG3C"
+# Ses (voice ID) uygulamadan .env'deki VOICE_ID_CH2 ile degistirilebilir.
+VOICE_ID = os.environ.get("VOICE_ID_CH2", "M1CSR3PJBsfWU6ZquG3C")
 LANG = "ru"
 CHANNEL_NAME = "Fakt Za 15"
 

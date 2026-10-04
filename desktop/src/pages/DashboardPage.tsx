@@ -58,6 +58,32 @@ function FeatureCard({
   )
 }
 
+/** Hangi kanal icin uretilecegini secen ortak alan (3 kart da bunu kullanir). */
+function KanalSecici({
+  value,
+  onChange,
+  disabled,
+  id,
+}: {
+  value: string
+  onChange: (v: string) => void
+  disabled?: boolean
+  id?: string
+}): ReactNode {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[11.5px] font-medium text-fg-muted">Hangi kanal için?</span>
+      <Select id={id} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} aria-label="Kanal">
+        {CHANNELS.map((ch) => (
+          <option key={ch.id} value={ch.id}>
+            {ch.id} · {ch.name} — {ch.niche}
+          </option>
+        ))}
+      </Select>
+    </label>
+  )
+}
+
 function EnvRow({ check }: { check: EnvCheck }): ReactNode {
   return (
     <div className="flex items-start gap-2 rounded-[9px] border border-border bg-[var(--surface-2)] px-2.5 py-1.5">
@@ -134,6 +160,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
           icon={<Compass className="size-4.5" />}
           desc="Kaynak kanalları tarar, Gemini ile puanlar ve seçtiğin gün sayısı kadar video bulur. Sonucu masaüstüne HTML raporu olarak bırakır."
         >
+          <KanalSecici value={channelId} onChange={setChannelId} disabled={running} id="kesif-kanal" />
           <GunSayisiSecici value={gunSayisi} onChange={setGunSayisi} disabled={running} hint={false} />
           <Button
             variant="primary"
@@ -154,13 +181,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
           icon={<Link2 className="size-4.5" />}
           desc="Verdiğin TikTok/YouTube linkini indirir, zamanlı keser, seslendirir, temizler ve SEO raporuyla birlikte üretir."
         >
-          <Select value={channelId} onChange={(e) => setChannelId(e.target.value)} disabled={running} aria-label="Kanal">
-            {CHANNELS.map((ch) => (
-              <option key={ch.id} value={ch.id}>
-                {ch.name} — {ch.niche}
-              </option>
-            ))}
-          </Select>
+          <KanalSecici value={channelId} onChange={setChannelId} disabled={running} id="link-kanal" />
           <div className="relative">
             <Link2 className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-fg-subtle" />
             <Input
@@ -192,6 +213,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
           icon={<Layers className="size-4.5" />}
           desc="Hem keşif yapar hem seçtiğin gün sayısı kadar videoyu sırayla üretir. Hepsini masaüstüne bırakır."
         >
+          <KanalSecici value={channelId} onChange={setChannelId} disabled={running} id="uretim-kanal" />
           <GunSayisiSecici value={gunSayisi} onChange={setGunSayisi} disabled={running} id="gun-sayisi-uretim" hint={false} />
           <Button
             variant="secondary"

@@ -1,4 +1,5 @@
 import json
+import os
 from shared import *
 from functions.gemini_func import evaluate_topic
 from functions.transcribe import api_ile_transkript_cek, transkript_cek, transkript_cek_zamanli, yt_dlp_ile_alt_yazi_cek
@@ -71,7 +72,9 @@ Rules:
 
 Write ONLY the tags, one line."""
 
-VOICE_ID = "M1CSR3PJBsfWU6ZquG3C"
+# Ses (voice ID) uygulamadan Ayarlar > API anahtarları bolumunden .env'e yazilir
+# (VOICE_ID_CH1). .env yoksa eski sabit deger korunur -> bot bozulmaz.
+VOICE_ID = os.environ.get("VOICE_ID_CH1", "M1CSR3PJBsfWU6ZquG3C")
 LANG = "ru"
 CHANNEL_NAME = "Kino Sekrety"
 

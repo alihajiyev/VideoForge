@@ -284,14 +284,30 @@ async function main(): Promise<void> {
     check('Islem cozunurlugu HD moduna uygun', (eng.hdMode && eng.procW === 640) || (!eng.hdMode && eng.procW === 540), `${eng.procW}x${eng.procH} / ${eng.gpu}`)
     check('Karakter limiti okundu', eng.charLimit >= 200, String(eng.charLimit))
 
-    /* ---------------- 5. Cikti taramasi ---------------- */
-    section('5) Masaustu cikti taramasi')
-    const files = listArtifacts()
-    check('Cikti dosyalari bulundu', files.length > 0, `${files.length} dosya`)
+    /* ---------------- 5. Cikti taramasi (kontrol edilen klasor) ---------------- */
+    // Tarama gercek masaustune bagli oldugundan dis ortamda kirilgandi; test
+    // kendi gecici klasorunde ornek ciktilar uretip tarayicinin dogru
+    // buldugunu/grupladigini dogrular (iddialar ayni sekilde kati kalir).
+    section('5) Cikti taramasi (kontrol edilen klasor)')
+    const taramaDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-scan-'))
+    write(path.join(taramaDir, 'Ornek_Konu_1_CLEAN.mp4'), 'video-baytlari')
+    write(path.join(taramaDir, 'Ornek_Konu_1_VOICEOVER.mp3'), 'ses-baytlari')
+    write(path.join(taramaDir, 'Ornek_Konu_1_THUMB.png'), 'kapak')
+    write(
+      path.join(taramaDir, 'Ornek_Konu_1_SEO.html'),
+      '<html><head><title>SEO Raporu</title></head><body>' +
+        '<div class="label">Title</div><p>baslik metni</p>' +
+        '<div class="label">Tags</div><p>etiket, etiket2</p>' +
+        '</body></html>',
+    )
+    fs.mkdirSync(path.join(taramaDir, 'Gun1_Ornek'), { recursive: true })
+    write(path.join(taramaDir, 'Gun1_Ornek', 'Ornek_Konu_2_final.mp4'), 'gun-final')
+    const files = listArtifacts(taramaDir)
+    check('Cikti dosyalari bulundu', files.length >= 5, `${files.length} dosya`)
     const groups = groupArtifacts(files)
     check('Dosyalar is bazinda gruplandi', groups.length > 0, `${groups.length} grup`)
     check('Gruplar cikti iceriyor', groups.every((g) => g.items.length > 0))
-    const recent = scanArtifactsSince(Date.now() - 1000 * 60 * 60 * 24 * 365)
+    const recent = scanArtifactsSince(Date.now() - 1000 * 60 * 60 * 24 * 365, taramaDir)
     check('Zaman filtreli tarama calisiyor', recent.length === files.length || recent.length > 0, `${recent.length} dosya (1 yil)`)
     const seo = files.find((f) => f.kind === 'seo')
     if (seo) {
@@ -542,6 +558,7 @@ async function main(): Promise<void> {
     check('Ana sayfaya gecis calisti', navAna === true, String(navAna))
     const domAna = tr((await win.webContents.executeJavaScript('document.body.textContent')) as string)
     check('3 ozellik karti gorunur', ['keşif yap', 'link ile video üret', 'n günlük üretim'].every((t) => domAna.includes(t)), '')
+    check('Kanal secici (select) gorunur', domAna.includes('hangi kanal'), '')
     check('Gun sayisi sorusu gorunur', domAna.includes('kaç günlük plan'), '')
     check('Hazir gun secenekleri gorunur (3/7/10/14/30)', ['3', '7', '10', '14', '30'].every((n) => domAna.includes(n)), '')
     check('Sacilan haftalik ifadesi kalmadi', !domAna.includes('haftalik mod'), '')
@@ -931,6 +948,31 @@ async function main(): Promise<void> {
       Boolean(krediler?.durumlar?.every((d) => ['ok', 'anahtar-yok', 'hata', 'bilgi'].includes(d))),
       JSON.stringify(krediler?.durumlar),
     )
+
+    /* -- 13h. Gizli anahtarlar (API key / ses / altyazi) .env'e yaziliyor mu -- */
+    section('13h) Gizli anahtarlar ve kanal sesleri (.env yazimi)')
+    const secBot = makeFakeBot()
+    write(path.join(secBot, '.env'), 'GEMINI_API_KEYS=gomulu-anahtar\nELEVENLABS_API_KEY=el-anahtar\n')
+    setSettings({ videoForgePath: secBot })
+    const secOnce = (await win.webContents.executeJavaScript(
+      `(async () => { const r = await window.vfgui.secretsGet(); return r.ok ? { ok:true, d:r.data } : { ok:false, e:r.error }; })()`,
+    )) as { ok: boolean; d?: { geminiApiKeys?: string; voiceCh1?: string; altyaziMotoru?: string; shortsStudioFound?: boolean }; e?: string }
+    check('secretsGet IPC calisti', secOnce.ok === true && typeof secOnce.d?.geminiApiKeys === 'string', secOnce.e ?? '')
+    check('secretsGet .env degerini okudu', secOnce.d?.geminiApiKeys === 'gomulu-anahtar', String(secOnce.d?.geminiApiKeys))
+    check('secretsGet ses varsayilanini verdi', secOnce.d?.voiceCh1 === 'M1CSR3PJBsfWU6ZquG3C', String(secOnce.d?.voiceCh1))
+    check('secretsGet altyazi motoru varsayilani auto', secOnce.d?.altyaziMotoru === 'auto', String(secOnce.d?.altyaziMotoru))
+
+    const secYaz = (await win.webContents.executeJavaScript(
+      `(async () => { const r = await window.vfgui.secretsSet({ voiceCh1:'ses-test-123', voiceCh3:'ses-3', altyaziMotoru:'yerel', zapcapTemplateId:'sablon-xyz' }); return r.ok ? r.data : { hata:r.error }; })()`,
+    )) as { voiceCh1?: string; altyaziMotoru?: string; hata?: string }
+    check('secretsSet IPC calisti', !secYaz.hata && secYaz.voiceCh1 === 'ses-test-123', JSON.stringify(secYaz))
+    const envMetin = fs.readFileSync(path.join(secBot, '.env'), 'utf8')
+    check('.env icine VOICE_ID_CH1 yazildi', /^VOICE_ID_CH1=ses-test-123$/m.test(envMetin), envMetin.split('\n').filter(Boolean).join(' | '))
+    check('.env icine ALTYAZI_MOTORU yazildi', /^ALTYAZI_MOTORU=yerel$/m.test(envMetin), '')
+    check('.env icine ZAPCAP_TEMPLATE_ID yazildi', /^ZAPCAP_TEMPLATE_ID=sablon-xyz$/m.test(envMetin), '')
+    check('.env mevcut anahtari korudu (GEMINI)', /^GEMINI_API_KEYS=gomulu-anahtar$/m.test(envMetin), '')
+    forceRemove(secBot)
+    setSettings({ videoForgePath: realBot })
 
     // Komut paleti: Ctrl+K ile acilir, overlay tiklamasiyla kapanir.
     await win.webContents.executeJavaScript(

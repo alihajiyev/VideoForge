@@ -47,6 +47,8 @@ export const IPC = {
   spendSummary: 'spend:summary',
   quotaGet: 'quota:get',
   creditsGet: 'credits:get',
+  secretsGet: 'secrets:get',
+  secretsSet: 'secrets:set',
 } as const
 
 /** Botun ui.py ciktilarindaki seviye ikonlari. */

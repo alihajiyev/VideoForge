@@ -18,12 +18,12 @@ export function classify(name: string): ArtifactKind | null {
   return null
 }
 
-function candidateDirs(): string[] {
-  const dirs = [desktopDir]
+function candidateDirs(kok: string = desktopDir): string[] {
+  const dirs = [kok]
   try {
-    for (const entry of fs.readdirSync(desktopDir, { withFileTypes: true })) {
+    for (const entry of fs.readdirSync(kok, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue
-      if (/^Gun\d+_/i.test(entry.name) || /^Gun\d+/i.test(entry.name)) dirs.push(path.join(desktopDir, entry.name))
+      if (/^Gun\d+_/i.test(entry.name) || /^Gun\d+/i.test(entry.name)) dirs.push(path.join(kok, entry.name))
     }
   } catch {
     /* Desktop okunamadi */
@@ -59,13 +59,13 @@ function collect(dirs: string[], sinceMs: number | null, limit: number): Artifac
 }
 
 /** Belirli bir zamandan sonra uretilen cikti dosyalari (is bitince kullanilir). */
-export function scanArtifactsSince(sinceMs: number): Artifact[] {
-  return collect(candidateDirs(), sinceMs, 200)
+export function scanArtifactsSince(sinceMs: number, kok?: string): Artifact[] {
+  return collect(candidateDirs(kok), sinceMs, 200)
 }
 
-/** Tum uretilmis cikti dosyalari (kutuphane ekrani). */
-export function listArtifacts(): Artifact[] {
-  return collect(candidateDirs(), null, 600)
+/** Tum uretilmis cikti dosyalari (kutuphane ekrani). `kok` testler icin gecersiz kilinabilir. */
+export function listArtifacts(kok?: string): Artifact[] {
+  return collect(candidateDirs(kok), null, 600)
 }
 
 export interface ReportGroup {

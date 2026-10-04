@@ -273,6 +273,26 @@ export interface KrediServisi {
   sifirlanmaMs?: number | null
 }
 
+/** Altyazi motorlari: ShortsStudio final kompozitini nasil bastigi. */
+export type AltyaziMotoru = 'auto' | 'zapcap' | 'yerel' | 'remotion'
+
+/** Uygulamadan duzenlenen gizli anahtarlar, sesler ve altyazi ayari. */
+export interface GizliAnahtarlar {
+  geminiApiKeys: string
+  elevenlabsApiKey: string
+  transcriptApiKey: string
+  zapcapApiKey: string
+  zapcapTemplateId: string
+  altyaziMotoru: AltyaziMotoru
+  voiceCh1: string
+  voiceCh2: string
+  voiceCh3: string
+  /** Bot klasorundeki .env yolu (bilgi amacli) */
+  envPath: string
+  /** ShortsStudio klasoru bulundu mu (ZapCap/template oraya da yazilir) */
+  shortsStudioFound: boolean
+}
+
 export interface LibraryVideo {
   id: number
   link: string

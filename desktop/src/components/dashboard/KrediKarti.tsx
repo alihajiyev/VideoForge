@@ -20,13 +20,14 @@ const DURUM_TONE: Record<KrediServisi['durum'], 'success' | 'warn' | 'danger' | 
 }
 
 function sayiYaz(n: number, birim: string): string {
-  if (birim === 'USD') return `$${n < 1 ? n.toFixed(4) : n.toFixed(2)}`
+  if (birim === 'USD' || birim === 'USD-tahmini') return `$${n < 1 ? n.toFixed(4) : n.toFixed(2)}`
   return new Intl.NumberFormat('tr-TR').format(Math.round(n))
 }
 
 function birimEtiket(birim: string): string {
   if (birim === 'karakter') return 'kalan karakter'
   if (birim === 'USD') return 'kalan bakiye'
+  if (birim === 'USD-tahmini') return 'tahmini harcama (bu ay)'
   return 'kalan'
 }
 

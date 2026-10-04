@@ -8,6 +8,7 @@ import type {
   DownloadProgress,
   EngineConfig,
   EnvCheck,
+  GizliAnahtarlar,
   HarcamaOzeti,
   JobRequest,
   JobState,
@@ -123,6 +124,20 @@ const mockEngine: EngineConfig = {
   maxConcurrentGpus: 10,
   overheadSeconds: 75,
   smartTextFilter: false,
+}
+
+const mockSecrets: GizliAnahtarlar = {
+  geminiApiKeys: 'AQ.Ab8RN6...anahtar1,AQ.Ab8RN6...anahtar2',
+  elevenlabsApiKey: 'sk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+  transcriptApiKey: '',
+  zapcapApiKey: '6ecaf707e2edc30d9cbe723de13cae446301a15799aad831d52d0ad379472a9e',
+  zapcapTemplateId: '6255949c-4a52-4255-8a67-39ebccfaa3ef',
+  altyaziMotoru: 'auto',
+  voiceCh1: 'M1CSR3PJBsfWU6ZquG3C',
+  voiceCh2: 'M1CSR3PJBsfWU6ZquG3C',
+  voiceCh3: 'LHi3adMlU7AICv8Yxpmm',
+  envPath: 'C:\\Users\\Vafa\\Desktop\\VideoForge\\.env',
+  shortsStudioFound: true,
 }
 
 const mockLibrary: LibraryData = {
@@ -244,6 +259,11 @@ const mockApi: VideoForgeApi = {
   queueClear: async () => ({ ok: true, data: [] as KuyrukOgesi[] }),
   queueStartNext: async () => ({ ok: true, data: false }),
   onQueueChanged: () => () => {},
+  secretsGet: async (): Promise<Result<GizliAnahtarlar>> => ({ ok: true, data: mockSecrets }),
+  secretsSet: async (patch: Partial<GizliAnahtarlar>): Promise<Result<GizliAnahtarlar>> => ({
+    ok: true,
+    data: { ...mockSecrets, ...patch },
+  }),
   creditsGet: async (): Promise<Result<KrediServisi[]>> => ({
     ok: true,
     data: [

@@ -378,7 +378,8 @@ results_volume = modal.Volume.from_name("fgt-clean-results", create_if_missing=T
 
 # ПопкорнФакты (3. kanal, eski ad: KinoSujet) konfigürasyonu
 CHANNEL_NAME_KINO_SYJET = "ПопкорнФакты"
-VOICE_ID_KINO_SYJET = "LHi3adMlU7AICv8Yxpmm"
+# Ses (voice ID) uygulamadan .env'deki VOICE_ID_CH3 ile degistirilebilir.
+VOICE_ID_KINO_SYJET = os.environ.get("VOICE_ID_CH3", "LHi3adMlU7AICv8Yxpmm")
 CHAR_LIMIT_KINO_SYJET = 570  # Varsayılan, transcript oranında ayarlanacak
 
 
