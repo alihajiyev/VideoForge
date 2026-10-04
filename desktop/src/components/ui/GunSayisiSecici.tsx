@@ -59,10 +59,10 @@ export function GunSayisiSecici({
             aria-pressed={n === gun}
             onClick={() => onChange(n, true)}
             className={cn(
-              'num rounded-[8px] border px-2 py-1 text-[11px] transition-colors disabled:opacity-50',
-              n === gun
-                ? 'border-brand bg-brand-soft text-fg'
-                : 'border-border bg-[var(--surface-2)] text-fg-muted hover:border-border-strong',
+              'num chip h-[30px] min-w-[36px] justify-center px-0 text-[12px] disabled:opacity-50',
+              // chip-active arka plani ters cevirir; metin rengini de acikca ver
+              // (utilite katmani bilesen katmanini ezmesin diye burada yazilir).
+              n === gun ? 'chip-active font-semibold text-[var(--canvas)]' : 'text-fg-muted',
             )}
           >
             {n}

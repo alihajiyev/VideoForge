@@ -5,18 +5,22 @@ import { cn } from '@/lib/utils'
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline'
 type ButtonSize = 'sm' | 'md' | 'lg'
 
+/**
+ * YouTube gorunumu: dolu butonlar hap (pill) seklinde ve dolgusuz/ince kenarli
+ * ikincil butonlar kullanilir. Birincil renk YouTube kirmizisi + beyaz metin.
+ */
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: 'bg-brand text-black hover:bg-brand-hi border border-transparent',
-  secondary: 'bg-[var(--surface-2)] text-fg border border-border hover:border-border-strong hover:bg-[var(--surface-3)]',
+  primary: 'bg-brand text-white hover:bg-brand-hi border border-transparent',
+  secondary: 'bg-[var(--surface-2)] text-fg border border-transparent hover:bg-[var(--surface-3)]',
   ghost: 'bg-transparent text-fg-muted hover:text-fg hover:bg-[var(--surface-2)] border border-transparent',
-  danger: 'bg-danger-soft text-danger border border-[color-mix(in_oklab,var(--danger)_35%,transparent)] hover:bg-danger hover:text-white',
+  danger: 'bg-danger-soft text-danger border border-transparent hover:bg-danger hover:text-white',
   outline: 'bg-transparent text-fg border border-border-strong hover:bg-[var(--surface-2)]',
 }
 
 const SIZES: Record<ButtonSize, string> = {
-  sm: 'h-8 px-3 text-[12px] gap-1.5 rounded-[8px]',
-  md: 'h-9.5 px-3.5 text-[12.5px] gap-2 rounded-[10px]',
-  lg: 'h-11 px-5 text-[13.5px] gap-2 rounded-[12px]',
+  sm: 'h-8 px-3 text-[12px] gap-1.5 rounded-full',
+  md: 'h-9 px-3.5 text-[13px] gap-2 rounded-full',
+  lg: 'h-11 px-5 text-[13.5px] gap-2 rounded-full',
 }
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -54,6 +58,7 @@ export function Button({
   )
 }
 
+/** YouTube ikon butonu: daire uzerinde hover dolgusu. */
 export function IconButton({
   className,
   children,
@@ -62,8 +67,8 @@ export function IconButton({
   return (
     <button
       className={cn(
-        'grid size-8 place-items-center rounded-[8px] text-fg-subtle transition-colors',
-        'hover:bg-[var(--surface-2)] hover:text-fg disabled:opacity-40',
+        'grid size-9 place-items-center rounded-full text-fg transition-colors',
+        'hover:bg-[var(--surface-3)] disabled:opacity-40',
         className,
       )}
       {...rest}
@@ -101,8 +106,8 @@ export function SectionTitle({
       <div className="flex min-w-0 items-center gap-2.5">
         {icon ? <span className="shrink-0 text-fg-subtle">{icon}</span> : null}
         <div className="min-w-0">
-          <h2 className="truncate text-[13.5px] font-semibold tracking-[-0.01em] text-fg">{title}</h2>
-          {subtitle ? <p className="mt-0.5 truncate text-[11.5px] text-fg-subtle">{subtitle}</p> : null}
+          <h2 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-fg">{title}</h2>
+          {subtitle ? <p className="mt-0.5 truncate text-[12px] text-fg-muted">{subtitle}</p> : null}
         </div>
       </div>
       {right ? <div className="shrink-0">{right}</div> : null}
@@ -112,14 +117,15 @@ export function SectionTitle({
 
 type Tone = 'neutral' | 'brand' | 'success' | 'warn' | 'danger' | 'cyan' | 'violet'
 
+/** YouTube chip rozetleri: cercevesiz, dolgulu, hap. */
 const TONES: Record<Tone, string> = {
-  neutral: 'bg-[var(--surface-3)] text-fg-muted border-border',
-  brand: 'bg-brand-soft text-brand border-[color-mix(in_oklab,var(--brand)_30%,transparent)]',
-  success: 'bg-success-soft text-success border-[color-mix(in_oklab,var(--success)_30%,transparent)]',
-  warn: 'bg-warn-soft text-warn border-[color-mix(in_oklab,var(--warn)_30%,transparent)]',
-  danger: 'bg-danger-soft text-danger border-[color-mix(in_oklab,var(--danger)_30%,transparent)]',
-  cyan: 'bg-cyan-soft text-cyan border-[color-mix(in_oklab,var(--cyan)_30%,transparent)]',
-  violet: 'bg-[color-mix(in_oklab,var(--violet)_15%,transparent)] text-violet border-[color-mix(in_oklab,var(--violet)_30%,transparent)]',
+  neutral: 'bg-[var(--surface-3)] text-fg-muted',
+  brand: 'bg-brand-soft text-brand',
+  success: 'bg-success-soft text-success',
+  warn: 'bg-warn-soft text-warn',
+  danger: 'bg-danger-soft text-danger',
+  cyan: 'bg-cyan-soft text-cyan',
+  violet: 'bg-[color-mix(in_oklab,var(--violet)_15%,transparent)] text-violet',
 }
 
 export function Badge({
@@ -136,7 +142,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2 py-[3px] text-[11px] font-medium whitespace-nowrap',
+        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11.5px] font-medium whitespace-nowrap',
         TONES[tone],
         className,
       )}
@@ -151,8 +157,8 @@ export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputEleme
   return (
     <input
       className={cn(
-        'h-9.5 w-full rounded-[10px] border border-border bg-[var(--surface-2)] px-3 text-[12.5px] text-fg',
-        'placeholder:text-fg-subtle transition-colors focus:border-brand focus:outline-none',
+        'h-9 w-full rounded-[8px] border border-border bg-[var(--surface-2)] px-3 text-[13px] text-fg',
+        'placeholder:text-fg-subtle transition-colors focus:border-cyan focus:outline-none',
         className,
       )}
       {...rest}
@@ -164,8 +170,8 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
   return (
     <select
       className={cn(
-        'h-9.5 w-full appearance-none rounded-[10px] border border-border bg-[var(--surface-2)] px-3 text-[12.5px] text-fg',
-        'transition-colors focus:border-brand focus:outline-none',
+        'h-9 w-full appearance-none rounded-[8px] border border-border bg-[var(--surface-2)] px-3 text-[13px] text-fg',
+        'transition-colors focus:border-cyan focus:outline-none',
         className,
       )}
       {...rest}
@@ -197,20 +203,20 @@ export function Switch({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(
-          'relative h-5.5 w-10 shrink-0 rounded-full border transition-colors',
-          checked ? 'border-transparent bg-brand' : 'border-border bg-[var(--surface-3)]',
+          'relative h-5 w-9 shrink-0 rounded-full transition-colors',
+          checked ? 'bg-cyan' : 'bg-[var(--surface-3)]',
         )}
       >
         <span
           className={cn(
             'absolute top-0.5 size-4 rounded-full bg-white shadow transition-all',
-            checked ? 'left-[22px]' : 'left-0.5',
+            checked ? 'left-[20px]' : 'left-0.5',
           )}
         />
       </button>
       {label ? (
         <span className="leading-tight">
-          <span className="block text-[12.5px] text-fg">{label}</span>
+          <span className="block text-[13px] text-fg">{label}</span>
           {hint ? <span className="block text-[11.5px] text-fg-subtle">{hint}</span> : null}
         </span>
       ) : null}
@@ -241,15 +247,13 @@ export function StatCard({
   /** Geriye donuk uyumluluk icin kabul edilir; gorsel renk kullanilmaz. */
   tone?: Tone
 }): ReactNode {
-  // Renkli tonlu ikon kutulari kaldirildi: 4 kart x 4 renk gozu yoruyordu.
-  // Kartlar sade; vurgu yalnizca sayida.
   return (
-    <Panel className="px-3.5 py-3">
-      <div className="flex items-center gap-2 text-fg-subtle">
+    <Panel className="px-4 py-3">
+      <div className="flex items-center gap-2 text-fg-muted">
         {icon ? <span className="shrink-0">{icon}</span> : null}
-        <span className="truncate text-[11.5px] font-medium">{label}</span>
+        <span className="truncate text-[12px] font-medium">{label}</span>
       </div>
-      <div className="num mt-1.5 text-[19px] font-semibold tracking-[-0.02em] text-fg">{value}</div>
+      <div className="num mt-1 text-[21px] leading-tight font-semibold tracking-[-0.02em] text-fg">{value}</div>
       {hint ? <div className="mt-0.5 text-[11.5px] text-fg-subtle">{hint}</div> : null}
     </Panel>
   )
@@ -269,8 +273,8 @@ export function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center gap-1.5 px-6 py-10 text-center">
       {icon ? <div className="mb-1 text-fg-subtle opacity-60">{icon}</div> : null}
-      <p className="text-[13px] font-medium text-fg-muted">{title}</p>
-      {message ? <p className="max-w-sm text-[11.5px] leading-relaxed text-fg-subtle">{message}</p> : null}
+      <p className="text-[14px] font-medium text-fg">{title}</p>
+      {message ? <p className="max-w-sm text-[12px] leading-relaxed text-fg-muted">{message}</p> : null}
       {action ? <div className="mt-2">{action}</div> : null}
     </div>
   )

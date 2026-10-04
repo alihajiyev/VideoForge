@@ -582,18 +582,49 @@ async function main(): Promise<void> {
     )) as string | null
     check('Gun sayisi 10 yazilinca kesif dugmesi 10 gosterir', Boolean(gun10Ui && tr(gun10Ui).includes('10 günlük keşif')), '')
     check('Gun sayisi 10 yazilinca uretim dugmesi de 10', Boolean(gun10Ui && tr(gun10Ui).includes('10 gün keşif + üretim')), '')
-    // Logo GERCEKTEN yuklendi mi? (file:// altinda './logo.png' cozulmezse
-    // naturalWidth 0 kalir - bu, surucu kokune kacma hatasini yakalar.)
-    const logoImg = (await win.webContents.executeJavaScript(
-      `(async () => {
-         const i = document.querySelector('header img');
-         if (!i) return { src: null };
-         if (!i.complete) await new Promise((r) => { i.onload = r; i.onerror = r; setTimeout(r, 3000); });
-         return { src: i.getAttribute('src'), w: i.naturalWidth, h: i.naturalHeight, complete: i.complete };
+    // Marka isareti: baslik cubugunda VEKTOR oynat butonu GERCEKTEN ciziliyor mu?
+    // (YouTube tarzi kirmizi dolgu + beyaz ucgen; kirik gorsel/bos kutu yakalanir.)
+    const mark = (await win.webContents.executeJavaScript(
+      `(() => {
+         const s = document.querySelector('header [role="img"][aria-label="VideoForge"] svg');
+         if (!s) return null;
+         const r = s.getBoundingClientRect();
+         const rect = s.querySelector('rect');
+         const ucgen = s.querySelector('path');
+         return {
+           w: Math.round(r.width), h: Math.round(r.height),
+           fill: rect ? getComputedStyle(rect).fill : null,
+           ucgen: ucgen ? getComputedStyle(ucgen).fill : null,
+         };
        })()`,
-    )) as { src: string | null; w?: number; h?: number; complete?: boolean } | null
-    check('Baslik cubugunda logo gorseli var', typeof logoImg?.src === 'string' && logoImg.src.includes('logo.png'), String(logoImg?.src))
-    check('Logo gorseli file:// altinda gercekten yuklendi', Boolean(logoImg?.w && logoImg.w > 0 && logoImg?.h && logoImg.h > 0), `naturalWidth=${logoImg?.w} naturalHeight=${logoImg?.h}`)
+    )) as { w?: number; h?: number; fill?: string | null; ucgen?: string | null } | null
+    check('Baslik cubugunda vektor marka ciziliyor', Boolean(mark && mark.w && mark.w > 0 && mark.h && mark.h > 0), JSON.stringify(mark))
+    check(
+      'Marka kirmizi zemin + beyaz oynat ucgeni (YouTube tarzi)',
+      Boolean(mark?.fill && /255,\s*0,\s*0|204,\s*0,\s*0/.test(mark.fill) && mark.ucgen === 'rgb(255, 255, 255)'),
+      `zemin=${mark?.fill} ucgen=${mark?.ucgen}`,
+    )
+
+    // YouTube tema kontrolu: zemin #0f0f0f, hap butonlar, kirmizi birincil aksiyon.
+    const ytTema = (await win.webContents.executeJavaScript(
+      `(() => {
+         const btn = [...document.querySelectorAll('button')];
+         const pill = btn.filter((b) => parseFloat(getComputedStyle(b).borderRadius) >= 999);
+         const KIRMIZI = ['rgb(255, 0, 0)', 'rgb(204, 0, 0)', 'rgb(230, 0, 0)'];
+         const red = btn.find((b) => KIRMIZI.includes(getComputedStyle(b).backgroundColor));
+         const menu = document.querySelector('nav');
+         return {
+           zemin: getComputedStyle(document.body).backgroundColor,
+           hap: pill.length,
+           kirmizi: red ? getComputedStyle(red).borderRadius : null,
+           menu: menu ? Math.round(menu.getBoundingClientRect().width) : 0,
+         };
+       })()`,
+    )) as { zemin: string; hap: number; kirmizi: string | null; menu: number } | null
+    check('YouTube zemini: #0f0f0f', ytTema?.zemin === 'rgb(15, 15, 15)', String(ytTema?.zemin))
+    check('Dugmeler hap (pill) seklinde', Boolean(ytTema && ytTema.hap >= 4), `hap=${ytTema?.hap}`)
+    check('Birincil aksiyon YouTube kirmizisi', Boolean(ytTema?.kirmizi && parseFloat(ytTema.kirmizi) >= 999), String(ytTema?.kirmizi))
+    check('Sol menu YouTube genisliginde (236px)', ytTema?.menu === 236, `menu=${ytTema?.menu}`)
 
     // Tema degisimi: baslik cubugundaki gercek buton uzerinden (kullanici akisi)
     const themeOk = await win.webContents.executeJavaScript(
@@ -1288,6 +1319,27 @@ async function main(): Promise<void> {
     check('haftalik_islet.py iptal isaretini destekliyor', isletPy.includes('VIDEOFORGE_CANCEL_FILE') && isletPy.includes('iptal_edildi'), '')
     check('haftalik_islet.py icinde sabit \'7 gun\' ifadesi yok', !/7 gun final/.test(isletPy), '')
     check('Bos gun sayisinda 7 varsayilana donulur', isletPy.includes('varsayilan=7'), '')
+
+    // CLI sozlesmesi: runner'in (buildSteps) urettigi argumanlar scriptlerin
+    // GERCEK arayuzunde tanimli mi? Script tarafi degisirse burada kirilir.
+    const cliEksik: string[] = []
+    const bayrakAra = (dosya: string, icerik: string, izler: string[]): void => {
+      for (const iz of izler) if (!icerik.includes(iz)) cliEksik.push(`${dosya}: ${iz}`)
+    }
+    for (const f of ['kinosekrety.py', 'faktza15.py', 'kinok_syjet.py']) {
+      bayrakAra(f, fs.readFileSync(path.join(botDir, f), 'utf8'), [
+        '@app.local_entrypoint()',
+        'link: str = None',
+        '"--force"',
+        '"--gun"',
+        '"--gun-toplam"',
+      ])
+    }
+    bayrakAra('kesif.py', kesifPy, ['"--kanal"', '"--adet"', '"--chn"', '"--haftalik"', '"--gun"', '"--evet"'])
+    bayrakAra('haftalik_islet.py', isletPy, ['"--basla"', '"--evet"', '"--studio-atla"', '"--sadece-studio"', '"--chn"'])
+    const temizlePy = fs.readFileSync(path.join(botDir, 'temizle.py'), 'utf8')
+    bayrakAra('temizle.py', temizlePy, ['@app.local_entrypoint()', 'link: str = None', '"--link"'])
+    check('Bot CLI sozlesmesi: runner argumanlari scriptlerde tanimli', cliEksik.length === 0, cliEksik.join(', '))
 
     // Bot Python dosyalari sozdizimi (dosya yazmadan, ast ile)
     const pyRes = await resolvePython()

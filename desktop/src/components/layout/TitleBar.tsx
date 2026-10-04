@@ -43,18 +43,18 @@ export function TitleBar({
         : null
 
   return (
-    <header className="drag-region relative z-50 flex h-10 shrink-0 items-center justify-between border-b border-border bg-[var(--canvas-2)] pl-3">
-      <div className="flex items-center gap-2.5">
-        <BrandMark />
-        <span className="text-[12.5px] font-semibold tracking-[-0.01em] text-fg">VideoForge</span>
+    <header className="drag-region relative z-50 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-[var(--canvas-2)] px-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <BrandMark size={28} />
+        <span className="text-[16px] leading-none font-bold tracking-[-0.045em] text-fg">VideoForge</span>
         <button
           onClick={() => onOpenPalette?.()}
           title="Komut paleti (Ctrl+K)"
-          className="no-drag hidden items-center gap-1.5 rounded-[8px] border border-border bg-[var(--surface-2)] px-2 py-[3px] text-[11px] text-fg-subtle transition-colors hover:border-border-strong hover:text-fg sm:flex"
+          className="no-drag ml-2 hidden h-9 w-[280px] items-center gap-2.5 rounded-full border border-border bg-[var(--canvas)] px-4 text-[13px] text-fg-subtle transition-colors hover:border-border-strong hover:text-fg-muted sm:flex"
         >
-          <Search className="size-3" />
-          Ara
-          <span className="rounded-[4px] border border-border px-1 text-[9.5px]">Ctrl K</span>
+          <Search className="size-4 shrink-0" />
+          <span className="flex-1 truncate text-left">Kanal, işlem veya ayar ara</span>
+          <span className="rounded-[6px] bg-[var(--surface-3)] px-1.5 py-0.5 text-[10px] text-fg-muted">Ctrl K</span>
         </button>
         {update?.available ? (
           <button
@@ -73,14 +73,14 @@ export function TitleBar({
         ) : null}
       </div>
 
-      <div className="no-drag flex h-full items-center">
-        <IconButton onClick={() => void refreshEnv()} title="Ortamı yeniden kontrol et" className="h-full w-10 rounded-none">
+      <div className="no-drag flex h-full shrink-0 items-center">
+        <IconButton onClick={() => void refreshEnv()} title="Ortamı yeniden kontrol et" className="h-full w-11 rounded-none">
           <RefreshCw className={cn('size-3.5', envLoading && 'animate-spin')} />
         </IconButton>
         <IconButton
           onClick={cycleMode}
           title={mode === 'dark' ? 'Aydınlık tema' : 'Karanlık tema'}
-          className="h-full w-10 rounded-none"
+          className="h-full w-11 rounded-none"
         >
           {mode === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </IconButton>
@@ -88,20 +88,20 @@ export function TitleBar({
         {isDesktop ? (
           <>
             <span className="mx-1 h-5 w-px bg-border" />
-            <IconButton onClick={() => void api.winMinimize()} title="Küçült" className="h-full w-11 rounded-none">
+            <IconButton onClick={() => void api.winMinimize()} title="Küçült" className="h-full w-12 rounded-none">
               <Minus className="size-4" />
             </IconButton>
             <IconButton
               onClick={() => void api.winMaximize()}
               title={maximized ? 'Geri yükle' : 'Büyüt'}
-              className="h-full w-11 rounded-none"
+              className="h-full w-12 rounded-none"
             >
               {maximized ? <Square className="size-3.5" /> : <Maximize2 className="size-4" />}
             </IconButton>
             <IconButton
               onClick={() => void api.winClose()}
               title="Kapat"
-              className="h-full w-11 rounded-none hover:bg-[#e11d48] hover:text-white"
+              className="h-full w-12 rounded-none hover:bg-brand hover:text-white"
             >
               <X className="size-4" />
             </IconButton>

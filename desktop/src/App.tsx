@@ -52,7 +52,7 @@ function Shell(): ReactNode {
       <TitleBar onNavigate={navigate} onOpenPalette={() => setPalet(true)} />
       <div className="flex min-h-0 flex-1">
         <Sidebar page={page} onNavigate={navigate} />
-        <main className="app-bg min-w-0 flex-1 overflow-y-auto p-4">
+        <main className="app-bg min-w-0 flex-1 overflow-y-auto px-6 py-5">
           <div className="mx-auto max-w-[1400px]">
             {page === 'dashboard' ? <DashboardPage onNavigate={navigate} /> : null}
             {page === 'run' ? <RunPage onNavigate={navigate} /> : null}

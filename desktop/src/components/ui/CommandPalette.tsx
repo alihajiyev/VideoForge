@@ -126,7 +126,7 @@ export function CommandPalette({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[560px] overflow-hidden rounded-[14px] border border-border bg-[var(--surface)] shadow-[var(--shadow-pop)]"
+        className="w-full max-w-[560px] overflow-hidden rounded-[12px] border border-border bg-[var(--surface)] shadow-[var(--shadow-pop)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2.5 border-b border-border px-3.5 py-2.5">
@@ -166,7 +166,8 @@ export function CommandPalette({
                 onClick={() => calistir(k)}
                 className={cn(
                   'flex w-full items-center gap-3 px-3.5 py-2 text-left transition-colors',
-                  i === aktif ? 'bg-brand-soft' : 'hover:bg-[var(--surface-2)]',
+                  // YouTube onerisi gibi: secili satir notr gri dolgu + kirmizi ikon.
+                  i === aktif ? 'bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]',
                 )}
               >
                 <span className={cn('shrink-0', i === aktif ? 'text-brand' : 'text-fg-subtle')}>{k.ikon}</span>

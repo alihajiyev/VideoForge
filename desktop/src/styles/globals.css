@@ -1,84 +1,93 @@
 @import 'tailwindcss';
 
 /* =========================================================================
-   VideoForge tasarim sistemi
-   Marka: "forge" -> eritilmis amber/turuncu; AI vurgusu: cyan.
-   Dark varsayilan, light tam eslesik.
+   VideoForge tasarim sistemi — YouTube Studio gorunumu
+   Referans: youtube.com karanlik/aydinlik tema paleti.
+     canvas  #0f0f0f  (sayfa zemini)
+     surface #181818  (kartlar) / #212121 / #272727 (chip + hover)
+     marka   #ff0000  (YouTube kirmizisi)  · baglanti #3ea6ff
+   Sekiller: 12px kart kosesi, hap (pill) butonlar, chip filtreler.
    ========================================================================= */
 
 :root {
   color-scheme: dark;
 
-  --canvas: #08090c;
-  --canvas-2: #0c0e12;
-  --surface: #12151b;
-  --surface-2: #171b23;
-  --surface-3: #1e232d;
-  --overlay: rgb(4 5 8 / 0.72);
+  --canvas: #0f0f0f;
+  --canvas-2: #0f0f0f;
+  --surface: #181818;
+  --surface-2: #212121;
+  --surface-3: #272727;
+  --overlay: rgb(0 0 0 / 0.72);
 
-  --border: #242a35;
-  --border-strong: #333b4a;
+  --border: #303030;
+  --border-strong: #3f3f3f;
 
-  --fg: #f2f4f8;
-  --fg-muted: #aab3c2;
-  --fg-subtle: #74808f;
+  --fg: #f1f1f1;
+  --fg-muted: #aaaaaa;
+  --fg-subtle: #888888;
 
-  --brand: #f59e0b;
-  --brand-hi: #fbbf24;
-  --brand-soft: rgb(245 158 11 / 0.14);
-  --ember: #fb7185;
-  --ember-soft: rgb(251 113 133 / 0.12);
-  --cyan: #22d3ee;
-  --cyan-soft: rgb(34 211 238 / 0.12);
+  --brand: #ff0000;
+  --brand-hi: #ff4d4d;
+  --brand-soft: rgb(255 0 0 / 0.16);
+  --ember: #ff4e45;
+  --ember-soft: rgb(255 78 69 / 0.14);
+  /* YouTube baglanti mavisi */
+  --cyan: #3ea6ff;
+  --cyan-soft: rgb(62 166 255 / 0.14);
   --violet: #a78bfa;
 
-  --success: #34d399;
-  --success-soft: rgb(52 211 153 / 0.14);
-  --warn: #fbbf24;
-  --warn-soft: rgb(251 191 36 / 0.14);
-  --danger: #fb7185;
-  --danger-soft: rgb(251 113 133 / 0.14);
+  --success: #2ba640;
+  --success-soft: rgb(43 166 64 / 0.16);
+  --warn: #f5b000;
+  --warn-soft: rgb(245 176 0 / 0.16);
+  --danger: #ff4e45;
+  --danger-soft: rgb(255 78 69 / 0.16);
 
-  --ring: rgb(245 158 11 / 0.75);
-  /* Cok hafif isik: eskiden belirgindi ve okumayi zorlastiriyordu. */
-  --glow: radial-gradient(60% 45% at 8% -8%, rgb(245 158 11 / 0.06), transparent 70%);
+  --ring: rgb(62 166 255 / 0.85);
+  /* YouTube duz yuzeyler kullanir: isik yok denecek kadar az. */
+  --glow: radial-gradient(70% 50% at 50% -12%, rgb(255 0 0 / 0.05), transparent 72%);
+
+  --shadow-panel: none;
+  --thumb-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
 }
 
 [data-theme='light'] {
   color-scheme: light;
 
-  --canvas: #f7f7f9;
-  --canvas-2: #f0f1f4;
+  --canvas: #ffffff;
+  --canvas-2: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f7f8fa;
-  --surface-3: #eef0f4;
-  --overlay: rgb(30 32 38 / 0.32);
+  --surface-2: #f2f2f2;
+  --surface-3: #e5e5e5;
+  --overlay: rgb(15 15 15 / 0.4);
 
-  --border: #e3e6ec;
-  --border-strong: #cdd3dc;
+  --border: #e5e5e5;
+  --border-strong: #d9d9d9;
 
-  --fg: #14181f;
-  --fg-muted: #565f6d;
-  --fg-subtle: #8a93a1;
+  --fg: #0f0f0f;
+  --fg-muted: #606060;
+  --fg-subtle: #909090;
 
-  --brand: #d97706;
-  --brand-hi: #b45309;
-  --brand-soft: rgb(217 119 6 / 0.1);
-  --ember: #e11d48;
-  --ember-soft: rgb(225 29 72 / 0.1);
-  --cyan: #0891b2;
-  --cyan-soft: rgb(8 145 178 / 0.1);
+  --brand: #cc0000;
+  --brand-hi: #e60000;
+  --brand-soft: rgb(204 0 0 / 0.1);
+  --ember: #cc0000;
+  --ember-soft: rgb(204 0 0 / 0.1);
+  --cyan: #065fd4;
+  --cyan-soft: rgb(6 95 212 / 0.1);
   --violet: #7c3aed;
 
-  --success: #059669;
-  --success-soft: rgb(5 150 105 / 0.1);
-  --warn: #b45309;
-  --warn-soft: rgb(180 83 9 / 0.1);
-  --danger: #dc2626;
-  --danger-soft: rgb(220 38 38 / 0.1);
+  --success: #0f7b30;
+  --success-soft: rgb(15 123 48 / 0.1);
+  --warn: #a86a00;
+  --warn-soft: rgb(168 106 0 / 0.12);
+  --danger: #cc0000;
+  --danger-soft: rgb(204 0 0 / 0.1);
 
-  --ring: rgb(217 119 6 / 0.65);
-  --glow: radial-gradient(60% 45% at 8% -8%, rgb(217 119 6 / 0.04), transparent 70%);
+  --ring: rgb(6 95 212 / 0.7);
+  --glow: none;
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.05);
+  --thumb-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
 }
 
 @theme inline {
@@ -107,22 +116,22 @@
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
 
+  /* YouTube "Roboto" kullanir; Windows'ta Segoe UI'ya duser. */
   --font-sans:
-    'Inter var', 'Inter', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue',
+    'Roboto', 'Roboto Flex', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue',
     Arial, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+  --font-mono: 'Roboto Mono', 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
 
-  --radius-xs: 6px;
+  --radius-xs: 4px;
   --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
+  --radius-md: 12px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 
-  /* Sade, modern golgeler: eski surumdeki agir golge + gradyan panel yuzeyi
-     gozu yoruyordu. Artik paneller duz ve neredeyse golgesiz. */
-  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.22);
-  --shadow-pop: 0 18px 44px -18px rgb(0 0 0 / 0.62), 0 1px 3px rgb(0 0 0 / 0.4);
-  --shadow-glow: 0 10px 28px -14px rgb(245 158 11 / 0.4);
+  /* NOT: --shadow-panel @theme'de tanimlanmaz; :root'ta tanimli ve
+     .panel bileseni dogrudan kullanir (isim cakismasi olmasin). */
+  --shadow-pop: 0 18px 44px -18px rgb(0 0 0 / 0.6), 0 1px 3px rgb(0 0 0 / 0.4);
+  --shadow-glow: none;
 
   --animate-fade-in: fade-in 0.18s ease-out;
   --animate-rise: rise 0.24s cubic-bezier(0.22, 1, 0.36, 1);
@@ -158,9 +167,9 @@
     background: var(--canvas);
     color: var(--fg);
     font-family: var(--font-sans);
-    font-size: 13.5px;
-    line-height: 1.55;
-    letter-spacing: 0.002em;
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: 0;
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
     user-select: none;
@@ -175,7 +184,7 @@
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
-    border-radius: 6px;
+    border-radius: 8px;
   }
 
   /* Hareket azaltma tercihi: animasyon ve gecisleri pratik olarak kapat. */
@@ -221,6 +230,7 @@
     -webkit-app-region: no-drag;
   }
 
+  /* YouTube kart yuzeyi: duz renk, ince kenar, 12px kose. */
   .panel {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -235,7 +245,7 @@
   }
 
   .glass {
-    background: color-mix(in oklab, var(--surface) 78%, transparent);
+    background: color-mix(in oklab, var(--canvas) 92%, transparent);
     backdrop-filter: blur(14px) saturate(140%);
   }
 
@@ -244,7 +254,7 @@
   }
 
   .gradient-text {
-    background: linear-gradient(92deg, var(--brand-hi), var(--ember) 55%, var(--cyan));
+    background: linear-gradient(92deg, var(--brand), var(--brand-hi));
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -258,5 +268,43 @@
   .hairline {
     background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
     height: 1px;
+  }
+
+  /* YouTube chip: yuvarlak, dolgulu, ince. */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--fg);
+    font-size: 12.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color 0.12s ease, color 0.12s ease;
+  }
+  .chip:hover {
+    background: var(--surface-3);
+  }
+  .chip-active {
+    background: var(--fg);
+    color: var(--canvas);
+  }
+
+  /* YouTube icerik karti: duz yuzey + hover'da #272727. */
+  .card-hover {
+    border-radius: var(--radius-lg);
+    transition: background-color 0.14s ease, border-color 0.14s ease;
+  }
+  .card-hover:hover {
+    background: var(--surface-2);
+  }
+
+  .thumb {
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: var(--thumb-shadow);
   }
 }

@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Compass,
+  Cpu,
   ExternalLink,
   FolderOpen,
   Layers,
@@ -18,6 +19,7 @@ import { useApp, useGunSayisi } from '@/app/AppContext'
 import { cn, formatBytes, formatRelative } from '@/lib/utils'
 import { Badge, Button, EmptyState, Input, Panel, SectionTitle, Select, Spinner } from '@/components/ui/primitives'
 import { GunSayisiSecici } from '@/components/ui/GunSayisiSecici'
+import { BrandMark } from '@/components/layout/BrandMark'
 import { KurulumRehberi } from '@/components/dashboard/KurulumRehberi'
 import { MaliyetKarti } from '@/components/dashboard/MaliyetKarti'
 import { KotaKarti } from '@/components/dashboard/KotaKarti'
@@ -41,18 +43,19 @@ function FeatureCard({
   tone: 'cyan' | 'brand' | 'violet'
   children: ReactNode
 }): ReactNode {
-  const toneCls =
-    tone === 'cyan' ? 'text-cyan bg-cyan-soft' : tone === 'violet' ? 'text-violet bg-[var(--surface-3)]' : 'text-brand bg-brand-soft'
+  const toneCls = tone === 'cyan' ? 'text-cyan' : tone === 'violet' ? 'text-violet' : 'text-brand'
   return (
-    <Panel className="flex flex-col p-4">
-      <div className="flex items-center gap-2.5">
-        <span className={cn('grid size-9 shrink-0 place-items-center rounded-[10px]', toneCls)}>{icon}</span>
+    <Panel className="card-hover flex flex-col p-5">
+      <div className="flex items-center gap-3">
+        <span className={cn('grid size-10 shrink-0 place-items-center rounded-full bg-[var(--surface-3)]', toneCls)}>
+          {icon}
+        </span>
         <div className="min-w-0">
-          <p className="num text-[10.5px] tracking-wide text-fg-subtle uppercase">Yöntem {step}</p>
-          <h3 className="truncate text-[13.5px] font-semibold text-fg">{title}</h3>
+          <p className="num text-[11px] tracking-wide text-fg-subtle uppercase">Yöntem {step}</p>
+          <h3 className="truncate text-[15px] font-semibold text-fg">{title}</h3>
         </div>
       </div>
-      <p className="mt-2.5 text-[11.5px] leading-relaxed text-fg-muted">{desc}</p>
+      <p className="mt-3 text-[12.5px] leading-relaxed text-fg-muted">{desc}</p>
       <div className="mt-3 flex flex-1 flex-col justify-end gap-3">{children}</div>
     </Panel>
   )
@@ -132,15 +135,33 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
 
   return (
     <div className="space-y-3.5">
-      {/* Baslik */}
-      <Panel className="app-bg flex flex-wrap items-center gap-x-4 gap-y-2 p-4">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-[18px] leading-tight font-semibold tracking-[-0.02em] text-fg">
+      {/* Baslik — YouTube tarzi: buyuk baslik + chip seridi */}
+      <div className="flex flex-wrap items-end justify-between gap-4 px-1">
+        <div className="min-w-0">
+          <h1 className="flex items-center gap-2.5 text-[24px] leading-tight font-bold tracking-[-0.04em] text-fg">
+            <BrandMark size={30} />
             Video<span className="gradient-text">Forge</span>
           </h1>
-          <p className="mt-0.5 text-[12px] text-fg-muted">
-            Üç yöntem: keşif, tek link işleme ve N günlük keşif + üretim. Tüm çıktılar masaüstüne bırakılır.
+          <p className="mt-1 text-[13.5px] text-fg-muted">
+            Video stüdyosu: keşiften üretime üç yöntem. Tüm çıktılar masaüstüne bırakılır.
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="chip">
+              <Compass className="size-3.5 text-cyan" /> Keşif + Gemini
+            </span>
+            <span className="chip">
+              <Link2 className="size-3.5 text-brand" /> Link ile üretim
+            </span>
+            <span className="chip">
+              <Layers className="size-3.5 text-violet" /> N günlük zincir
+            </span>
+            <span className="chip">
+              <FolderOpen className="size-3.5 text-fg-muted" /> Masaüstü çıktı
+            </span>
+            <span className="chip">
+              <Cpu className="size-3.5 text-ember" /> Modal GPU
+            </span>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge tone="neutral">
@@ -148,7 +169,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
           </Badge>
           <Badge tone={eksik ? 'warn' : 'success'}>{eksik ? `${eksik} eksik kurulum` : 'ortam hazır'}</Badge>
         </div>
-      </Panel>
+      </div>
 
       {/* 3 ozellik */}
       <div className="grid gap-3.5 lg:grid-cols-3">
@@ -163,7 +184,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
           <KanalSecici value={channelId} onChange={setChannelId} disabled={running} id="kesif-kanal" />
           <GunSayisiSecici value={gunSayisi} onChange={setGunSayisi} disabled={running} hint={false} />
           <Button
-            variant="primary"
+            variant="secondary"
             icon={<Compass className="size-3.5" />}
             loading={busy === 'kesif'}
             disabled={running}
@@ -195,7 +216,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
             />
           </div>
           <Button
-            variant="primary"
+            variant="secondary"
             icon={<Play className="size-3.5" />}
             loading={busy === 'link'}
             disabled={!link.trim() || running}
@@ -216,7 +237,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
           <KanalSecici value={channelId} onChange={setChannelId} disabled={running} id="uretim-kanal" />
           <GunSayisiSecici value={gunSayisi} onChange={setGunSayisi} disabled={running} id="gun-sayisi-uretim" hint={false} />
           <Button
-            variant="secondary"
+            variant="primary"
             icon={<Layers className="size-3.5" />}
             loading={busy === 'uretim'}
             disabled={running}
