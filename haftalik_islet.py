@@ -444,6 +444,25 @@ def main():
         footer_fail("ElevenLabs abonelik/odeme sorunu - zincir durduruldu")
         sys.exit(1)  # uygulama bunu 'tamamlandi' sanmasin
 
+    # KAPASITE UYARISI: ucretsiz/az kotali planda kalan karakter bu kosuya yetiyor mu?
+    # (Video basina ~550 karakter; kota dolarsa zincir o gun temiz durur, GPU harcanmaz.)
+    try:
+        from constants import ELEVENLABS_API_KEY
+        from functions.tts_kontrol import abonelik_durumu, kalan_karakter, VIDEO_BASINA_KARAKTER
+        _abonelik = abonelik_durumu(ELEVENLABS_API_KEY)
+        _kalan = kalan_karakter(_abonelik)
+        _tahmin = len(kuyruk) * VIDEO_BASINA_KARAKTER
+        if _kalan is not None:
+            if _kalan < _tahmin:
+                warn(f"🎙️ ElevenLabs kotasi: kalan {_kalan} karakter, bu kosu ~{_tahmin} gerektirir "
+                     f"({len(kuyruk)} video x ~{VIDEO_BASINA_KARAKTER}). Kota dolarsa zincir o gun temiz durur "
+                     f"(GPU harcanmaz); plani kisalt ya da aylik sifirlanmayi bekle.")
+            else:
+                print(f"🎙️ ElevenLabs kotasi: kalan {_kalan} karakter, bu kosu ~{_tahmin} "
+                      f"({len(kuyruk)} video) -> YETERLI.")
+    except Exception:
+        pass
+
     studio_var = studio_mevcut(studio_dir_bul()) and not args.studio_atla
     adimlar = "Kesif ✓ → VideoForge → ShortsStudio" if studio_var else "Kesif ✓ → VideoForge (ShortsStudio ATLANDI)"
     header(f"📅 VIDEOFORGE {gun_sayisi} GUNLUK ZINCIR",

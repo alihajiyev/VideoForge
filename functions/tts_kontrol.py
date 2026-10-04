@@ -26,6 +26,14 @@ ODEME_SORUNLU_DURUMLAR = {"past_due", "unpaid", "incomplete", "incomplete_expire
 # Bot ciktisinda sistemik hata isareti (haftalik_islet.py bu isareti arar).
 SISTEMIK_ISARET = "VIDEOFORGE-SISTEMIK-TTS-HATASI"
 
+# Karakter kotasi tukenmesi (401 ile gelir ama ABONELIK/ODEME degildir;
+# ucretsiz plan 10k karakterde planin sonunda kolayca dolar).
+KOTA_ISARETLERI = ("quota_exceeded", "exceeds your quota", "insufficient credit",
+                   "not enough credits", "character limit exceeded")
+
+# Bir videonun seslendirmesi icin gercek olcum (loglar): ~470-550 karakter.
+VIDEO_BASINA_KARAKTER = 550
+
 ODEME_COZUM = ("Cozum: elevenlabs.io > Billing bolumunden bekleyen faturayi tamamla / "
                "odeme yontemini guncelle; abonelik 'active' olunca komutu tekrar calistir "
                "(islenmemis gunler otomatik devam eder).")
@@ -91,9 +99,52 @@ def odeme_mesaji(durum):
             f"{ODEME_COZUM}")
 
 
+def kota_doldu_mu(kok_hata):
+    """Hata metni karakter kotasinin tukendigini mi gosteriyor?"""
+    k = str(kok_hata or "").lower()
+    return any(isaret in k for isaret in KOTA_ISARETLERI)
+
+
+def kalan_karakter(abonelik):
+    """Abonelik verisinden kalan karakter (okunamazsa None)."""
+    try:
+        limit = int((abonelik or {}).get("character_limit") or 0)
+        used = int((abonelik or {}).get("character_count") or 0)
+        return max(0, limit - used) if limit > 0 else None
+    except Exception:
+        return None
+
+
+def kota_sifirlanma_metni(abonelik):
+    """Kotanin sifirlanacagi tarih metni (varsa)."""
+    try:
+        ts = int((abonelik or {}).get("next_character_count_reset_unix") or 0)
+        if ts > 0:
+            import datetime as _dt
+            return _dt.datetime.fromtimestamp(ts).strftime("%d.%m.%Y")
+    except Exception:
+        pass
+    return None
+
+
+def kota_mesaji(kok_hata=None, abonelik=None):
+    """Karakter kotasi doldugunda net Turkce mesaj (odeme hatasiyla karistirilmaz)."""
+    kalan = kalan_karakter(abonelik)
+    limit = (abonelik or {}).get("character_limit") if isinstance(abonelik, dict) else None
+    sifir = kota_sifirlanma_metni(abonelik)
+    ek = f" (kalan: {kalan}/{limit})" if kalan is not None else ""
+    cozum = f"Kota {sifir}'te sifirlanir; erken devam icin plan yukselt." if sifir else \
+            "Aylik kota sifirlanmasini bekle ya da plan yukselt."
+    return (f"{SISTEMIK_ISARET}: ElevenLabs KARAKTER KOTASI DOLDU{ek} - bu bir odeme/abonelik sorunu DEGIL. "
+            f"Ses (TTS) uretilemedi; video URETILMEDI ve GPU BASLATILMADI (bosa para harcanmadi). "
+            f"{cozum} Kalan karakteri uygulamadaki ElevenLabs karti gosterir.")
+
+
 def tts_hata_mesaji(kok_hata=None, abonelik=None):
     """TTS uretilemediginde kullanilacak sistemik hata metni (fail-fast)."""
     kok = str(kok_hata or "")
+    if kota_doldu_mu(kok):
+        return kota_mesaji(kok, abonelik)
     odeme = ("payment_issue" in kok) or ("payment_required" in kok) or ("401" in kok) \
         or odeme_sorunu_var_mi(abonelik)
     if odeme:

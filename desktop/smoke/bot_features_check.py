@@ -410,6 +410,14 @@ kontrol("Odeme mesaji durum + fatura + cozum icerir",
 _tts_hata = tts_kontrol.tts_hata_mesaji("401 payment_issue")
 kontrol("401 payment_issue metni sistemik isaretli + fail-fast anlatir",
         tts_kontrol.SISTEMIK_ISARET in _tts_hata and "GPU BASLATILMADI" in _tts_hata)
+# Kota tukenmesi ODEME hatasiyla karistirilmamali (ucretsiz plan 10k karakterde kritik)
+kontrol("Kota isareti taninir (quota_exceeded)", tts_kontrol.kota_doldu_mu('{"code":"quota_exceeded"}'))
+kontrol("Kota isareti odeme metniyle karismaz", not tts_kontrol.kota_doldu_mu("401 payment_issue"))
+kontrol("Kalan karakter hesabi (10000-9995=5)", tts_kontrol.kalan_karakter({"character_limit": 10000, "character_count": 9995}) == 5)
+_kota_mesaj = tts_kontrol.tts_hata_mesaji("This request exceeds your quota of 10000",
+                                           {"character_limit": 10000, "character_count": 9995})
+kontrol("Kota mesaji 'kota doldu' der, odeme demez",
+        "KOTASI DOLDU" in _kota_mesaj and "payment_issue" not in _kota_mesaj and "kalan: 5/10000" in _kota_mesaj)
 kontrol("Sistemik isaret sabiti degismedi", tts_kontrol.SISTEMIK_ISARET == "VIDEOFORGE-SISTEMIK-TTS-HATASI")
 kontrol("Yerel on kontrol fonksiyonu var (kanal scriptleri + zincir kullanir)", callable(getattr(tts_kontrol, "yerel_on_kontrol", None)))
 _orch = oku("functions/orchestrator.py")
@@ -433,6 +441,7 @@ for _ad, _dosya in (("Kanal 1", "kinosekrety.py"), ("Kanal 2", "faktza15.py"), (
     kontrol(f"{_ad}: hatada sifir olmayan cikis kodu (app 'tamamlandi' sanmasin)", "sys.exit(1)" in _kanal_kaynak)
 kontrol("Zincir eksik/sistemik gunde sifir olmayan cikis kodu verir", "sys.exit(1)" in _hk)
 kontrol("Zincir --yeniden-gun parametresi sunar", "--yeniden-gun" in _hk)
+kontrol("Zincir basinda kota kapasite uyarisi var", "VIDEO_BASINA_KARAKTER" in _hk and "ElevenLabs kotasi" in _hk)
 kontrol("Yeniden gun ayristirma (1, 2,x,3 -> {1,2,3})", haftalik_islet.yeniden_gunleri_ayristir("1, 2,x,3") == {1, 2, 3})
 kontrol("Yeniden gun ayristirma bos deger -> bos kume", haftalik_islet.yeniden_gunleri_ayristir(None) == set())
 # Gecici DB ile kayit silme davranisi (GERCEK bot.db'ye DOKUNMAZ)
