@@ -613,18 +613,32 @@ async function main(): Promise<void> {
          const KIRMIZI = ['rgb(255, 0, 0)', 'rgb(204, 0, 0)', 'rgb(230, 0, 0)'];
          const red = btn.find((b) => KIRMIZI.includes(getComputedStyle(b).backgroundColor));
          const menu = document.querySelector('nav');
+         const header = document.querySelector('header');
+         const kapat = [...document.querySelectorAll('header button')].find((b) => b.getAttribute('title') === 'Kapat');
          return {
            zemin: getComputedStyle(document.body).backgroundColor,
            hap: pill.length,
            kirmizi: red ? getComputedStyle(red).borderRadius : null,
            menu: menu ? Math.round(menu.getBoundingClientRect().width) : 0,
+           headerY: header ? Math.round(header.getBoundingClientRect().height) : 0,
+           headerIci: header ? header.clientHeight : 0,
+           kapatG: kapat ? Math.round(kapat.getBoundingClientRect().width) : 0,
+           kapatY: kapat ? Math.round(kapat.getBoundingClientRect().height) : 0,
          };
        })()`,
-    )) as { zemin: string; hap: number; kirmizi: string | null; menu: number } | null
+    )) as { zemin: string; hap: number; kirmizi: string | null; menu: number; headerY: number; headerIci: number; kapatG: number; kapatY: number } | null
     check('YouTube zemini: #0f0f0f', ytTema?.zemin === 'rgb(15, 15, 15)', String(ytTema?.zemin))
     check('Dugmeler hap (pill) seklinde', Boolean(ytTema && ytTema.hap >= 4), `hap=${ytTema?.hap}`)
     check('Birincil aksiyon YouTube kirmizisi', Boolean(ytTema?.kirmizi && parseFloat(ytTema.kirmizi) >= 999), String(ytTema?.kirmizi))
     check('Sol menu YouTube genisliginde (236px)', ytTema?.menu === 236, `menu=${ytTema?.menu}`)
+    check('Baslik cubugu 56px (YouTube masthead)', ytTema?.headerY === 56, `headerY=${ytTema?.headerY}`)
+    // tailwind-merge catismasi (size-9 vs w-12/h-full) pencere dugmelerini bozmasin.
+    // Dugme, masthead'in ICERIK yuksekligini doldurur (56px - 1px alt kenar = 55).
+    check(
+      'Pencere kapatma dugmesi masthead icerik yuksekligini dolduruyor',
+      Boolean(ytTema && ytTema.headerIci >= 50 && ytTema.kapatY === ytTema.headerIci && ytTema.kapatG >= 44),
+      `genislik=${ytTema?.kapatG} yukseklik=${ytTema?.kapatY} icerik=${ytTema?.headerIci}`,
+    )
 
     // Tema degisimi: baslik cubugundaki gercek buton uzerinden (kullanici akisi)
     const themeOk = await win.webContents.executeJavaScript(
@@ -637,6 +651,22 @@ async function main(): Promise<void> {
        })()`,
     )
     check('Tema degisimi (baslik cubugu butonu)', themeOk === 'light', String(themeOk))
+    // Aydinlik temada ters chip: siyah zemin + beyaz metin (utilite katmani
+    // bilesen katmanini ezerse bu kontrol kirilir).
+    const chipLight = (await win.webContents.executeJavaScript(
+      `(() => {
+         const chip = [...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-pressed') === 'true');
+         if (!chip) return null;
+         const s = getComputedStyle(chip);
+         return { bg: s.backgroundColor, fg: s.color, radius: s.borderRadius };
+       })()`,
+    )) as { bg: string; fg: string; radius: string } | null
+    check(
+      'Aydinlik temada aktif gun chipi siyah zemin + beyaz metin',
+      chipLight?.bg === 'rgb(15, 15, 15)' && chipLight?.fg === 'rgb(255, 255, 255)',
+      `${chipLight?.bg} / ${chipLight?.fg}`,
+    )
+    check('Gun chipi hap sekilli (pill)', Boolean(chipLight && parseFloat(chipLight.radius) >= 999), String(chipLight?.radius))
     const themeBack = await win.webContents.executeJavaScript(
       `(async () => {
          const btn = [...document.querySelectorAll('button')].find((b) => (b.getAttribute('title') || '').includes('Karanlık tema'));

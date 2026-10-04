@@ -24,7 +24,7 @@ export function StageTimeline({
               className={cn(
                 'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-colors',
                 active
-                  ? 'border-[color-mix(in_oklab,var(--brand)_45%,transparent)] bg-brand-soft text-brand'
+                  ? 'border-[color-mix(in_oklab,var(--brand)_45%,transparent)] bg-brand-soft text-brand-text'
                   : done
                     ? 'border-[color-mix(in_oklab,var(--success)_30%,transparent)] bg-success-soft text-success'
                     : 'border-border bg-[var(--surface-2)] text-fg-subtle',

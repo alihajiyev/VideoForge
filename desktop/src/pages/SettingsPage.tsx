@@ -333,7 +333,7 @@ export function SettingsPage(): ReactNode {
                 onClick={() => void setMode(opt.key)}
                 className={cn(
                   'flex flex-col items-center gap-1.5 rounded-[11px] border px-3 py-3 transition-colors',
-                  mode === opt.key ? 'border-brand bg-brand-soft text-brand' : 'border-border bg-[var(--surface-2)] text-fg-muted hover:border-border-strong',
+                  mode === opt.key ? 'border-brand bg-brand-soft text-brand-text' : 'border-border bg-[var(--surface-2)] text-fg-muted hover:border-border-strong',
                 )}
               >
                 {opt.icon}

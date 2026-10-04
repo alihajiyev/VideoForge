@@ -10,7 +10,8 @@ type ButtonSize = 'sm' | 'md' | 'lg'
  * ikincil butonlar kullanilir. Birincil renk YouTube kirmizisi + beyaz metin.
  */
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: 'bg-brand text-white hover:bg-brand-hi border border-transparent',
+  // Dolu CTA: beyaz metin saf kirmizida 4.0:1 kaliyordu -> brand-solid (5.9:1).
+  primary: 'bg-brand-solid text-white hover:bg-brand-solid-hi border border-transparent',
   secondary: 'bg-[var(--surface-2)] text-fg border border-transparent hover:bg-[var(--surface-3)]',
   ghost: 'bg-transparent text-fg-muted hover:text-fg hover:bg-[var(--surface-2)] border border-transparent',
   danger: 'bg-danger-soft text-danger border border-transparent hover:bg-danger hover:text-white',
@@ -43,7 +44,8 @@ export function Button({
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center font-medium transition-all duration-150 select-none',
+        // whitespace-nowrap: dar pencerede uzun etiketler hapi iki satira bolmesin.
+        'inline-flex items-center justify-center font-medium whitespace-nowrap transition-all duration-150 select-none',
         'disabled:cursor-not-allowed disabled:opacity-45 active:scale-[0.985]',
         VARIANTS[variant],
         SIZES[size],
@@ -120,7 +122,8 @@ type Tone = 'neutral' | 'brand' | 'success' | 'warn' | 'danger' | 'cyan' | 'viol
 /** YouTube chip rozetleri: cercevesiz, dolgulu, hap. */
 const TONES: Record<Tone, string> = {
   neutral: 'bg-[var(--surface-3)] text-fg-muted',
-  brand: 'bg-brand-soft text-brand',
+  // Rozet metni temaya gore ayarlanir (koyu 5.1:1 / acik 4.9:1; ikisi de AA).
+  brand: 'bg-brand-soft text-brand-text',
   success: 'bg-success-soft text-success',
   warn: 'bg-warn-soft text-warn',
   danger: 'bg-danger-soft text-danger',

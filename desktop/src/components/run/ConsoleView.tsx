@@ -11,7 +11,7 @@ const LEVEL_TEXT: Record<LogLevel, string> = {
   ok: 'text-success',
   warn: 'text-warn',
   err: 'text-danger',
-  step: 'text-brand font-semibold',
+  step: 'text-brand-text font-semibold',
   ai: 'text-cyan',
   gpu: 'text-violet',
   tts: 'text-ember',
@@ -154,7 +154,7 @@ export function ConsoleView({
                 onClick={() => setFilter(f.key)}
                 className={cn(
                   'rounded-[7px] px-2 py-1 text-[11.5px] font-medium transition-colors',
-                  filter === f.key ? 'bg-brand-soft text-brand' : 'text-fg-subtle hover:bg-[var(--surface-2)] hover:text-fg-muted',
+                  filter === f.key ? 'bg-brand-soft text-brand-text' : 'text-fg-subtle hover:bg-[var(--surface-2)] hover:text-fg-muted',
                 )}
               >
                 {f.label}

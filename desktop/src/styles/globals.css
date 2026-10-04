@@ -24,11 +24,19 @@
 
   --fg: #f1f1f1;
   --fg-muted: #aaaaaa;
-  --fg-subtle: #888888;
+  /* #888, #272727 zemininde 4.2:1'de kaliyordu; #999 ile 5.1:1. */
+  --fg-subtle: #999999;
 
   --brand: #ff0000;
   --brand-hi: #ff4d4d;
+  /* Rozet/filtre metni: brand-soft zeminde saf #ff0000 4.1:1 idi. #ff6b6b tek
+     katmanda 6.2:1, cift katmanli kirmizi panel icinde bile 5.0:1. */
+  --brand-text: #ff6b6b;
   --brand-soft: rgb(255 0 0 / 0.16);
+  /* DOLU buton dolgusu: beyaz metinle saf #ff0000 4.0:1 kaliyordu; #cc0000 = 5.9:1
+     (YouTube'un kendi CTA kirmizisi). Logo/marka isareti saf #ff0000 kalir. */
+  --brand-solid: #cc0000;
+  --brand-solid-hi: #e60000;
   --ember: #ff4e45;
   --ember-soft: rgb(255 78 69 / 0.14);
   /* YouTube baglanti mavisi */
@@ -36,7 +44,8 @@
   --cyan-soft: rgb(62 166 255 / 0.14);
   --violet: #a78bfa;
 
-  --success: #2ba640;
+  /* success rozet metni koyu zeminde 4.1:1 idi; #35b34a = 4.7:1+. */
+  --success: #35b34a;
   --success-soft: rgb(43 166 64 / 0.16);
   --warn: #f5b000;
   --warn-soft: rgb(245 176 0 / 0.16);
@@ -66,21 +75,29 @@
 
   --fg: #0f0f0f;
   --fg-muted: #606060;
-  --fg-subtle: #909090;
+  /* YouTube'un #909090'i beyaz uzerinde 3.2:1 kaliyor (AA alti).
+     #666666: beyazda 5.7:1, tintli yuzeylerde (surface-2/3) 4.5:1+. */
+  --fg-subtle: #666666;
 
   --brand: #cc0000;
   --brand-hi: #e60000;
+  /* Tintli yuzeylerde (surface-2/3) #cc0000 4.4:1'e dusuyordu; #b00000 ile 4.6:1+. */
+  --brand-text: #b00000;
   --brand-soft: rgb(204 0 0 / 0.1);
+  --brand-solid: #cc0000;
+  --brand-solid-hi: #a80000;
   --ember: #cc0000;
   --ember-soft: rgb(204 0 0 / 0.1);
   --cyan: #065fd4;
   --cyan-soft: rgb(6 95 212 / 0.1);
   --violet: #7c3aed;
 
-  --success: #0f7b30;
+  /* Rozet metni tintli zeminde 4.2:1 idi; #0b6a28 beyazda 6.7:1, tintte 4.7:1. */
+  --success: #0b6a28;
   --success-soft: rgb(15 123 48 / 0.1);
-  --warn: #a86a00;
-  --warn-soft: rgb(168 106 0 / 0.12);
+  /* Uyari rozeti metni: #a86a00 tintli zeminde 3.8:1 idi; #8a5400 = 5.2:1. */
+  --warn: #8a5400;
+  --warn-soft: rgb(138 84 0 / 0.12);
   --danger: #cc0000;
   --danger-soft: rgb(204 0 0 / 0.1);
 
@@ -103,6 +120,9 @@
   --color-fg-subtle: var(--fg-subtle);
   --color-brand: var(--brand);
   --color-brand-hi: var(--brand-hi);
+  --color-brand-text: var(--brand-text);
+  --color-brand-solid: var(--brand-solid);
+  --color-brand-solid-hi: var(--brand-solid-hi);
   --color-brand-soft: var(--brand-soft);
   --color-ember: var(--ember);
   --color-ember-soft: var(--ember-soft);
