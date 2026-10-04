@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { Wallet } from 'lucide-react'
+import { ExternalLink, Wallet } from 'lucide-react'
+import { api } from '@/lib/api'
 import { useApp } from '@/app/AppContext'
 import { Badge, Panel, SectionTitle, Spinner } from '@/components/ui/primitives'
 import { cn, formatKalan } from '@/lib/utils'
@@ -97,7 +98,16 @@ export function KrediKarti(): ReactNode {
                 {s.durum === 'hata' && s.hata ? (
                   <p className="mt-1.5 text-[10.5px] text-danger">{s.hata}</p>
                 ) : s.detay ? (
-                  <p className="mt-1.5 text-[10.5px] text-fg-subtle">{s.detay}</p>
+                  <p className="mt-1.5 text-[10.5px] leading-relaxed text-fg-subtle">{s.detay}</p>
+                ) : null}
+
+                {s.baglanti ? (
+                  <button
+                    onClick={() => void api.shellOpenExternal(s.baglanti as string)}
+                    className="mt-1 inline-flex items-center gap-1 text-[10.5px] text-cyan hover:underline"
+                  >
+                    Bakiyeyi aç <ExternalLink className="size-2.5" />
+                  </button>
                 ) : null}
               </div>
             )
@@ -106,8 +116,9 @@ export function KrediKarti(): ReactNode {
       )}
 
       <p className="mt-2.5 text-[10.5px] leading-relaxed text-fg-subtle">
-        Değerler hizmetlerin kendi API’lerinden canlı okunur (ElevenLabs karakter kotası, ZapCap USD bakiyesi). Gemini için resmî kota uç
-        noktası olmadığından “Gemini kotası” kartındaki tahmin kullanılır.
+        Değerler hizmetlerin kendi API’lerinden canlı okunur: ElevenLabs karakter kotası, ZapCap USD bakiyesi, Modal kalan dahil compute
+        (<span className="font-mono">modal billing summary</span>). TranscriptAPI ve Gemini kesin bakiye uç noktası yayınlamıyor; durum canlı
+        yoklanır, tam sayı için karta bağlı bağlantı açılır.
       </p>
     </Panel>
   )

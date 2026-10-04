@@ -122,6 +122,8 @@ export interface AppSettings {
   scheduleChannel: ChannelId
   /** ShortsStudio klasoru (Zapcap anahtarini okumak icin; bos = bot klasorunun kardesi) */
   shortsStudioPath: string
+  /** Modal aylik dahil compute kredisi (USD). Bakiye = bu deger - bu ay tuketilen. */
+  modalAylikKredi: number
 }
 
 /** Kuyrukta bekleyen/tamamlanan isler (coklu link isleme icin). */
@@ -271,6 +273,8 @@ export interface KrediServisi {
   hata?: string
   /** Kotanin sifirlanacagi an (epoch ms, varsa) */
   sifirlanmaMs?: number | null
+  /** Bakiye/kullanim sayfasinin adresi (varsa karta baglanti olarak eklenir) */
+  baglanti?: string
 }
 
 /** Altyazi motorlari: ShortsStudio final kompozitini nasil bastigi. */

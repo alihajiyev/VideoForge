@@ -4,6 +4,8 @@ import type { KrediServisi } from '@shared/types'
 import { botPath } from '../core/paths'
 import { getSettings } from '../core/settings'
 import { log } from '../core/logger'
+import { execCapture } from '../core/exec'
+import { resolvePython } from '../python/locate'
 import { harcamaOzeti } from './spend'
 
 /**
@@ -69,6 +71,8 @@ interface HttpSonuc {
   ok: boolean
   data: unknown
   error?: string
+  /** HTTP durum kodu (hata halinde de dolu olur) */
+  status?: number
 }
 
 async function jsonGet(url: string, headers: Record<string, string>): Promise<HttpSonuc> {
@@ -76,9 +80,9 @@ async function jsonGet(url: string, headers: Record<string, string>): Promise<Ht
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) })
     if (!res.ok) {
       const text = (await res.text().catch(() => '')).slice(0, 140)
-      return { ok: false, data: null, error: `HTTP ${res.status}${text ? ` · ${text}` : ''}` }
+      return { ok: false, data: null, status: res.status, error: `HTTP ${res.status}${text ? ` · ${text}` : ''}` }
     }
-    return { ok: true, data: await res.json() }
+    return { ok: true, data: await res.json(), status: res.status }
   } catch (err) {
     return { ok: false, data: null, error: String((err as Error)?.message ?? err).slice(0, 180) }
   }
@@ -168,21 +172,136 @@ function gemini(env: Record<string, string>): KrediServisi {
 }
 
 /**
- * Modal (GPU bulut): resmi bakiye API'si yalnizca Team/Enterprise planinda
- * acik oldugu icin gercek bakiye cekilemez. Bunun yerine uygulamanin kendi
- * harcama defterinden bu ayin TAHMINI Modal harcamasi gosterilir; gercek
- * bakiye icin modal.com/billing adresine yonlendirme metni verilir.
+ * TranscriptAPI: resmi API'de bakiye uc noktasi YOK (openapi.json yalnizca 13
+ * youtube yolu listeler; MCP araclarinda da kredi araci bulunmuyor). Bu yuzden
+ * UCRETSIZ /youtube/info uc noktasiyla canli durum okunur: 200 = anahtar gecerli
+ * ve en az 1 kredi var, 402 = kredi bitti. Kesin sayi dashboard'da gorunur.
  */
-function modal(ayUsd: number): KrediServisi {
+async function transcriptapi(key: string): Promise<KrediServisi> {
+  const ad = 'TranscriptAPI (transkript)'
+  const baglanti = 'https://transcriptapi.com/dashboard'
+  if (!key) {
+    return {
+      id: 'transcriptapi',
+      ad,
+      durum: 'anahtar-yok',
+      kalan: null,
+      toplam: null,
+      birim: 'istek',
+      detay: 'Bot klasöründeki .env dosyasına TRANSCRIPT_API_KEY ekleyin (Ayarlar’dan da girilebilir).',
+      baglanti,
+    }
+  }
+  const r = await jsonGet('https://transcriptapi.com/api/v2/youtube/info?video_url=dQw4w9WgXcQ', {
+    Authorization: `Bearer ${key}`,
+    accept: 'application/json',
+  })
+  // 200 = anahtar gecerli + en az 1 kredi. 404 yalnizca "video bulunamadi"
+  // demektir (kimlik dogrulama gecmistir), bu yuzden anahtar YINE gecerlidir.
+  if (r.ok || r.status === 404) {
+    return {
+      id: 'transcriptapi',
+      ad,
+      durum: 'ok',
+      kalan: null,
+      toplam: null,
+      birim: 'istek',
+      detay: 'Anahtar geçerli · kredi mevcut (≥1). TranscriptAPI kesin bakiye uç noktası yayınlamıyor; tam sayı dashboard’da.',
+      baglanti,
+    }
+  }
+  if (r.status === 402) {
+    return { id: 'transcriptapi', ad, durum: 'hata', kalan: 0, toplam: null, birim: 'istek', hata: 'Kredi bitti (HTTP 402). Dashboard’dan yükleme yapın.', baglanti }
+  }
+  if (r.status === 401 || r.status === 403) {
+    return { id: 'transcriptapi', ad, durum: 'hata', kalan: null, toplam: null, birim: 'istek', hata: `Anahtar reddedildi (HTTP ${r.status}).`, baglanti }
+  }
+  return { id: 'transcriptapi', ad, durum: 'hata', kalan: null, toplam: null, birim: 'istek', hata: r.error, baglanti }
+}
+
+interface ModalOzet {
+  /** Bu ay kalan dahil compute (USD) */
+  kalan: number
+  /** Aylik dahil compute (USD) */
+  toplam: number
+  /** Bu ay tuketilen kredi (USD) */
+  tuketilen: number
+  /** Bu ay toplam kullanim (metered, USD) */
+  harcanan: number
+}
+
+/** Modal bakiye sorgusu ~10-20 sn surer; paneller tekrar tekrar sormasin diye onbellek. */
+let modalCache: { t: number; veri: ModalOzet | null } | null = null
+const MODAL_CACHE_MS = 3 * 60_000
+
+/**
+ * Modal: `modal billing summary --json` cikmasindan bu ayin GERCEK kullanimini
+ * ve uygulanan krediyi okur. Kalan bakiye = aylik dahil compute - bu ay
+ * uygulanan kredi (adjustments.credits). Modal'in kendi muhasebesine dayanir.
+ */
+async function modalOzet(aylikKredi: number): Promise<ModalOzet | null> {
+  if (modalCache && Date.now() - modalCache.t < MODAL_CACHE_MS) return modalCache.veri
+  const py = await resolvePython()
+  if (!py.ok || !py.python) {
+    modalCache = { t: Date.now(), veri: null }
+    return null
+  }
+  const res = await execCapture(
+    py.python.command,
+    [...py.python.args, '-m', 'modal', 'billing', 'summary', '--json'],
+    { timeoutMs: 60_000 },
+  )
+  if (res.code !== 0) {
+    log.info('modal billing okunamadi:', (res.stderr || res.error || '').trim().split('\n').pop()?.slice(0, 160))
+    modalCache = { t: Date.now(), veri: null }
+    return null
+  }
+  try {
+    const ham = res.stdout.slice(Math.max(0, res.stdout.indexOf('{')))
+    const json = JSON.parse(ham) as { metered_cost?: string; adjustments?: { credits?: string } }
+    const tuketilen = Math.abs(Number(json.adjustments?.credits ?? 0)) || 0
+    const harcanan = Number(json.metered_cost ?? 0) || 0
+    const veri: ModalOzet = {
+      kalan: Math.max(0, aylikKredi - tuketilen),
+      toplam: aylikKredi,
+      tuketilen,
+      harcanan,
+    }
+    modalCache = { t: Date.now(), veri }
+    return veri
+  } catch (err) {
+    log.warn('modal billing json ayristirilamadi:', err)
+    modalCache = { t: Date.now(), veri: null }
+    return null
+  }
+}
+
+/** Modal karti: gercek bakiye; okunamazsa uygulama defterinden tahmine duser. */
+async function modal(aylikKredi: number, tahminiAyUsd: number): Promise<KrediServisi> {
+  const ad = 'Modal (GPU bulut)'
+  const baglanti = 'https://modal.com/settings/usage'
+  const ozet = await modalOzet(aylikKredi)
+  if (!ozet) {
+    return {
+      id: 'modal',
+      ad,
+      durum: 'bilgi',
+      kalan: Number.isFinite(tahminiAyUsd) ? tahminiAyUsd : null,
+      toplam: aylikKredi,
+      birim: 'USD-tahmini',
+      detay: 'Modal faturalama API’sine ulaşılamadı (giriş yapılmamış olabilir). Uygulamanın kendi defterinden bu ayın tahmini GPU harcaması gösteriliyor.',
+      baglanti,
+    }
+  }
   return {
     id: 'modal',
-    ad: 'Modal (GPU bulut)',
-    durum: 'bilgi',
-    kalan: Number.isFinite(ayUsd) ? ayUsd : null,
-    toplam: null,
-    // 'USD-tahmini': kart bunu "bu ay tahmini harcama" olarak etiketler.
-    birim: 'USD-tahmini',
-    detay: 'Modal resmi bakiye API’si Team planında açık; değer uygulamanın GPU harcama defterinden. Gerçek bakiye: modal.com/billing',
+    ad,
+    durum: 'ok',
+    kalan: ozet.kalan,
+    toplam: ozet.toplam,
+    birim: 'USD',
+    detay: `Bu ay kullanılan dahil compute: $${ozet.tuketilen.toFixed(2)} · aylık toplam kullanım: $${ozet.harcanan.toFixed(2)} · her ay yenilenir`,
+    baglanti,
   }
 }
 
@@ -191,11 +310,15 @@ export async function kredileriGetir(): Promise<KrediServisi[]> {
   const root = botPath(getSettings().videoForgePath)
   const env = okuEnv(root)
   const zc = zapcapAnahtari(root, env)
-  const [el, zp] = await Promise.all([
+  const ayar = getSettings()
+  const aylikKredi = Number.isFinite(ayar.modalAylikKredi) && ayar.modalAylikKredi > 0 ? ayar.modalAylikKredi : 30
+  const ayUsd = harcamaOzeti().ayUsd
+  const [el, zp, ta, md] = await Promise.all([
     elevenlabs((env.ELEVENLABS_API_KEY || '').trim()),
     zapcap(zc.key, zc.kaynak),
+    transcriptapi((env.TRANSCRIPT_API_KEY || '').trim()),
+    modal(aylikKredi, ayUsd),
   ])
-  const ayUsd = harcamaOzeti().ayUsd
-  log.info('krediler sorgulandi:', el.durum, zp.durum)
-  return [el, zp, modal(ayUsd), gemini(env)]
+  log.info('krediler sorgulandi:', el.durum, zp.durum, ta.durum, md.durum)
+  return [el, zp, ta, md, gemini(env)]
 }

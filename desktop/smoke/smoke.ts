@@ -936,12 +936,18 @@ async function main(): Promise<void> {
     )
 
     const krediler = (await win.webContents.executeJavaScript(
-      `(async () => { const r = await window.vfgui.creditsGet(); return r.ok ? { n: r.data.length, ids: r.data.map((x) => x.id), durumlar: r.data.map((x) => x.durum) } : { hata: r.error }; })()`,
-    )) as { n?: number; ids?: string[]; durumlar?: string[]; hata?: string }
+      `(async () => { const r = await window.vfgui.creditsGet(); return r.ok ? { n: r.data.length, ids: r.data.map((x) => x.id), durumlar: r.data.map((x) => x.durum), baglantilar: r.data.map((x) => x.baglanti).filter(Boolean) } : { hata: r.error }; })()`,
+    )) as { n?: number; ids?: string[]; durumlar?: string[]; baglantilar?: string[]; hata?: string }
     check(
-      'Servis kredileri IPC calisti (ElevenLabs + ZapCap + Gemini)',
-      (krediler?.n ?? 0) >= 3 && Boolean(krediler?.ids?.includes('elevenlabs') && krediler?.ids?.includes('zapcap') && krediler?.ids?.includes('gemini')),
+      'Servis kredileri IPC calisti (ElevenLabs + ZapCap + Transcript + Modal + Gemini)',
+      (krediler?.n ?? 0) >= 5 &&
+        ['elevenlabs', 'zapcap', 'transcriptapi', 'modal', 'gemini'].every((id) => krediler?.ids?.includes(id)),
       JSON.stringify(krediler),
+    )
+    check(
+      'Kredi kartlari bakiye/baglanti alanlarini donduruyor',
+      Boolean(krediler?.baglantilar?.includes('https://transcriptapi.com/dashboard')),
+      JSON.stringify(krediler?.baglantilar),
     )
     check(
       'Kredi durumlari gecerli deger dondurdu',

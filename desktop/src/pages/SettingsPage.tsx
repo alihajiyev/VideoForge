@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ClipboardEvent, type ReactNode } from 'react'
 import {
   AlertTriangle,
   Bell,
@@ -9,6 +9,8 @@ import {
   Eye,
   EyeOff,
   ExternalLink,
+  Plus,
+  Trash2,
   FolderOpen,
   Gauge,
   GitBranch,
@@ -65,6 +67,115 @@ function SecretInput({
   )
 }
 
+/**
+ * Gemini anahtar duzenleyici: virgulle ayrilmis tek satir yerine her anahtar
+ * kendi satirinda durur (ekle / sil / tek tikla gizle). Bir satira virgul,
+ * noktali virgul veya satir sonu iceren bir liste yapistirilirsa otomatik
+ * olarak satirlara bolunur. .env'e yine virgulle ayrilmis tek deger yazilir.
+ */
+function GeminiKeyEditor({ value, onChange }: { value: string; onChange: (v: string) => void }): ReactNode {
+  const coz = (s: string): string[] =>
+    s
+      .split(/[,\n;]+/)
+      .map((x) => x.trim())
+      .filter(Boolean)
+
+  const [satirlar, setSatirlar] = useState<string[]>(() => {
+    const ilk = coz(value)
+    return ilk.length ? ilk : ['']
+  })
+  const [acik, setAcik] = useState(false)
+  const sonVerilen = useRef<string>('')
+
+  // Disaridan (kaydetme sonrasi) deger degisirse alanlari tazele.
+  useEffect(() => {
+    if (value === sonVerilen.current) return
+    const gelen = coz(value)
+    setSatirlar(gelen.length ? gelen : [''])
+  }, [value])
+
+  const yay = (liste: string[]): void => {
+    setSatirlar(liste)
+    const birlesik = liste
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .join(',')
+    sonVerilen.current = birlesik
+    onChange(birlesik)
+  }
+
+  const degistir = (i: number, v: string): void => yay(satirlar.map((x, idx) => (idx === i ? v : x)))
+  const sil = (i: number): void => {
+    const yeni = satirlar.filter((_, idx) => idx !== i)
+    yay(yeni.length ? yeni : [''])
+  }
+  const ekle = (): void => yay([...satirlar, ''])
+
+  // Yapistirilan liste tek satira sigdirilmaz; parcalara bolunur.
+  const yapistir = (i: number, e: ClipboardEvent<HTMLInputElement>): void => {
+    const metin = e.clipboardData.getData('text')
+    if (!/[,\n;]/.test(metin)) return
+    const parcalar = coz(metin)
+    if (parcalar.length < 2) return
+    e.preventDefault()
+    const yeni = [...satirlar]
+    yeni.splice(i, 1, ...parcalar)
+    yay(yeni)
+  }
+
+  const dolu = satirlar.filter((x) => x.trim()).length
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11.5px] text-fg-subtle">Gemini API anahtarları</span>
+        <Badge tone={dolu ? 'cyan' : 'neutral'}>{dolu} anahtar</Badge>
+        <button
+          type="button"
+          onClick={() => setAcik((v) => !v)}
+          className="ml-auto inline-flex items-center gap-1 text-[11px] text-fg-subtle transition-colors hover:text-fg"
+        >
+          {acik ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+          {acik ? 'Gizle' : 'Göster'}
+        </button>
+      </div>
+
+      <div className="mt-2 space-y-1.5">
+        {satirlar.map((anahtar, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <span className="num w-5 shrink-0 text-right text-[10.5px] text-fg-subtle">{i + 1}</span>
+            <Input
+              type={acik ? 'text' : 'password'}
+              value={anahtar}
+              onChange={(e) => degistir(i, e.target.value)}
+              onPaste={(e) => yapistir(i, e)}
+              placeholder="AQ.Ab8... (virgülle birden fazla yapıştırabilirsin)"
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono text-[12px]"
+            />
+            <button
+              type="button"
+              onClick={() => sil(i)}
+              title="Anahtarı kaldır"
+              className="shrink-0 rounded-[7px] p-1.5 text-fg-subtle transition-colors hover:bg-[var(--danger-soft)] hover:text-danger"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-2 flex items-center gap-2">
+        <Button size="sm" variant="secondary" icon={<Plus className="size-3.5" />} onClick={ekle}>
+          Anahtar ekle
+        </Button>
+        <span className="text-[10.5px] text-fg-subtle">Sıra kota önceliğidir: ilk anahtar önce kullanılır.</span>
+      </div>
+    </div>
+  )
+}
+
 const MOTOR_ETIKET: Record<AltyaziMotoru, string> = {
   auto: 'Otomatik (varsayılan: 3. kanal yerel, diğerleri ZapCap)',
   zapcap: 'ZapCap (şablon ile profesyonel altyazı)',
@@ -107,6 +218,17 @@ export function SettingsPage(): ReactNode {
   const [downloadedPath, setDownloadedPath] = useState<string | null>(null)
   const [sec, setSec] = useState<GizliAnahtarlar | null>(null)
   const [secSaving, setSecSaving] = useState(false)
+  const [modalKredi, setModalKredi] = useState('30')
+
+  useEffect(() => {
+    setModalKredi(String(settings?.modalAylikKredi ?? 30))
+  }, [settings?.modalAylikKredi])
+
+  const modalKrediKaydet = (): void => {
+    const v = Math.max(0, Number(modalKredi) || 0)
+    setModalKredi(String(v))
+    void saveSettings({ modalAylikKredi: v })
+  }
 
   useEffect(() => {
     void api
@@ -293,10 +415,9 @@ export function SettingsPage(): ReactNode {
         ) : (
           <>
             <div className="mt-3 grid gap-3 lg:grid-cols-2">
-              <label className="block lg:col-span-2">
-                <span className="mb-1 block text-[11.5px] text-fg-subtle">Gemini API anahtarları (virgülle ayırın)</span>
-                <SecretInput value={sec.geminiApiKeys} onChange={(v) => secKoy({ geminiApiKeys: v })} placeholder="AQ.Ab8... , AQ.Ab8..." />
-              </label>
+              <div className="lg:col-span-2">
+                <GeminiKeyEditor value={sec.geminiApiKeys} onChange={(v) => secKoy({ geminiApiKeys: v })} />
+              </div>
               <label className="block">
                 <span className="mb-1 block text-[11.5px] text-fg-subtle">ElevenLabs API anahtarı</span>
                 <SecretInput value={sec.elevenlabsApiKey} onChange={(v) => secKoy({ elevenlabsApiKey: v })} placeholder="sk_..." />
@@ -333,6 +454,26 @@ export function SettingsPage(): ReactNode {
                     </option>
                   ))}
                 </Select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11.5px] text-fg-subtle">
+                  Modal aylık dahil compute (USD) <span className="text-fg-subtle/70">— kalan bakiye bu değerden hesaplanır</span>
+                </span>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={modalKredi}
+                    onChange={(e) => setModalKredi(e.target.value)}
+                    onBlur={modalKrediKaydet}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') modalKrediKaydet()
+                    }}
+                    className="num w-[110px]"
+                  />
+                  <span className="text-[10.5px] text-fg-subtle">Modal kalan bakiyeyi kendi faturasından okur; bu değer yalnızca “kalan” hesabı içindir.</span>
+                </div>
               </label>
             </div>
 

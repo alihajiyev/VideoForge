@@ -30,6 +30,7 @@ function defaults(): AppSettings {
     scheduleKind: 'discover',
     scheduleChannel: '1',
     shortsStudioPath: '',
+    modalAylikKredi: 30,
   }
 }
 
@@ -48,12 +49,14 @@ function duzeltGunSayisi(ayar: AppSettings): AppSettings {
   const saat = duzeltSaat(ayar.scheduleTime)
   const kanal = (['1', '2', '3'] as const).includes(ayar.scheduleChannel) ? ayar.scheduleChannel : '1'
   const tur = ayar.scheduleKind === 'weekly' ? 'weekly' : 'discover'
+  const modalKredi = Number(ayar.modalAylikKredi)
   return {
     ...ayar,
     gunSayisi: sayi,
     scheduleTime: saat,
     scheduleChannel: kanal,
     scheduleKind: tur,
+    modalAylikKredi: Number.isFinite(modalKredi) && modalKredi >= 0 ? modalKredi : 30,
   }
 }
 

@@ -47,6 +47,7 @@ const mockSettings: AppSettings = {
   scheduleKind: 'discover',
   scheduleChannel: '1',
   shortsStudioPath: '',
+  modalAylikKredi: 30,
 }
 
 const mockUpdate: UpdateInfo = {
@@ -268,7 +269,27 @@ const mockApi: VideoForgeApi = {
     ok: true,
     data: [
       { id: 'elevenlabs', ad: 'ElevenLabs (seslendirme)', durum: 'ok', kalan: 59957, toplam: 121012, birim: 'karakter', detay: 'plan: creator' },
-      { id: 'zapcap', ad: 'ZapCap (altyazı/efekt)', durum: 'ok', kalan: 0.0056, toplam: null, birim: 'USD' },
+      { id: 'zapcap', ad: 'ZapCap (altyazı/efekt)', durum: 'ok', kalan: 0.0056, toplam: null, birim: 'USD', baglanti: 'https://platform.zapcap.ai' },
+      {
+        id: 'transcriptapi',
+        ad: 'TranscriptAPI (transkript)',
+        durum: 'ok',
+        kalan: null,
+        toplam: null,
+        birim: 'istek',
+        detay: 'Anahtar geçerli · kredi mevcut (≥1). TranscriptAPI kesin bakiye uç noktası yayınlamıyor; tam sayı dashboard’da.',
+        baglanti: 'https://transcriptapi.com/dashboard',
+      },
+      {
+        id: 'modal',
+        ad: 'Modal (GPU bulut)',
+        durum: 'ok',
+        kalan: 30,
+        toplam: 30,
+        birim: 'USD',
+        detay: 'Bu ay kullanılan dahil compute: $0.00 · aylık toplam kullanım: $0.47 · her ay yenilenir',
+        baglanti: 'https://modal.com/settings/usage',
+      },
       {
         id: 'gemini',
         ad: 'Google Gemini (AI)',
