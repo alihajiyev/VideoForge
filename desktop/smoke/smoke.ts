@@ -505,14 +505,18 @@ async function main(): Promise<void> {
     const dom1 = (await win.webContents.executeJavaScript('document.body.innerText')) as string
     const dom1lc = tr((await win.webContents.executeJavaScript('document.body.textContent')) as string)
     check('React arayuzu render edildi', dom1.length > 200, `innerText ${dom1.length} karakter`)
-    check('Panel basligi gorunur', dom1lc.includes('işlem başlat') && dom1lc.includes('kino sekrety'), '')
     check(
-      'Yan menu ogeleri gorunur',
-      ['panel', 'çalıştır', 'keşif', 'kütüphane', 'çıktılar', 'günlük', 'ayarlar'].every((t) => dom1lc.includes(t)),
+      'Ana sayfadaki 3 ozellik karti gorunur',
+      dom1lc.includes('keşif yap') && dom1lc.includes('link ile video üret') && dom1lc.includes('n günlük üretim'),
+      '',
+    )
+    check(
+      'Yan menu ogeleri gorunur (minimalist 3)',
+      ['ana sayfa', 'çalıştır', 'ayarlar'].every((t) => dom1lc.includes(t)),
       '',
     )
     check('Ortam durumu karti gorunur', dom1lc.includes('ortam durumu'), '')
-    check('Bot.db istatistikleri gorunur', dom1lc.includes('işlenen video') && dom1lc.includes('keşif önerisi'), '')
+    check('Kanal secenekleri (select) gorunur', dom1lc.includes('kino sekrety'), '')
 
     // Sayfa gecisi: Ayarlar
     const navOk = await win.webContents.executeJavaScript(
@@ -530,24 +534,24 @@ async function main(): Promise<void> {
     check('Bot kodu guncellemesi paneli gorunur', dom2.includes('bot kodu güncellemesi (git)') && dom2.includes('bot kodunu güncelle'), '')
     check('Git durum satirlari gorunur', dom2.includes('son commit') && dom2.includes('uzak fark') && dom2.includes('dal'), '')
 
-    // Kesif sayfasi: gun sayisi artik SECILEBILIR (7 sabit degil)
-    const navKesif = await win.webContents.executeJavaScript(
-      `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.closest('nav') && /keşif/i.test(x.textContent || '')); if (!b) return false; b.click(); return true; })()`,
+    // Ana sayfa: gun sayisi artik SECILEBILIR (7 sabit degil) ve 3 ozelligi besler.
+    const navAna = await win.webContents.executeJavaScript(
+      `(() => { const b = [...document.querySelectorAll('button')].find((x) => x.closest('nav') && /ana sayfa/i.test(x.textContent || '')); if (!b) return false; b.click(); return true; })()`,
     )
     await sleep(800)
-    check('Kesif sayfasina gecis calisti', navKesif === true, String(navKesif))
-    const domKesif = tr((await win.webContents.executeJavaScript('document.body.textContent')) as string)
-    check('Cok gunlu plan modu anahtari gorunur', domKesif.includes('çok günlü plan modu'), '')
-    check('Gun sayisi sorusu gorunur', domKesif.includes('kaç günlük plan'), '')
-    check('Hazir gun secenekleri gorunur (3/7/10/14/30)', ['3', '7', '10', '14', '30'].every((n) => domKesif.includes(n)), '')
-    check('Sacilan haftalik ifadesi kalmadi', !domKesif.includes('haftalik mod'), '')
+    check('Ana sayfaya gecis calisti', navAna === true, String(navAna))
+    const domAna = tr((await win.webContents.executeJavaScript('document.body.textContent')) as string)
+    check('3 ozellik karti gorunur', ['keşif yap', 'link ile video üret', 'n günlük üretim'].every((t) => domAna.includes(t)), '')
+    check('Gun sayisi sorusu gorunur', domAna.includes('kaç günlük plan'), '')
+    check('Hazir gun secenekleri gorunur (3/7/10/14/30)', ['3', '7', '10', '14', '30'].every((n) => domAna.includes(n)), '')
+    check('Sacilan haftalik ifadesi kalmadi', !domAna.includes('haftalik mod'), '')
     const gunInput = (await win.webContents.executeJavaScript(
       `(() => { const el = document.getElementById('gun-sayisi'); return el ? { type: el.type, value: el.value, min: el.min, max: el.max } : null; })()`,
     )) as { type?: string; value?: string; min?: string; max?: string } | null
-    // Alan artik KAYITLI ayari gosterir (Panel ve Kesif ayni degeri paylasir).
+    // Alan KAYITLI ayari gosterir (tum ozellikler ayni degeri paylasir).
     check('Gun sayisi alani sayisal ve kayitli degeri gosteriyor', gunInput?.type === 'number' && (gunInput?.value ?? '') === String(getSettings().gunSayisi), `${JSON.stringify(gunInput)} / kayitli=${getSettings().gunSayisi}`)
     check('Gun sayisi min/max sinirlari (2-60)', gunInput?.min === '2' && gunInput?.max === '60', JSON.stringify(gunInput))
-    // Kullanici 10 yazinca butonlar ve plan modu 10'u gostermeli
+    // Kullanici 10 yazinca iki ozellik dugmesi de 10'u gostermeli
     const gun10Ui = (await win.webContents.executeJavaScript(
       `(async () => {
          const el = document.getElementById('gun-sayisi');
@@ -555,12 +559,12 @@ async function main(): Promise<void> {
          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
          setter.call(el, '10');
          el.dispatchEvent(new Event('input', { bubbles: true }));
-         await new Promise((r) => setTimeout(r, 400));
+         await new Promise((r) => setTimeout(r, 700));
          return document.body.textContent || '';
        })()`,
     )) as string | null
-    check('Gun sayisi 10 yazilinca arayuz 10 gunluk plan gosterir', Boolean(gun10Ui && tr(gun10Ui).includes('10 günlük plan oluştur')), (gun10Ui ?? '').slice(0, 0))
-    check('Gun sayisi 10 yazilinca zincir butonu da 10', Boolean(gun10Ui && tr(gun10Ui).includes('10 günlük zinciri başlat')), '')
+    check('Gun sayisi 10 yazilinca kesif dugmesi 10 gosterir', Boolean(gun10Ui && tr(gun10Ui).includes('10 günlük keşif')), '')
+    check('Gun sayisi 10 yazilinca uretim dugmesi de 10', Boolean(gun10Ui && tr(gun10Ui).includes('10 gün keşif + üretim')), '')
     // Logo GERCEKTEN yuklendi mi? (file:// altinda './logo.png' cozulmezse
     // naturalWidth 0 kalir - bu, surucu kokune kacma hatasini yakalar.)
     const logoImg = (await win.webContents.executeJavaScript(
@@ -653,12 +657,8 @@ async function main(): Promise<void> {
     /* ---------------- 13b. Tum sayfalar (her ozellik ekrani) ---------------- */
     section('13b) Tum sayfalar gercekten ciziliyor mu (menu uzerinden gezinti)')
     const SAYFALAR: { nav: string; ad: string; isaretler: string[] }[] = [
-      { nav: 'Panel', ad: 'Panel', isaretler: ['ortam durumu'] },
+      { nav: 'Ana Sayfa', ad: 'Ana Sayfa', isaretler: ['keşif yap', 'link ile video üret', 'n günlük üretim'] },
       { nav: 'Çalıştır', ad: 'Çalıştır', isaretler: ['aktif işlem yok', 'geçmiş'] },
-      { nav: 'Kütüphane', ad: 'Kütüphane', isaretler: ['bot.db içeriği'] },
-      { nav: 'Çıktılar', ad: 'Çıktılar & Rapor', isaretler: ['çıktı dosyaları'] },
-      { nav: 'Keşif', ad: 'Keşif', isaretler: ['keşif modülü'] },
-      { nav: 'Günlük', ad: 'Günlük', isaretler: ['bot_log.txt'] },
       { nav: 'Ayarlar', ad: 'Ayarlar', isaretler: ['görünüm', 'yollar ve python'] },
     ]
     for (const sayfa of SAYFALAR) {
@@ -800,17 +800,16 @@ async function main(): Promise<void> {
     check('updateLaunch olmayan dosyayi reddetti (kendini kurmaz)', launchGuard === false, String(launchGuard))
     const updKontrol = (await win.webContents.executeJavaScript('window.vfgui.updateCheck()')) as { ok: boolean; data?: { latest: string | null; available: boolean } }
     check('updateCheck IPC calisti', updKontrol.ok === true, updKontrol.ok ? `son surum: ${updKontrol.data?.latest ?? 'yok'} / guncelleme: ${updKontrol.data?.available}` : '')
-    /* ---------------- 13f. Panelden gun sayisi secerek zincir ---------------- */
-    // Kullanicinin bildirdigi hata: Panel'deki "cok gunlu zincir" dugmesi gun
-    // sayisini gecirmiyordu -> her zaman 7 gun isliyordu. Bu test alani,
-    // kaydetmeyi ve dugmenin istegi tasidigini bastan sona dogrular.
-    section('13f) Panelden gun sayisi secerek zincir baslatma (alan -> komut)')
+    /* ---------------- 13f. Ana sayfadan gun sayisi secerek kesif + uretim ---- */
+    // Kullanicinin istedigi akis: ana sayfada gun sayisi alanina yazdigi sayi
+    // hem kesif hem uretim dugmesine yansimali ve is o sayi ile kurulmali.
+    section('13f) Ana sayfadan gun sayisi secerek keşif + üretim (alan -> komut)')
     const panelBot = makeFakeBot()
     setSettings({ videoForgePath: panelBot, gunSayisi: 7 })
     const panelHazirla = (await win.webContents.executeJavaScript(
       `(async () => {
-         const nav = [...document.querySelectorAll('nav button')].find((b) => (b.textContent || '').trim().toLowerCase().startsWith('panel'));
-         if (!nav) return { hata: 'panel menusu yok', alan: false };
+         const nav = [...document.querySelectorAll('nav button')].find((b) => (b.textContent || '').trim().toLowerCase().startsWith('ana sayfa'));
+         if (!nav) return { hata: 'ana sayfa menusu yok', alan: false };
          nav.click();
          await new Promise((r) => setTimeout(r, 800));
          const el = document.getElementById('gun-sayisi');
@@ -820,7 +819,7 @@ async function main(): Promise<void> {
          return { alan: true, disabled: el.disabled, odak: document.activeElement === el, deger: el.value };
        })()`,
     )) as { alan?: boolean; disabled?: boolean; odak?: boolean; deger?: string; hata?: string }
-    check('Panel sayfasinda gun sayisi alani VAR (kullanici bulamama sorunu)', panelHazirla?.alan === true, panelHazirla?.hata ?? 'alan bulundu')
+    check('Ana sayfada gun sayisi alani VAR', panelHazirla?.alan === true, panelHazirla?.hata ?? 'alan bulundu')
     check('Gun sayisi alani odaklanabilir ve acik', panelHazirla?.alan === true && panelHazirla?.disabled === false && panelHazirla?.odak === true, JSON.stringify(panelHazirla))
 
     // Alana 12 yaz (kullanicinin klavyeyle yazmasi = input olayi).
@@ -833,15 +832,15 @@ async function main(): Promise<void> {
          el.dispatchEvent(new Event('input', { bubbles: true }));
          await new Promise((r) => setTimeout(r, 900));
          const bul = (re) => ([...document.querySelectorAll('button')].find((b) => re.test(b.textContent || '')) || {}).textContent || '';
-         return { alan: true, deger: el.value, zincir: bul(/günlük zincir/i), plan: bul(/günlük plan oluştur/i) };
+         return { alan: true, deger: el.value, kesif: bul(/günlük keşif/i), uretim: bul(/keşif \\+ üretim/i) };
        })()`,
-    )) as { alan?: boolean; deger?: string; zincir?: string; plan?: string } | null
+    )) as { alan?: boolean; deger?: string; kesif?: string; uretim?: string } | null
     check('Gun sayisi alanina yazilan deger alanda gorunuyor (12)', panelAlan?.deger === '12', String(panelAlan?.deger))
     check('Yazilan gun sayisi kendiliginden kaydedildi (12)', getSettings().gunSayisi === 12, `alan=${String(panelAlan?.deger)} ayar=${getSettings().gunSayisi}`)
-    check('Panel zincir dugmesi secilen gunu gosteriyor', /12 günlük zincir/i.test(panelAlan?.zincir ?? ''), String(panelAlan?.zincir))
-    check('Panel plan dugmesi secilen gunu gosteriyor', /12 günlük plan oluştur/i.test(panelAlan?.plan ?? ''), String(panelAlan?.plan))
+    check('Kesif dugmesi secilen gunu gosteriyor', /12 günlük keşif/i.test(panelAlan?.kesif ?? ''), String(panelAlan?.kesif))
+    check('Uretim dugmesi secilen gunu gosteriyor', /12 gün keşif \+ üretim/i.test(panelAlan?.uretim ?? ''), String(panelAlan?.uretim))
 
-    // Hazir secenek butonlari da (tek tiklamayla) kaydetmeli: 14
+    // Hazir secenek butonlari (tek tiklamayla) da kaydetmeli: 14
     const panelHazir = (await win.webContents.executeJavaScript(
       `(async () => {
          const b = [...document.querySelectorAll('button')].find((x) => (x.getAttribute('aria-pressed') !== null) && (x.textContent || '').trim() === '14');
@@ -854,7 +853,7 @@ async function main(): Promise<void> {
     check('Hazir gun secenegi (14) tiklanabiliyor', panelHazir === true, '')
     check('Hazir secenek ayarlara yazildi (14)', getSettings().gunSayisi === 14, String(getSettings().gunSayisi))
 
-    // Test zinciri icin tekrar 12'ye don (panel hala acik).
+    // Test icin tekrar 12'ye don (ana sayfa hala acik).
     const tekrar12 = (await win.webContents.executeJavaScript(
       `(async () => {
          const el = document.getElementById('gun-sayisi');
@@ -868,18 +867,18 @@ async function main(): Promise<void> {
     )) as string | null
     check('Gun sayisi tekrar 12 yapildi', tekrar12 === '12' && getSettings().gunSayisi === 12, `alan=${String(tekrar12)} ayar=${getSettings().gunSayisi}`)
 
-    // Zincir dugmesine gercekten bas (yazilan 12 gun ile): ana surecteki is 12 gun kurulmali.
+    // "N gun kesif + uretim" dugmesine bas: ana surecteki is 12 gun kurulmali.
     const zincirBasildi = (await win.webContents.executeJavaScript(
-      `(() => { const b = [...document.querySelectorAll('button')].find((x) => /günlük zincir/i.test(x.textContent || '')); if (!b) return false; b.click(); return true; })()`,
+      `(() => { const b = [...document.querySelectorAll('button')].find((x) => /keşif \\+ üretim/i.test(x.textContent || '')); if (!b) return false; b.click(); return true; })()`,
     )) as boolean
     await sleep(1600)
     const panelJob = getState()
-    check('Panel zincir dugmesi isi baslatti', zincirBasildi === true && panelJob !== null, `durum: ${panelJob?.status}`)
-    check('Panelden baslayan is secilen gun sayisini kullaniyor (12)', /12 Günlük/i.test(panelJob?.title ?? ''), String(panelJob?.title))
-    check('Panel zinciri 2 adimli kuruldu (kesif + isletme)', (panelJob?.stages.length ?? 0) >= 2, `${panelJob?.stages.length} asama`)
+    check('Uretim dugmesi isi baslatti', zincirBasildi === true && panelJob !== null, `durum: ${panelJob?.status}`)
+    check('Is secilen gun sayisini kullaniyor (12)', /12 Günlük/i.test(panelJob?.title ?? ''), String(panelJob?.title))
+    check('Is 2 adimli kuruldu (kesif + isletme)', (panelJob?.stages.length ?? 0) >= 2, `${panelJob?.stages.length} asama`)
     const panelSon = await waitForStatus(90_000)
-    check('Panel zinciri tamamlandi (sahte bot)', panelSon === 'done', `durum: ${panelSon}`)
-    check('Panel zinciri plan dosyasini uretti', fs.existsSync(planPath(panelBot)), planPath(panelBot))
+    check('Uretim zinciri tamamlandi (sahte bot)', panelSon === 'done', `durum: ${panelSon}`)
+    check('Uretim zinciri plan dosyasini uretti', fs.existsSync(planPath(panelBot)), planPath(panelBot))
     forceRemove(panelBot)
     setSettings({ videoForgePath: realBot })
 

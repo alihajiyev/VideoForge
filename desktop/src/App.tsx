@@ -7,14 +7,10 @@ import { CommandPalette } from '@/components/ui/CommandPalette'
 import { Spinner } from '@/components/ui/primitives'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { RunPage } from '@/pages/RunPage'
-import { LibraryPage } from '@/pages/LibraryPage'
-import { ReportsPage } from '@/pages/ReportsPage'
-import { DiscoverPage } from '@/pages/DiscoverPage'
-import { LogsPage } from '@/pages/LogsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 
-/** Ctrl+1..7 kisayollari icin sayfa sirasi. */
-const KISAYOL_SAYFALARI: PageKey[] = ['dashboard', 'run', 'discover', 'library', 'reports', 'logs', 'settings']
+/** Ctrl+1..3 kisayollari icin sayfa sirasi (minimalist: 3 sayfa). */
+const KISAYOL_SAYFALARI: PageKey[] = ['dashboard', 'run', 'settings']
 
 function Shell(): ReactNode {
   const { ready } = useApp()
@@ -31,7 +27,7 @@ function Shell(): ReactNode {
         setPalet((v) => !v)
         return
       }
-      if (ctrl && /^[1-7]$/.test(e.key)) {
+      if (ctrl && /^[1-3]$/.test(e.key)) {
         const hedef = KISAYOL_SAYFALARI[Number(e.key) - 1]
         if (hedef) {
           e.preventDefault()
@@ -60,10 +56,6 @@ function Shell(): ReactNode {
           <div className="mx-auto max-w-[1400px]">
             {page === 'dashboard' ? <DashboardPage onNavigate={navigate} /> : null}
             {page === 'run' ? <RunPage onNavigate={navigate} /> : null}
-            {page === 'library' ? <LibraryPage /> : null}
-            {page === 'reports' ? <ReportsPage /> : null}
-            {page === 'discover' ? <DiscoverPage onNavigate={navigate} /> : null}
-            {page === 'logs' ? <LogsPage /> : null}
             {page === 'settings' ? <SettingsPage /> : null}
           </div>
         </main>

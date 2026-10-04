@@ -76,16 +76,45 @@ def bulut_hatasi_mesaji(exc):
     return metin.strip().splitlines()[-1][:300] if metin.strip() else type(exc).__name__
 
 
+def _secret_yeniden_olustur():
+    """Uzak secret kaybolduysa yerel onbellegi yok sayip yeniden yazar."""
+    try:
+        from bulut_kurulum import hazirla as _hazirla
+        return _hazirla(zorla=True, sessiz=True)
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def _secret_yok_hatasi(metin):
+    """Hata mesaji 'isimli secret bulunamadi' ile ilgili mi?"""
+    dusuk = metin.lower()
+    if SECRET_NAME.lower() in dusuk:
+        return True
+    return "secret" in dusuk and ("not found" in dusuk or "notfound" in dusuk)
+
+
 def bulut_cagir(hedef, *args, **kwargs):
     """`.remote()` cagrisini sarar: hatalari BulutHatasi'na cevirir.
 
     Boylece kanal scriptleri tek yerde anlasilir hata mesaji alir; Modal'in
-    ham traceback'i kullaniciyi bogmaz."""
+    ham traceback'i kullaniciyi bogmaz.
+
+    AYRICA: uzaktaki gizli anahtar kaybolmussa (Modal tarafinda silinmis ya da
+    hesap/ortam degismis) yerel imza onbellegi bunu GOREMEZ ve ayni hata her
+    kosuda tekrarlardi. Bu durumda secret'i BIR KEZ zorla yeniden olusturup
+    cagriyi tekrar deneriz; kullanici hicbir sey yapmadan kurtulur."""
     try:
         return hedef.remote(*args, **kwargs)
     except BulutHatasi:
         raise
     except Exception as exc:
+        if _secret_yok_hatasi(str(exc)):
+            ok, _mesaj = _secret_yeniden_olustur()
+            if ok:
+                try:
+                    return hedef.remote(*args, **kwargs)
+                except Exception as exc2:
+                    raise BulutHatasi(bulut_hatasi_mesaji(exc2)) from exc2
         raise BulutHatasi(bulut_hatasi_mesaji(exc)) from exc
 
 

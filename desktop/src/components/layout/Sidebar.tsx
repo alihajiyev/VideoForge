@@ -1,27 +1,14 @@
 import type { ReactNode } from 'react'
-import {
-  Compass,
-  FileText,
-  LayoutDashboard,
-  Library,
-  Play,
-  ScrollText,
-  Settings,
-} from 'lucide-react'
+import { LayoutDashboard, Play, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/app/AppContext'
 
-export type PageKey = 'dashboard' | 'run' | 'library' | 'reports' | 'discover' | 'logs' | 'settings'
+/** Minimalist surum: yalnizca 3 ozellik (Ana Sayfa karti) + Calistir + Ayarlar. */
+export type PageKey = 'dashboard' | 'run' | 'settings'
 
-/** Yan menu: tek satir, sade. (Eski surumde her ogede ikinci bir aciklama satiri
- *  vardi; menu kalabalik ve yorucu gorunuyordu.) */
 const NAV: { key: PageKey; label: string; icon: ReactNode }[] = [
-  { key: 'dashboard', label: 'Panel', icon: <LayoutDashboard className="size-4" /> },
+  { key: 'dashboard', label: 'Ana Sayfa', icon: <LayoutDashboard className="size-4" /> },
   { key: 'run', label: 'Çalıştır', icon: <Play className="size-4" /> },
-  { key: 'discover', label: 'Keşif', icon: <Compass className="size-4" /> },
-  { key: 'library', label: 'Kütüphane', icon: <Library className="size-4" /> },
-  { key: 'reports', label: 'Çıktılar', icon: <FileText className="size-4" /> },
-  { key: 'logs', label: 'Günlük', icon: <ScrollText className="size-4" /> },
   { key: 'settings', label: 'Ayarlar', icon: <Settings className="size-4" /> },
 ]
 

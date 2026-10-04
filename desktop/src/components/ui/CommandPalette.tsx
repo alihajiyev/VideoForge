@@ -1,13 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  Compass,
-  FileText,
   LayoutDashboard,
-  Library,
   Moon,
   Play,
   RefreshCw,
-  ScrollText,
   Search,
   Settings,
   Square,
@@ -27,12 +23,8 @@ interface Komut {
 }
 
 const SAYFALAR: { key: PageKey; etiket: string; ikon: ReactNode }[] = [
-  { key: 'dashboard', etiket: 'Panel', ikon: <LayoutDashboard className="size-4" /> },
+  { key: 'dashboard', etiket: 'Ana Sayfa', ikon: <LayoutDashboard className="size-4" /> },
   { key: 'run', etiket: 'Çalıştır', ikon: <Play className="size-4" /> },
-  { key: 'discover', etiket: 'Keşif', ikon: <Compass className="size-4" /> },
-  { key: 'library', etiket: 'Kütüphane', ikon: <Library className="size-4" /> },
-  { key: 'reports', etiket: 'Çıktılar', ikon: <FileText className="size-4" /> },
-  { key: 'logs', etiket: 'Günlük', ikon: <ScrollText className="size-4" /> },
   { key: 'settings', etiket: 'Ayarlar', ikon: <Settings className="size-4" /> },
 ]
 
