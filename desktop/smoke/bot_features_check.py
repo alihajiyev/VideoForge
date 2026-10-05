@@ -466,6 +466,216 @@ kontrol("Kredi kartinda past_due -> kirmizi hata + fatura mesaji",
         "odemeSorunlu" in _kredi and "'past_due'" in _kredi and "has_open_invoices" in _kredi)
 
 # --------------------------------------------------------------------------
+bolum("N) TEK ASAMA CIKTI: final Gun klasorune tasiniyor (kok kalabaligi yok)")
+_orch = __import__("functions.orchestrator", fromlist=["orchestrator"])
+_masa = gecici("vf-tekasama-")
+_gun = os.path.join(_masa, "Gun6_Test_Video")
+os.makedirs(_gun)
+with open(os.path.join(_gun, "Test_CLEAN.mp4"), "wb") as f:
+    f.write(b"v" * 8)
+with open(os.path.join(_gun, "Test_VOICEOVER.mp3"), "wb") as f:
+    f.write(b"a" * 8)
+with open(os.path.join(_gun, "Test_SEO.html"), "w", encoding="utf-8") as f:
+    f.write("<html>seo</html>")
+with open(os.path.join(_masa, "final_424242.mp4"), "wb") as f:
+    f.write(b"f" * 64)
+_tasindi, _bilgi = haftalik_islet.final_gun_klasorune_tasi(_masa, _gun, "final_424242.mp4")
+kontrol("Final kokteki dosyadan Gun klasorune tasindi (rename)",
+        _tasindi and os.path.exists(os.path.join(_gun, "final_424242.mp4"))
+        and not os.path.exists(os.path.join(_masa, "final_424242.mp4")) and _bilgi == "Gun klasorune tasindi", _bilgi)
+_tasindi2, _bilgi2 = haftalik_islet.final_gun_klasorune_tasi(_masa, _gun, "final_424242.mp4")
+kontrol("Ikinci cagri zararsiz: 'zaten Gun klasorunde' (kazara ezme/silme yok)",
+        _tasindi2 and _bilgi2 == "zaten Gun klasorunde" and os.path.getsize(os.path.join(_gun, "final_424242.mp4")) == 64, _bilgi2)
+_tasindi3, _bilgi3 = haftalik_islet.final_gun_klasorune_tasi(_masa, _gun, "final_999999.mp4")
+kontrol("Olmayan final icin net hata (sessiz basari yok)", (not _tasindi3) and "bulunamadi" in _bilgi3, _bilgi3)
+_girdi_final, _ = haftalik_islet.find_gun_girdileri(_gun)
+kontrol("Klasordeki final, ShortsStudio girdisi SAYILMAZ (yeniden montaj guvenli)",
+        bool(_girdi_final) and _girdi_final[0].endswith("Test_CLEAN.mp4"),
+        os.path.basename(_girdi_final[0]) if _girdi_final else "girdi yok")
+_hl_kaynak = oku("haftalik_islet.py")
+kontrol("Zincir final'i Gun klasorune tasiyor (studio_islet icinde cagri var)",
+        "final_gun_klasorune_tasi(desktop, gun_dir, final_ad)" in _hl_kaynak)
+kontrol("Zincir ozeti artik 'masaustu kokunde final' demiyor",
+        "finaller Masaustu/final_*.mp4" not in _hl_kaynak)
+
+# Desktop uygulamasi da final'i klasor grubuyla birlikte gostersin.
+_reports = oku(os.path.join("desktop", "electron", "data", "reports.ts"))
+kontrol("Uygulama taramasi final'i Gun klasorunden de buluyor",
+        "final_" in _reports and "candidateDirs" in _reports)
+kontrol("Uygulama gruplamada final'i klasordeki dosyalarla birlestiriyor",
+        "FINAL_ONLY_RE" in _reports and "dirStem" in _reports)
+_parser = oku(os.path.join("desktop", "electron", "python", "parser.ts"))
+kontrol("Canli log akisinda final_*.mp4 cikti olarak taniniyor",
+        "final_" in _parser and "kind: 'video', name" in _parser)
+
+# --------------------------------------------------------------------------
+bolum("N2) studio_islet uctan uca: sahte ShortsStudio ile GERCEK akis (Modal/GPU YOK)")
+_sahte_masa = gecici("vf-studio-masa-")
+_sahte_studio = os.path.join(_sahte_masa, "ShortsStudio")
+os.makedirs(_sahte_studio)
+with open(os.path.join(_sahte_studio, "main.py"), "w", encoding="utf-8") as f:
+    f.write("# sahte ShortsStudio (test)")
+_sahte_gun = os.path.join(_sahte_masa, "Gun2_Sahte_Video")
+os.makedirs(_sahte_gun)
+with open(os.path.join(_sahte_gun, "Sahte_CLEAN.mp4"), "wb") as f:
+    f.write(b"v" * 8)
+with open(os.path.join(_sahte_gun, "Sahte_VOICEOVER.mp3"), "wb") as f:
+    f.write(b"a" * 8)
+with open(os.path.join(_sahte_gun, "Sahte_SEO.html"), "w", encoding="utf-8") as f:
+    f.write("<html>seo</html>")
+
+
+class _SahtePopen:
+    """ShortsStudio'yu taklit eder: final'i masaustu KOKUNE yazar ve adini basar."""
+
+    def __init__(self, cmd, cwd=None, env=None, **kw):
+        _SahtePopen.son_env = env
+        self._satirlar = [b"render bitti\n", b"Masaustu -> final_654321.mp4\n"]
+        self._i = 0
+        self.returncode = None
+        self.env = env
+        with open(os.path.join(_sahte_masa, "final_654321.mp4"), "wb") as f:
+            f.write(b"final" * 16)
+        _sahip = self
+
+        class _Out:
+            def readline(_self):
+                if _sahip._i < len(_sahip._satirlar):
+                    s = _sahip._satirlar[_sahip._i]
+                    _sahip._i += 1
+                    return s
+                _sahip.returncode = 0
+                return b""
+
+        self.stdout = _Out()
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self):
+        return self.returncode or 0
+
+
+class _SubprocessShim:
+    Popen = _SahtePopen
+    PIPE = subprocess.PIPE
+    STDOUT = subprocess.STDOUT
+
+
+_eski_subprocess = haftalik_islet.subprocess
+_eski_desktop_fn = haftalik_islet._desktop
+_eski_studio_dir_fn = haftalik_islet.studio_dir_bul
+haftalik_islet.subprocess = _SubprocessShim
+haftalik_islet._desktop = lambda: _sahte_masa
+haftalik_islet.studio_dir_bul = lambda: _sahte_studio
+try:
+    _s_ok, _s_bilgi = haftalik_islet.studio_islet(2, "1", 7)
+finally:
+    haftalik_islet.subprocess = _eski_subprocess
+    haftalik_islet._desktop = _eski_desktop_fn
+    haftalik_islet.studio_dir_bul = _eski_studio_dir_fn
+
+kontrol("studio_islet basarili dondu", _s_ok is True, str(_s_bilgi))
+kontrol("Donen yol Gun klasorunu de gosteriyor (tek klasor sonucu)",
+        str(_s_bilgi) == os.path.join("Gun2_Sahte_Video", "final_654321.mp4"), str(_s_bilgi))
+kontrol("Final artik Gun klasorunde (masaustu kokunde degil)",
+        os.path.exists(os.path.join(_sahte_gun, "final_654321.mp4"))
+        and not os.path.exists(os.path.join(_sahte_masa, "final_654321.mp4")))
+_final_yolu = os.path.join(_sahte_gun, "final_654321.mp4")
+_icerik = open(_final_yolu, "rb").read() if os.path.exists(_final_yolu) else b""
+kontrol("Tasima kopya degil rename (ayni dosya, icerik korunur)", _icerik == b"final" * 16, f"{len(_icerik)} byte")
+_ortam = getattr(_SahtePopen, "son_env", None) or {}
+_ortam_anahtarlari = [k for k in ("VIDEOFORGE_STUDIO_VIDEO", "VIDEOFORGE_STUDIO_AUDIO", "VIDEOFORGE_STUDIO_SEO") if _ortam.get(k)]
+kontrol("ShortsStudio'ya girdi yollari ortam degiskeniyle veriliyor (kopyalama yok)",
+        len(_ortam_anahtarlari) == 3, ", ".join(_ortam_anahtarlari) or "env yok")
+
+# --------------------------------------------------------------------------
+bolum("O) KAPAK: ana karakter/konu odakli kare secimi (arastirma temelli)")
+_kapak_kaynak = oku("functions/orchestrator.py")
+kontrol("20 aday kare (eski 12 yerine, tum video boyunca)", _orch.THUMB_ADET >= 16, str(_orch.THUMB_ADET))
+kontrol("CLIP prompt ensemble: 5 pozitif + 5 negatif prompt",
+        len(_orch.THUMB_POZITIF) >= 4 and len(_orch.THUMB_NEGATIF) >= 4,
+        f"{len(_orch.THUMB_POZITIF)}+{len(_orch.THUMB_NEGATIF)}")
+kontrol("Negatif promptlar bulanik/patlak/altyazili kareleri cezalandiriyor",
+        any("blur" in p for p in _orch.THUMB_NEGATIF) and any("subtitle" in p or "caption" in p for p in _orch.THUMB_NEGATIF))
+kontrol("Yuz analizi: boyut + netlik + kadraj (ana karakter one cikar)",
+        all(k in _kapak_kaynak for k in ("face_frac", "face_sharp_n", "face_center")))
+kontrol("Gorsel hakem (Gemini) kare secimini yapiyor",
+        "_thumb_gemini_sec" in _kapak_kaynak and "You are choosing the thumbnail frame" in _kapak_kaynak)
+kontrol("Hakem adaylari KARISIK sirada goruyor (siraya bagli onyargi yok)",
+        "_rnd.shuffle(sira)" in _kapak_kaynak)
+kontrol("Hakem yalnizca ilk-N adayi goruyor (maliyet kontrollu)",
+        _orch.THUMB_HAKEM_ADET <= 8, str(_orch.THUMB_HAKEM_ADET))
+kontrol("Yazi yuzle cakismayan tarafa basiliyor (ust/alt karari)",
+        "text_top = face_cy >= 0.5" in _kapak_kaynak)
+kontrol("Kazanan kare TAM cozunurlukte yeniden cekiliyor (analiz 640px)",
+        "thumb_best_" in _kapak_kaynak and "scale=640:-2" in _kapak_kaynak)
+
+os.environ.pop("VIDEOFORGE_KAPAK_HAKEM", None)
+kontrol("Gorsel hakem varsayilan ACIK", _orch.kapak_hakem_aktif() is True)
+for _kapali in ("0", "off", "kapali", "hayir", "false", "no"):
+    os.environ["VIDEOFORGE_KAPAK_HAKEM"] = _kapali
+    if _orch.kapak_hakem_aktif() is not False:
+        kontrol(f"Hakem kapatilabiliyor ('{_kapali}')", False, _kapali)
+        break
+else:
+    kontrol("Hakem '0/off/kapali/hayir/false/no' ile kapatilabiliyor", True)
+os.environ["VIDEOFORGE_KAPAK_HAKEM"] = "1"
+kontrol("Hakem tekrar acilabiliyor", _orch.kapak_hakem_aktif() is True)
+os.environ.pop("VIDEOFORGE_KAPAK_HAKEM", None)
+kontrol("Hakem konu bossa API'ye hic gitmiyor",
+        _orch._thumb_gemini_sec([{"img": None}, {"img": None}], "") is None)
+kontrol("Hakem tek adayda API'ye hic gitmiyor",
+        _orch._thumb_gemini_sec([{"img": None}], "konu") is None)
+
+# Gercek uctan uca: sentetik video + gercek ffmpeg/cv2. Ag YOK: YuNet modeli
+# yerine 150KB yer tutucu konur (indirme atlanir, yuz analizi sessizce atlanir),
+# font yerine sistemdeki gercek bir TTF kopyalanir, gorsel hakem kapatilir.
+_font_adaylari = [
+    r"C:\Windows\Fonts\arialbd.ttf",
+    r"C:\Windows\Fonts\arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+]
+_font = next((f for f in _font_adaylari if os.path.exists(f)), None)
+_ffmpeg_var = shutil.which("ffmpeg") is not None
+try:
+    import cv2  # noqa: F401
+    _cv2_var = True
+except Exception:
+    _cv2_var = False
+if _font and _ffmpeg_var and _cv2_var:
+    _ktmp = gecici("vf-kapak-")
+    _kvideo = os.path.join(_ktmp, "test.mp4")
+    _r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                         "-f", "lavfi", "-i", "testsrc=size=1280x720:rate=24", "-t", "5",
+                         "-pix_fmt", "yuv420p", _kvideo], capture_output=True)
+    kontrol("Kapak testi icin sentetik video uretildi", _r.returncode == 0 and os.path.exists(_kvideo))
+    if os.path.exists(_kvideo):
+        shutil.copy2(_font, os.path.join(_ktmp, "RussoOne-Regular.ttf"))
+        with open(os.path.join(_ktmp, "face_detection_yunet_2023mar.onnx"), "wb") as f:
+            f.write(b"x" * 150000)  # indirmeyi atla; gecersiz model sessizce atlanir
+        os.environ["VIDEOFORGE_KAPAK_HAKEM"] = "0"  # testte ag cagrisi yok
+        try:
+            _png = _orch.build_thumbnail(_kvideo, "Test kapak basligi", _ktmp, 777, topic_query="test topic")
+        except Exception as _e:
+            _png = None
+            kontrol("build_thumbnail hatasiz calisti", False, str(_e)[:120])
+        finally:
+            os.environ.pop("VIDEOFORGE_KAPAK_HAKEM", None)
+        if _png is not None:
+            kontrol("build_thumbnail PNG dondurdu (hakem kapali -> yerel skor)",
+                    _png[:8] == b"\x89PNG\r\n\x1a\n" and len(_png) > 50000, f"{len(_png)} byte")
+            try:
+                import io as _io
+                from PIL import Image as _PILImage2
+                _boyut = _PILImage2.open(_io.BytesIO(_png)).size
+            except Exception:
+                _boyut = None
+            kontrol("Kapak 1080x1920 (9:16) boyutunda", _boyut == (1080, 1920), str(_boyut))
+else:
+    print("  NOT   ffmpeg/cv2/font bulunamadi, kapak uctan uca testi atlandi.")
+
+# --------------------------------------------------------------------------
 for y in temizlenecek:
     shutil.rmtree(y, ignore_errors=True)
 

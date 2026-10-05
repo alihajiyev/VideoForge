@@ -315,60 +315,144 @@ def _thumb_esc(t):
     return t.strip()
 
 
-def build_thumbnail(video_path, title_text, tmp_dir, rand_num, topic_query=""):
-    """Profesyonel 9:16 kapak: konu-ilgili + en keskin kare, yuz algilamali
-    kadraj, yuzle cakismayan dev yazi + okunabilirlik bandi. Donus: PNG bytes/None."""
-    import urllib.request
-    font_path = os.path.join(tmp_dir, "RussoOne-Regular.ttf")
-    if not os.path.exists(font_path) or os.path.getsize(font_path) < 10000:
-        urllib.request.urlretrieve("https://github.com/google/fonts/raw/main/ofl/russoone/RussoOne-Regular.ttf", font_path)
-    dur = get_video_duration(video_path)
-    # 1) Aday kareler (videonun tamami, 12 nokta): keskinlik + yuz bonusu - yazi bandi cezasi.
-    #    Eskiden sadece %20-55 arasi 6 kareye bakiliyordu; hook genelde basta, kilit an sonda olur.
+# ---------------------------------------------------------------------------
+# KAPAK (THUMBNAIL) — arastirma temelli kare secimi
+# ---------------------------------------------------------------------------
+# Neden boyle? (internet arastirmasi)
+#  * Song ve ark. — "To Click or Not To Click: Automatic Selection of Beautiful
+#    Thumbnails from Videos" (Yahoo Research): iyi kapak = ICERIK ILGISI +
+#    GORSEL KALITE. Isleyen sinyaller: keskinlik/doku, asiri karanlik ve
+#    patlak karelerin elenmesi, kayan/gecis karelerinin atilmasi, tekrar eden
+#    karelerin birlestirilmesi.
+#  * 2024-2026 trendi (M-LLM frame selection makaleleri): aday kareleri
+#    MULTIMODAL LLM'e verip "en temsili/vurucu kare"yi ona sectirmek, yerel
+#    metriklerden belirgin sekilde daha iyi. Yerel metrikler adayi KISALTIR;
+#    son secimi videonun KONUSUNU gercekten goren model yapar.
+#  * CLIP (Radford ve ark. 2021): tek konu cumlesi zayif kalir; POZITIF/NEGATIF
+#    prompt ensemble'i ile zero-shot puanlama cok daha kararli calisir.
+#
+# Akis: 20 aday kare (dusuk cozunurlukte hizli cikarim) -> parlaklik/keskinlik
+# eleme -> yuz analizi (YuNet: boyut + netlik + kadraj) -> CLIP konu-ilgisi ->
+# ilk 6 aday -> Gemini gorsel hakem ("ana karakteri en net/vurucu gosteren
+# kare") -> kazanan kare TAM cozunurlukte yeniden cekilir -> yuz ortali 9:16
+# kirp -> yazi. Gemini/CLIP calismazsa yerel skor kazanir; hicbir hata botu
+# durdurmaz.
+THUMB_ADET = 20           # analiz edilen aday kare sayisi (video boyunca esit aralik)
+THUMB_HAKEM_ADET = 6      # gorsel hakeme gonderilen ilk-N aday
+THUMB_POZITIF = [         # CLIP pozitif prompt ensemble'i ("kapaklik" kareler)
+    "{konu}",
+    "a close-up of the main character of this video",
+    "the main hero of the movie, in focus and clearly visible",
+    "a dramatic, striking movie still",
+    "the key object or subject the video is about, clearly visible",
+]
+THUMB_NEGATIF = [         # CLIP negatif promptlari (kapaga yakismayan kareler)
+    "a blurry, out-of-focus frame",
+    "a frame with subtitles or text captions",
+    "a wide shot of a crowd with no clear subject",
+    "an empty background or landscape with no people",
+    "a dark, underexposed frame",
+]
+
+
+def kapak_konu_ozeti(title_text, voice_text, topic_query):
+    """Gorsel hakemin konuya GERCEKTEN baglanmasi icin kisa baglam metni.
+
+    Sadece baslik, "nanobot tisortu" gibi konularda modeli "guzeL yuz"e
+    kaydiriyordu; seslendirme metni videonun ne anlattigini netlestirir.
+    """
+    parcalar = []
+    ses = " ".join((voice_text or "").split())
+    if ses:
+        parcalar.append(f'What the video says (Russian voiceover, trimmed): "{ses[:300]}"')
+    baslik = " ".join((title_text or "").split())
+    if baslik:
+        parcalar.append(f'Video title: "{baslik[:120]}"')
+    if topic_query:
+        parcalar.append(f'Source topic: "{topic_query[:120]}"')
+    return "\n".join(parcalar)
+
+
+def kapak_hakem_aktif():
+    """Gemini gorsel hakem (kare secimi) acik mi?
+
+    Varsayilan ACIK (kalite icin). Testler/uzman kullanim icin
+    VIDEOFORGE_KAPAK_HAKEM=0 ile kapatilabilir; kapaninca yerel skor kazanir.
+    """
+    deger = (os.environ.get("VIDEOFORGE_KAPAK_HAKEM") or "").strip().lower()
+    return deger not in ("0", "off", "kapali", "hayir", "false", "no")
+
+
+def _kapak_konu_metni(title_text, topic_query):
+    """Gorsel hakeme verilecek konu metni: izleyiciye gorunen baslik + kaynak
+    (Ingilizce) baslik. Emoji/hashtag temizlenir, 160 karaktere kisilir."""
+    temiz = re.sub(r'#\S+', ' ', title_text or "")
+    temiz = re.sub(r'[\U0001F300-\U0010FFFF»«"“”]+', ' ', temiz)
+    temiz = " ".join(temiz.split())
+    parcalar = [p for p in (temiz, (topic_query or "").strip()) if p]
+    return " | ".join(parcalar)[:160]
+
+
+def _thumb_adaylari(video_path, tmp_dir, rand_num, dur, adet=THUMB_ADET):
+    """Videonun TAMAMI boyunca esit araliklarla aday kareler cikarir.
+
+    Kareler analiz icin 640px genislikte cekilir (hizli); kazanan kare sonra
+    orijinal cozunurlukte yeniden cekilir. Eski surum sadece %20-55 araligina
+    ve 12 kareye bakiyordu; hook basta, kilit an sonda olabildigi icin aralik
+    tum videoyu kapsiyor. Donus: aday sozlukleri listesi.
+    """
     import cv2
-    import math as _math
-    fracs = [0.05 + i * (0.90 / 11) for i in range(12)]
-    cands = []
-    for frac in fracs:
-        fp = os.path.join(tmp_dir, f"thumb_cand_{rand_num}_{int(frac*100)}.jpg")
+    adaylar = []
+    if dur and dur > 0:
+        noktalar = [round(dur * (0.04 + i * (0.92 / max(1, adet - 1))), 2) for i in range(adet)]
+    else:
+        noktalar = [0.0]
+    for i, t in enumerate(noktalar):
+        fp = os.path.join(tmp_dir, f"thumb_cand_{rand_num}_{i}.jpg")
         try:
-            subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", str(round(dur * frac, 2)), "-i", video_path, "-frames:v", "1", "-q:v", "2", fp], check=True)
+            subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                            "-an", "-sn", "-ss", str(t), "-i", video_path,
+                            "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "3", fp], check=True)
             img = cv2.imread(fp)
         except Exception:
             img = None
         if img is None:
             continue
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        sharp = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-        bright = float(gray.mean())
         h0 = gray.shape[0]
         band = gray[int(h0 * 0.72):, :]
+        keskinlik = float(cv2.Laplacian(gray, cv2.CV_64F).var())
         band_edge = float(cv2.Laplacian(band, cv2.CV_64F).var()) if band.size else 0.0
-        cands.append({"img": img, "sharp": sharp, "bright": bright,
-                      "band_ratio": band_edge / (sharp + 1e-6), "face": None, "face_frac": 0.0})
-    if not cands:
-        return None
-    # Cok karanlik / patlak kareleri ele (hepsi elenirse vazgec, hepsini tut)
-    ok_c = [c for c in cands if 40.0 <= c["bright"] <= 240.0]
-    pool = ok_c if ok_c else cands
-    pool.sort(key=lambda c: -c["sharp"])
-    # 2) Bulaniklik eleme: en keskin karenin %3'unden dusuk olanlar elenir
-    #    (hepsi elenirse vazgecilir). Baraj bilerek gevsek: yumusak ama konulu
-    #    kareler yarisabilir, sadece motion-blur copu elenir. Konu birincil
-    #    kriter oldugu icin keskinlik artik siralama degil, eleme yapar.
-    max_sharp_all = max(c["sharp"] for c in pool)
-    _blur_cut = max(30.0, 0.03 * max_sharp_all)
-    gated = [c for c in pool if c["sharp"] >= _blur_cut]
-    if not gated:
-        gated = pool
-    # 3) Kalanlarda yuz ara (YuNet bir kez yuklenir)
-    face = None
+        adaylar.append({
+            "t": float(t), "img": img,
+            "sharp": keskinlik,
+            "bright": float(gray.mean()),
+            "contrast": float(gray.std()),
+            # Altyazi/yazi bandi gostergesi: alt seritteki kenar yogunlugu
+            "band_ratio": band_edge / (keskinlik + 1e-6),
+            "face": None, "face_frac": 0.0, "face_sharp_n": 0.0, "face_center": 0.0,
+        })
+    return adaylar
+
+
+def _thumb_yuz_analizi(adaylar, tmp_dir):
+    """YuNet ile en buyuk yuzu bulur; yuzun netligini ve kadraj ortasina
+    yakinligini olcer. Yuzu olmayan aday ceza almaz, sadece bonus kacirir.
+
+    Kapak icin kritik olan "ana karakter" genelde en buyuk/one cikan yuzdur:
+    kucuk yuzler (kalabalik/yanlis alarm) bonus almaz, asiri yakin plan
+    (kirpinca taninmaz hale gelen yuz) cezalanir.
+    """
+    import cv2
     try:
         yunet_path = os.path.join(tmp_dir, "face_detection_yunet_2023mar.onnx")
         if not os.path.exists(yunet_path) or os.path.getsize(yunet_path) < 100000:
-            urllib.request.urlretrieve("https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx", yunet_path)
+            import urllib.request
+            urllib.request.urlretrieve(
+                "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+                yunet_path)
         detector = None
-        for c in gated:
+        for c in adaylar:
             fh, fw = c["img"].shape[:2]
             if detector is None:
                 detector = cv2.FaceDetectorYN_create(yunet_path, "", (fw, fh))
@@ -378,86 +462,295 @@ def build_thumbnail(video_path, title_text, tmp_dir, rand_num, topic_query=""):
                 except Exception:
                     pass
             _, faces = detector.detect(c["img"])
-            if faces is not None:
-                scored = [f for f in faces if len(f) > 14 and float(f[14]) > 0.6]
-                if scored:
-                    b = max(scored, key=lambda f: float(f[2]) * float(f[3]))
-                    c["face"] = (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
-                    c["face_frac"] = (float(b[2]) * float(b[3])) / max(1.0, float(fw * fh))
-        print(f"[Bulut] Kapak: {sum(1 for c in gated if c['face'])} adayda yuz bulundu.")
+            if faces is None:
+                continue
+            guvenli = [f for f in faces if len(f) > 14 and float(f[14]) > 0.6]
+            if not guvenli:
+                continue
+            b = max(guvenli, key=lambda f: float(f[2]) * float(f[3]))
+            x, y, w_f, h_f = float(b[0]), float(b[1]), float(b[2]), float(b[3])
+            c["face"] = (x, y, w_f, h_f)
+            c["face_frac"] = (w_f * h_f) / max(1.0, float(fw * fh))
+            # Yuz bolgesi net mi? (bulanik yuz = kotu kapak) Kenarlardan %15 kirp.
+            x1 = int(max(0, x + w_f * 0.15)); x2 = int(min(fw, x + w_f * 0.85))
+            y1 = int(max(0, y + h_f * 0.15)); y2 = int(min(fh, y + h_f * 0.85))
+            if x2 - x1 > 8 and y2 - y1 > 8:
+                yuz_gri = cv2.cvtColor(c["img"][y1:y2, x1:x2], cv2.COLOR_BGR2GRAY)
+                c["face_sharp"] = float(cv2.Laplacian(yuz_gri, cv2.CV_64F).var())
+            mx = (x + w_f / 2) / fw
+            my = (y + h_f / 2) / fh
+            c["face_center"] = max(0.0, 1.0 - abs(mx - 0.5) * 2.0 - abs(my - 0.5) * 1.2)
+        _fs = [c.get("face_sharp", 0.0) for c in adaylar if c.get("face")]
+        _fs_max = max(_fs) if _fs else 0.0
+        for c in adaylar:
+            if c.get("face") and _fs_max > 0:
+                c["face_sharp_n"] = math.log1p(c.get("face_sharp", 0.0)) / math.log1p(_fs_max)
+        print(f"[Bulut] Kapak: {sum(1 for c in adaylar if c['face'])} adayda yuz bulundu.")
     except Exception as e:
         print(f"[Bulut] Yuz algilama atlandi: {str(e)[:80]}")
-    # 4) Konu-ilgisi (CLIP, ViT-B/32): KALAN TUM kareler konuyla puanlanir.
-    #     Basarisiz olursa sessizce eski skora donulur (bot kirilmaz).
-    _clip_ok = False
-    if topic_query:
-        try:
-            import torch
-            import clip as clip_lib
-            from PIL import Image as _PILImage
-            _device = "cuda" if torch.cuda.is_available() else "cpu"
-            _model, _pre = clip_lib.load("ViT-B/32", device=_device)
-            _tok = clip_lib.tokenize([topic_query[:70]]).to(_device)
-            with torch.no_grad():
-                _tfeat = _model.encode_text(_tok)
-                _tfeat = _tfeat / _tfeat.norm(dim=-1, keepdim=True)
-            _targets = gated
-            _ims = []
-            for c in _targets:
-                h_c, w_c = c["img"].shape[:2]
-                cw_c = int(h_c * 9 / 16)
-                if c["face"] is not None:
-                    fx_c = c["face"][0] + c["face"][2] / 2
-                    x0_c = int(min(max(fx_c - cw_c / 2, 0), max(0, w_c - cw_c)))
-                else:
-                    x0_c = max(0, (w_c - cw_c) // 2)
-                _ims.append(_PILImage.fromarray(cv2.cvtColor(c["img"][:, x0_c:x0_c + cw_c], cv2.COLOR_BGR2RGB)))
-            with torch.no_grad():
-                _ifeat = _model.encode_image(torch.stack([_pre(im) for im in _ims]).to(_device))
-                _ifeat = _ifeat / _ifeat.norm(dim=-1, keepdim=True)
-                _sims = (_ifeat @ _tfeat.T).squeeze(1).tolist()
-            if isinstance(_sims, float):
-                _sims = [_sims]
-            for c, _s in zip(_targets, _sims):
-                c["clip_raw"] = float(_s)
-            _clip_ok = True
-            print(f"[Bulut] Kapak: konu-ilgisi (CLIP) uygulandi: '{topic_query[:40]}'")
-        except Exception as e:
-            print(f"[Bulut] CLIP atlandi (eski skorla devam): {str(e)[:80]}")
-    # 5) Skor: konu skorlari ayrisiyorsa KONU-BIRINCIL, yoksa klasik.
-    #    Soyut konuda ("neden", "sir") CLIP tum karelere benzer puan verir,
-    #    ayrisma dusuk olur ve otomatik klasik moda dusulur.
-    _sims_all = [c.get("clip_raw", 0.0) for c in gated]
-    _spread = (max(_sims_all) - min(_sims_all)) if _sims_all else 0.0
-    _topic_first = bool(topic_query) and _clip_ok and _spread >= 0.03
+
+
+def _thumb_clip_skor(adaylar, topic_query):
+    """CLIP ViT-B/32 ile konu-ilgisi: ortalama(POZITIF) - ortalama(NEGATIF).
+
+    Tek konu cumlesi yerine prompt ensemble kullanilir (zero-shot siniflandirma
+    literaturu): soyut/belirsiz basliklarda tek cumle tum karelere benzer puan
+    verirken ensemble, "kapaklik kare" ile "altyazili bulanik kare" arasindaki
+    farki daha net ayirir. Basarisizsa None doner (yerel skor devam eder).
+    """
+    if not topic_query or not adaylar:
+        return None
+    try:
+        import torch
+        import clip as clip_lib
+        from PIL import Image as _PILImage
+        import cv2
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model, pre = clip_lib.load("ViT-B/32", device=device)
+        promptlar = [p.replace("{konu}", topic_query[:70]) for p in THUMB_POZITIF] + list(THUMB_NEGATIF)
+        with torch.no_grad():
+            tok = clip_lib.tokenize(promptlar).to(device)
+            tfeat = model.encode_text(tok)
+            tfeat = tfeat / tfeat.norm(dim=-1, keepdim=True)
+        gorseller = []
+        for c in adaylar:
+            h_c, w_c = c["img"].shape[:2]
+            cw_c = int(h_c * 9 / 16)
+            if c["face"] is not None:
+                fx_c = c["face"][0] + c["face"][2] / 2
+                x0_c = int(min(max(fx_c - cw_c / 2, 0), max(0, w_c - cw_c)))
+            else:
+                x0_c = max(0, (w_c - cw_c) // 2)
+            gorseller.append(_PILImage.fromarray(cv2.cvtColor(c["img"][:, x0_c:x0_c + cw_c], cv2.COLOR_BGR2RGB)))
+        with torch.no_grad():
+            ifeat = model.encode_image(torch.stack([pre(im) for im in gorseller]).to(device))
+            ifeat = ifeat / ifeat.norm(dim=-1, keepdim=True)
+            benzerlik = ifeat @ tfeat.T                       # [kare, prompt]
+            poz = benzerlik[:, :len(THUMB_POZITIF)].mean(dim=1)
+            neg = benzerlik[:, len(THUMB_POZITIF):].mean(dim=1)
+            ham = [float(v) for v in (poz - neg).tolist()]
+        for c, s in zip(adaylar, ham):
+            c["clip_raw"] = s
+        return ham
+    except Exception as e:
+        print(f"[Bulut] CLIP atlandi (yerel skorla devam): {str(e)[:80]}")
+        return None
+
+
+def _thumb_gemini_sec(adaylar, konu):
+    """Ilk-N adayi GORSEL modele yargilatir: konunun ana karakterini/konusunu
+    en net, en vurucu gosteren kare hangisi?
+
+    Yerel metrikler "teknik olarak iyi" kareyi bulur ama hangi karenin videonun
+    KONUSUNA ait oldugunu ve izleyiciyi yakalayacagini bilemez; konuyu goren
+    model karar verir. Adaylar KARISIK sirada gonderilir (siraya bagli onyargi
+    olmasin), donus JSON'dan okunup gercek adaya geri eslenir.
+    Hata/kota/anahtar yoksa None doner -> yerel skor kazanir (bot kirilmaz).
+    """
+    if len(adaylar) < 2 or not konu:
+        return None
+    try:
+        import json as _json
+        import random as _rnd
+        import cv2
+        from google import genai
+        from google.genai import types
+        from PIL import Image as _PILImage
+        from constants import GEMINI_API_KEYS, GEMINI_MODELS
+
+        sira = list(range(len(adaylar)))
+        _rnd.shuffle(sira)
+        gorseller = []
+        for idx in sira:
+            c = adaylar[idx]
+            h_c, w_c = c["img"].shape[:2]
+            cw_c = int(h_c * 9 / 16)
+            if c["face"] is not None:
+                fx_c = c["face"][0] + c["face"][2] / 2
+                x0_c = int(min(max(fx_c - cw_c / 2, 0), max(0, w_c - cw_c)))
+            else:
+                x0_c = max(0, (w_c - cw_c) // 2)
+            kesit = c["img"][:, x0_c:x0_c + cw_c]
+            gorseller.append(_PILImage.fromarray(cv2.cvtColor(kesit, cv2.COLOR_BGR2RGB)).resize((320, 568)))
+
+        n = len(gorseller)
+        prompt = (
+            "You are choosing the thumbnail frame for a YouTube Shorts video.\n\n"
+            f"{konu}\n\n"
+            f"Below are {n} candidate frames from this video, in RANDOM order "
+            f"(first image = Candidate 1, ...).\n"
+            "Pick the ONE frame that would make the most striking and clear thumbnail "
+            "for THIS video.\n\n"
+            "Priority order:\n"
+            "1. It must clearly show what the video is about: the main character OR the key "
+            "object / moment the title and voiceover are about. If the video is about a "
+            "specific object, piece of tech or specific moment (e.g. \"where did X go\", "
+            "\"X made of Y\", \"why X did Y\"), the frame MUST show that object/moment "
+            "clearly and prominently — a random nice-looking face is NOT acceptable.\n"
+            "2. The subject must be clearly visible, recognizable and reasonably large in "
+            "the frame (no tiny subject lost in a wide shot).\n"
+            "3. Sharp and well exposed (no motion blur, not too dark, not washed out).\n"
+            "4. No burned-in subtitles, captions, logos or interface text in the image.\n"
+            "5. Striking, attention-grabbing moment: dramatic expression, action or reveal "
+            "that matches the topic; good composition (subject near the center).\n\n"
+            "Avoid:\n"
+            "- extreme close-ups where the face is cropped awkwardly or the expression "
+            "looks weird / uncanny / meme-like;\n"
+            "- faces with closed eyes, sleeping / unconscious / blank expressions, or the "
+            "character turned away from the camera (nothing to engage the viewer);\n"
+            "- frames where the subject is out of focus, hidden or too small;\n"
+            "- frames that could belong to any other video on this channel.\n\n"
+            'Reply with JSON only, no other text: {"pick": <candidate number>, "why": "<max 10 words>"}'
+        )
+        son_hata = ""
+        for model_adi in GEMINI_MODELS[:2]:
+            for ki in range(min(2, len(GEMINI_API_KEYS))):
+                try:
+                    client = genai.Client(api_key=GEMINI_API_KEYS[ki], http_options={'timeout': 60000})
+                    r = client.models.generate_content(
+                        model=model_adi, contents=[prompt] + gorseller,
+                        config=types.GenerateContentConfig(
+                            system_instruction="You pick the best thumbnail frame. Answer with JSON only."))
+                    metin = (r.text or "").strip()
+                    if not metin:
+                        continue
+                    ham = None
+                    m = re.search(r'\{[\s\S]*\}', metin)
+                    if m:
+                        try:
+                            ham = int(_json.loads(m.group(0)).get("pick"))
+                        except Exception:
+                            ham = None
+                    if ham is None:
+                        m2 = re.search(r'\d+', metin)
+                        ham = int(m2.group(0)) if m2 else None
+                    if ham and 1 <= ham <= n:
+                        secilen = adaylar[sira[ham - 1]]
+                        print(f"[Bulut] Kapak: gorsel hakem ({model_adi}) -> aday {ham}: {metin[:110]}")
+                        return secilen
+                except Exception as e:
+                    son_hata = str(e)[:100]
+        if son_hata:
+            print(f"[Bulut] Kapak hakemi atlandi (yerel skor kazanir): {son_hata}")
+        return None
+    except Exception as e:
+        print(f"[Bulut] Kapak hakemi atlandi (yerel skor kazanir): {str(e)[:100]}")
+        return None
+
+
+def build_thumbnail(video_path, title_text, tmp_dir, rand_num, topic_query="", voice_text=""):
+    """Profesyonel 9:16 kapak: ana karakteri/konuyu en net gosteren kare.
+
+    Akis: 20 aday kare -> parlaklik/keskinlik eleme -> yuz (YuNet) + CLIP konu
+    ilgisi -> ilk 6 -> Gemini gorsel hakem -> kazanan kare tam cozunurlukte
+    yeniden cekilir, yuz ortali 9:16 kirpilir, dev yazi yuzle CAKISMAYAN tarafa
+    basilir. Gemini/CLIP yoksa yerel skor kazanir. Donus: PNG bytes/None.
+    """
+    import urllib.request
+    font_path = os.path.join(tmp_dir, "RussoOne-Regular.ttf")
+    if not os.path.exists(font_path) or os.path.getsize(font_path) < 10000:
+        urllib.request.urlretrieve("https://github.com/google/fonts/raw/main/ofl/russoone/RussoOne-Regular.ttf", font_path)
+    dur = get_video_duration(video_path)
+    adaylar = _thumb_adaylari(video_path, tmp_dir, rand_num, dur)
+    if not adaylar:
+        return None
+    # 1) Cok karanlik / patlak kareleri ele (hepsi elenirse vazgec, hepsini tut)
+    ok_c = [c for c in adaylar if 40.0 <= c["bright"] <= 240.0]
+    pool = ok_c if ok_c else adaylar
+    # 2) Bulaniklik eleme: en keskin karenin %3'unden dusukler elenir
+    #    (baraj bilerek gevsek: konu/karakter birincil, keskinlik sadece
+    #    motion-blur copunu temizler).
+    max_sharp_all = max(c["sharp"] for c in pool)
+    _blur_cut = max(30.0, 0.03 * max_sharp_all)
+    gated = [c for c in pool if c["sharp"] >= _blur_cut] or pool
+    print(f"[Bulut] Kapak: {len(adaylar)} kare cekildi "
+          f"({len(adaylar) - len(ok_c)} karanlik/patlak, {len(pool) - len(gated)} bulanik elendi) "
+          f"-> {len(gated)} aday.")
+    # 3) Yuz analizi + CLIP konu ilgisi (basarisiz olurlarsa sessizce atlanir)
+    _thumb_yuz_analizi(gated, tmp_dir)
+    clip_ham = _thumb_clip_skor(gated, topic_query)
+    sims = [c.get("clip_raw", 0.0) for c in gated]
+    spread = (max(sims) - min(sims)) if clip_ham and sims else 0.0
     for c in gated:
-        c["clip"] = ((c.get("clip_raw", 0.0) - min(_sims_all)) / (_spread + 1e-6)) if _spread > 0 else 0.0
+        c["clip"] = ((c.get("clip_raw", 0.0) - min(sims)) / (spread + 1e-6)) if spread > 0 else 0.0
+    # Konu puanlari ayrisiyorsa konu-birincil agirlik; ayrisimiyorsa (soyut
+    # baslik) klasik kalite agirligi. Gorsel hakem varsa son soz onda.
+    konu_birincil = bool(topic_query) and bool(clip_ham) and spread >= 0.02
     max_sharp = max(c["sharp"] for c in gated)
-    def _score(c):
-        sharp_n = _math.log1p(c["sharp"]) / _math.log1p(max_sharp + 1e-6)
-        # Yuz bonusu: cok kucuk yuzler genelde yanlis alarm, dev yuzler
-        # (asiri yakin plan) kirpinca taninmaz hale gelir.
-        ff = c["face_frac"]
-        if 0.02 <= ff <= 0.55:
-            face_b = min(1.5, ff * 5.0)
-        elif ff > 0.55:
-            face_b = -0.8
+
+    def _skor(c):
+        sharp_n = math.log1p(c["sharp"]) / math.log1p(max_sharp + 1e-6)
+        kontrast_n = min(1.0, c["contrast"] / 70.0)
+        if c["face"] is not None:
+            ff = c["face_frac"]
+            if ff > 0.6:
+                yuz_b = -0.6          # asiri yakin plan: kirpinca taninmaz
+            elif ff >= 0.015:
+                yuz_b = 0.7 + min(0.6, ff * 3.0)   # 0.7..1.3 (one cikan yuz)
+            else:
+                yuz_b = 0.1           # cok kucuk yuz (kalabalik/yanlis alarm)
+            yuz_b += 0.4 * c.get("face_sharp_n", 0.0)   # yuz netse
+            yuz_b += 0.3 * c.get("face_center", 0.0)    # yuz kadrajda ortadaysa
         else:
-            face_b = 0.0
-        text_p = min(1.2, max(0.0, c["band_ratio"] - 1.6) * 0.8)
-        if _topic_first:
-            return c.get("clip", 0.0) * 2.0 + face_b * 0.5 + sharp_n * 0.5 - text_p
-        return sharp_n + face_b + c.get("clip", 0.0) * 1.2 - text_p
-    if _topic_first:
-        print(f"[Bulut] Kapak: konu-birincil mod (ayrisma {_spread:.3f}).")
+            yuz_b = 0.0
+        yazi_p = min(1.4, max(0.0, c["band_ratio"] - 1.6) * 0.9)
+        konu_agirlik = 2.0 if konu_birincil else 0.6
+        return yuz_b + sharp_n * 0.9 + kontrast_n * 0.3 + c.get("clip", 0.0) * konu_agirlik - yazi_p
+
+    gated.sort(key=_skor, reverse=True)
+    kisa_liste = list(gated[:THUMB_HAKEM_ADET])
+    # Cesitlilik: ilk-N'nin hepsi yuzlu ise ve daha geride yuzsuz aday varsa
+    # son sirayi onunla degistir. Konu bir NESNE/kare ise hakem onu da gormeli;
+    # aksi halde "rastgele guzel yuz" secme egilimi artiyor.
+    if kisa_liste and all(c["face"] for c in kisa_liste):
+        yuzsuz = next((c for c in gated[THUMB_HAKEM_ADET:THUMB_HAKEM_ADET + 6] if not c["face"]), None)
+        if yuzsuz is not None:
+            kisa_liste[-1] = yuzsuz
+    print(f"[Bulut] Kapak: skorlama modu "
+          f"{'konu-birincil' if konu_birincil else 'kalite-birincil'}")
+    secilen = None
+    if kapak_hakem_aktif():
+        print(f"[Bulut] Kapak: ilk {len(kisa_liste)} aday gorsel hakeme gidiyor.")
+        secilen = _thumb_gemini_sec(kisa_liste, kapak_konu_ozeti(title_text, voice_text, topic_query))
+    if secilen is None:
+        secilen = kisa_liste[0]
+        print(f"[Bulut] Kapak: yerel skor kazandi (t={secilen['t']}sn).")
     else:
-        print(f"[Bulut] Kapak: klasik mod (konu ayrismadi).")
-    best = max(gated, key=_score)
-    best_img, best_score = best["img"], best["sharp"]
-    face = best["face"]
-    if face is not None:
-        print(f"[Bulut] Kapak: yuzlu kare secildi, yazi yuzle cakismayacak.")
-    # 3) Basliktan kisa kapak yazisi (max 4 kelime, emoji/hashtag yok, buyuk harf)
+        print(f"[Bulut] Kapak: gorsel hakem karesi secildi (t={secilen['t']}sn).")
+    # 4) Kazanan kareyi TAM cozunurlukte yeniden cek (analiz 640px'te yapildi)
+    import cv2
+    best_img = None
+    try:
+        tam_yol = os.path.join(tmp_dir, f"thumb_best_{rand_num}.jpg")
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                        "-an", "-sn", "-ss", str(secilen["t"]), "-i", video_path,
+                        "-frames:v", "1", "-q:v", "2", tam_yol], check=True)
+        best_img = cv2.imread(tam_yol)
+    except Exception:
+        best_img = None
+    if best_img is None:
+        best_img = secilen["img"]
+    face = None
+    if secilen.get("face"):
+        try:
+            yunet_path = os.path.join(tmp_dir, "face_detection_yunet_2023mar.onnx")
+            fh, fw = best_img.shape[:2]
+            det = cv2.FaceDetectorYN_create(yunet_path, "", (fw, fh))
+            _, yuzler = det.detect(best_img)
+            if yuzler is not None:
+                bulunan = [f for f in yuzler if len(f) > 14 and float(f[14]) > 0.6]
+                if bulunan:
+                    b = max(bulunan, key=lambda f: float(f[2]) * float(f[3]))
+                    face = (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+            if face is None:
+                # Tam cozunurlukte bulunamazsa analiz karesindeki kutuyu olcekle
+                kucuk_h, kucuk_w = secilen["img"].shape[:2]
+                sx, sy = fw / kucuk_w, fh / kucuk_h
+                fx, fy, fwd, fhd = secilen["face"]
+                face = (fx * sx, fy * sy, fwd * sx, fhd * sy)
+        except Exception:
+            face = None
+    # 5) Basliktan kisa kapak yazisi (max 4 kelime, emoji/hashtag yok, buyuk harf)
     clean = re.sub(r'#\S+', ' ', title_text or "")
     clean = re.sub(r'[\U0001F300-\U0010FFFF»«"“”]+', ' ', clean).replace(":", " ").strip()
     words = clean.split()
@@ -465,24 +758,23 @@ def build_thumbnail(video_path, title_text, tmp_dir, rand_num, topic_query=""):
         words = words[:4]
     if not words:
         return None
-    # 4) 9:16 kirp — yuz varsa yuz ortali, yuz ustteyse yazi alta ve tersi
+    # 6) 9:16 kirp — yuz varsa yuz ortali; YAZI YUZUN OLMADIGI TARAFA
     h, w = best_img.shape[:2]
     cw = int(h * 9 / 16)
     if face is not None:
         fx = face[0] + face[2] / 2
         x0 = int(min(max(fx - cw / 2, 0), max(0, w - cw)))
         face_cy = (face[1] + face[3] / 2) / h
-        text_top = face_cy < 0.5
+        # Yuz ust yaridaysa yazi ALTA, alt yaridaysa yazi USTE (cakisma olmaz).
+        text_top = face_cy >= 0.5
     else:
         x0 = max(0, (w - cw) // 2)
         text_top = True
     # Efekt YOK: kirp + duz resize, fotograf oldugu gibi kalir.
-    # (Kontrast/doygunluk/unsharp, dusuk kaliteli karelerde bantlanma yapiyordu.)
     crop = best_img[:, x0:x0 + cw]
     crop = cv2.resize(crop, (1080, 1920), interpolation=cv2.INTER_LANCZOS4)
     from PIL import Image, ImageDraw, ImageFont
     pil = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)).convert("RGBA")
-    # Yazi: kontur disinda arka plan karartma yok, foto tertemiz durur.
     draw = ImageDraw.Draw(pil)
 
     def _tw(ln, size):
@@ -490,20 +782,18 @@ def build_thumbnail(video_path, title_text, tmp_dir, rand_num, topic_query=""):
         bb = draw.textbbox((0, 0), ln, font=f, stroke_width=7)
         return bb[2] - bb[0], f
 
-    # Satir dagilimi: en dengeli bolunme (piksel genisligine gore)
     up = [w.upper() for w in words]
     if len(up) <= 2:
         lines = [" ".join(up)]
     else:
-        best, best_m = None, None
+        en_iyi, en_iyi_m = None, None
         for k in range(1, len(up)):
             l1, l2 = " ".join(up[:k]), " ".join(up[k:])
             m = max(_tw(l1, 150)[0], _tw(l2, 150)[0])
-            if best_m is None or m < best_m:
-                best, best_m = [l1, l2], m
-        lines = best
+            if en_iyi_m is None or m < en_iyi_m:
+                en_iyi, en_iyi_m = [l1, l2], m
+        lines = en_iyi
     lines = [l[:26] for l in lines if l]
-    # Otomatik sigdirma + yuzle cakismayan konum
     rendered = []
     for ln in lines[:2]:
         size = 150
@@ -921,7 +1211,8 @@ def run_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, system_p
         # CLIP konu sorgusu Ingilizce olmali (CLIP Ingilizce egitimli):
         # kaynak videonun orijinal basligi kullanilir.
         _topic = re.sub(r'[\U0001F300-\U0010FFFF]+', ' ', raw_title or "").strip()[:70]
-        thumb_bytes = build_thumbnail(final_merged_path, sections.get(t_key, raw_title), tmp_dir, rand_num, topic_query=_topic)
+        thumb_bytes = build_thumbnail(final_merged_path, sections.get(t_key, raw_title), tmp_dir, rand_num,
+                                      topic_query=_topic, voice_text=sections.get(f"voice_{lang}", ""))
         if thumb_bytes:
             print(f"[Bulut] Kapak hazir ({len(thumb_bytes)//1024}KB).")
     except Exception as e:

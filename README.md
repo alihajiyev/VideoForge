@@ -68,7 +68,9 @@ py -3 -X utf8 -m modal run kinok_syjet.py --link https://youtu.be/XXXX --gun 2 -
 ```
 
 Ciktilar Masaustu'ne yazilir: `*_CLEAN.mp4`, `*_VOICEOVER.mp3`, `*_THUMB.png`, `*_SEO.html`
-(cok gunlu modda `Gun<N>_<baslik>_<rastgele>/` klasoru).
+(cok gunlu modda `Gun<N>_<baslik>_<rastgele>/` klasoru). ShortsStudio montaji bitince
+`final_XXXXXX.mp4` de **ayni klasore** tasinir: her gunun TUM ciktisi tek klasordedir,
+masaustu kokunde ayri final dosyasi birikmez.
 
 Masaustu arayuzu icin:
 

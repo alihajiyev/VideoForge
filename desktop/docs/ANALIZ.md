@@ -11,10 +11,12 @@ akışı tetikler ve çıktıyı okur.
 | 1/4 | yt-dlp + `cookies.txt` ile indirme | — |
 | 2/4 | ücretsiz altyazı denemesi | TikTok/Instagram için `cloud_transcribe` (Whisper small, T4) |
 | 3/4 | videoyu buluta yükleme | — |
-| 4/4 | — | `cloud_orchestrator`: Gemini metin üretimi → ElevenLabs TTS → ProPainter GPU temizliği → YuNet+CLIP kapak → SEO HTML |
+| 4/4 | — | `cloud_orchestrator`: Gemini metin üretimi → ElevenLabs TTS → ProPainter GPU temizliği → YuNet+CLIP kapak (+ Gemini görsel hakem) → SEO HTML |
 
 Çıktılar `Masaüstü`'ne yazılır: `*_CLEAN.mp4`, `*_VOICEOVER.mp3`, `*_THUMB.png`, `*_SEO.html`
-(haftalık modda `Gun\<n>_<başlık>_<rand>` klasörüne).
+(haftalık modda `Gun\<n>_<başlık>_<rand>` klasörüne). Montaj çıktısı `final_XXXXXX.mp4` ise
+render biter bitmez aynı `Gun<n>` klasörüne taşınır — tek klasör, tek sonuç (masaüstü kökünde
+ayrı final birikmez).
 
 Gemini katmanı: `gemini_uret` → `_try_model` ile 7 key × model listesi üzerinde döner; boş yanıt,
 429 (RPM/RPD), 503/504, 500 durumları ayrı ayrı ele alınır; `PROHIBITED_CONTENT` gibi prompt
@@ -161,4 +163,4 @@ Yerel testlerle bulut davranışı farklı olabilir. Tek sürüme sabitlemek en 
 - **Prompt sürüm yönetimi:** prompt'ları `prompts/*.txt`'e taşıyıp GUI'den düzenlemek; dosya yoksa
   kanal dosyasındaki mevcut sabit kullanılır → bot mantığı bozulmaz, A/B testi mümkün olur.
 - **Bildirim:** işlem bitince Telegram/ntfy mesajı (uzun GPU işlerinde beklemeyi bitirir).
-- **Kapak A/B:** `build_thumbnail` iki farklı kare/başlık ile üretilip GUI'de yan yana gösterilsin.
+- **Kapak A/B:** `build_thumbnail` iki farklı kare/başlık ile üretilip GUI'de yan yana gösterilsin. (Uygulandı: kare seçiminde yerel kalite + YuNet yüz analizi + CLIP prompt-ensemble, son karar Gemini görsel hakemde.)

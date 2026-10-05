@@ -8,7 +8,9 @@ anda degil) 3 adimli zincirden gecirir:
   2. VIDEOFORGE: her video temizlenir, SEO + ses hazirlanir.
      Cikti: Masaustu/GunN_*/ icinde *_CLEAN.mp4 + *.mp3 + *_SEO.html (+ png)
   3. SHORTSSTUDIO: Gun klasorundeki mp4 + mp3 + SEO html alinir, ShortsStudio'da
-     montaj/edit yapilir. Cikti: Masaustu/final_XXXXXX.mp4 (+ Gun klasorune kopya)
+     montaj/edit yapilir. Ciktinin TAMAMI ayni GunN klasorune yazilir:
+     final_XXXXXX.mp4 render biter bitmez klasore TASINIR (masaustu kokunde
+     ayri bir final dosyasi kalmaz) — tek asama, tek klasor.
 
 Kullanim:
     python kesif.py --gun 10        # once 10 gunluk plan uret (--haftalik 10 ile ayni)
@@ -204,6 +206,37 @@ def find_gun_girdileri(gun_dir):
 
 
 FINAL_RE = re.compile(r"final_\d+\.mp4")
+
+
+def final_gun_klasorune_tasi(desktop, gun_dir, final_ad):
+    """Single-stage cikti: final'i GunN klasorune tasi (kopyalama degil, rename).
+
+    ShortsStudio finali masaustu KOKUNE yazar (~/Desktop/final_XXXXXX.mp4).
+    Kullanici tek klasorde TUM ciktiyi (temiz video + ses + kapak + SEO + final)
+    gormek istiyor; final render biter bitmez ayni klasore TASINIR. Ayni disk
+    uzerinde os.replace = rename, yani ek kopyalama maliyeti yoktur.
+    Tasma basarisiz olursa final kokte kalir (is bozulmaz) ve uyari verilir.
+
+    Donus: (True, 'Gun klasorune tasindi' | 'zaten Gun klasorunde')
+           ya da (False, sebep).
+    """
+    hedef = os.path.join(gun_dir, final_ad)
+    kaynak = os.path.join(desktop, final_ad)
+    if os.path.exists(hedef) and not os.path.exists(kaynak):
+        return True, "zaten Gun klasorunde"
+    if not os.path.exists(kaynak):
+        return False, f"final dosyasi bulunamadi: {kaynak}"
+    try:
+        os.replace(kaynak, hedef)
+        return True, "Gun klasorune tasindi"
+    except OSError:
+        # Farkli surucu / kilitli hedef: yavas ama guvenli yola dus.
+        try:
+            import shutil
+            shutil.move(kaynak, hedef)
+            return True, "Gun klasorune tasindi"
+        except Exception as e:
+            return False, str(e)
 KILIT_DOSYASI = os.path.join(BASE_DIR, ".haftalik_islet.lock")
 KILIT_OMRU_SN = 4 * 3600  # kesin ust sinir: bundan eski kilit her halukarda bayattir
 
@@ -293,7 +326,10 @@ def studio_islet(gun, chn, gun_toplam=0):
     sorunu tamamen ortadan kalkar (eskiden bayat dosya yuzunden kosu, GPU
     harcandiktan SONRA duruyordu — en pahali hata turu).
 
-    Donus: (True, final_dosya_adi) ya da (False, hata_mesaji).
+    Cikti TEK klasorde kalir: render sonrasi final_XXXXXX.mp4, masaustu kokunde
+    bekletilmeden GunN klasorune tasinir (bkz. final_gun_klasorune_tasi).
+
+    Donus: (True, 'GunN_.../final_XXXXXX.mp4') ya da (False, hata_mesaji).
     """
     desktop = _desktop()
     studio_dir = studio_dir_bul()
@@ -351,11 +387,19 @@ def studio_islet(gun, chn, gun_toplam=0):
         return False, f"ShortsStudio modal run returncode={studio_rc}"
 
     final_ad = _final_adi_bul("".join(cikti_parcalari))
-    if not final_ad or not os.path.exists(os.path.join(desktop, final_ad)):
+    if not final_ad or not (os.path.exists(os.path.join(desktop, final_ad))
+                             or os.path.exists(os.path.join(gun_dir, final_ad))):
         return False, ("ShortsStudio ciktisinda gecerli final dosya adi yok "
                        "(render basarisiz olabilir; cikti yukarida).")
 
-    return True, final_ad
+    # TEK ASAMA: final'i kokte birakma, GunN klasorune al (kopyalama yok).
+    tasindi, tasima_bilgi = final_gun_klasorune_tasi(desktop, gun_dir, final_ad)
+    if tasindi:
+        ok(f"✅ Final Gun klasorune alindi: {os.path.join(os.path.basename(gun_dir), final_ad)}")
+    else:
+        warn(f"⚠️ Final Gun klasorune alinamadi ({tasima_bilgi}); masaustu kokunde kaldi: {final_ad}")
+
+    return True, os.path.join(os.path.basename(gun_dir), final_ad)
 
 
 def main():
@@ -472,7 +516,7 @@ def main():
     if atlanan:
         print(f"  ⏭️ {atlanan} video daha once islendigi icin atlanacak.")
     print(f"\n⏳ Tahmini sure: ~{len(kuyruk) * 15} dk (video basina VideoForge ~5-15 dk + ShortsStudio ~3-8 dk, sirayla).")
-    print("   VideoForge ciktilari masaustunde kendi GunN klasorune, finaller Masaustu/final_*.mp4 olarak yazilir.\n")
+    print("   Her gunun TUM ciktilari (temiz video + ses + kapak + SEO + final) masaustundeki kendi GunN klasorune yazilir.\n")
 
     if not args.evet:
         cevap = input("Baslasin mi? (e/h): ").strip().lower()
@@ -569,7 +613,7 @@ def main():
     if sistemik_hata:
         print(f"  🛑 Zincir sistemik hata yuzunden erken durduruldu: {sistemik_hata}")
         print("     (Ses/abonelik sorunu cozulunce ayni komutu tekrar calistir; kalan gunler otomatik devam eder.)")
-    print(f"  📁 Gun klasorleri + finaller masaustunde: {desktop}")
+    print(f"  📁 Her gunun tamami (final dahil) kendi Gun klasorunde: {desktop}")
     try:
         sonuc_file = sonuc_dosyasi(chn)
         with open(sonuc_file, "w", encoding="utf-8") as f:

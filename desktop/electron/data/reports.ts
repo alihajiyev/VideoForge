@@ -86,12 +86,51 @@ function stripSuffix(name: string): string {
     .trim()
 }
 
+/** Sadece 'final_123456.mp4' (montaj cikti adi) — kardes dosyalarla ayni grup. */
+const FINAL_ONLY_RE = /^final_\d+\.mp4$/i
+
+/**
+ * Tek asamali cikti: final artik GunN klasorunun ICINE yazilir (kopya yok).
+ * Bu yuzden 'final_*.mp4' kendi adiyla ayri grup olmamali; klasordeki
+ * video+ses+kapak+SEO ile TEK sonuc olarak gruplanmali. Her klasor icin
+ * baskin kok ad (stem) bir kez hesaplanir.
+ */
+function dirStemMap(items: Artifact[]): Map<string, string> {
+  const sayac = new Map<string, Map<string, number>>()
+  for (const it of items) {
+    if (FINAL_ONLY_RE.test(it.name)) continue
+    const dir = path.dirname(it.path)
+    const s = stripSuffix(it.name)
+    if (!s) continue
+    const m = sayac.get(dir) ?? new Map<string, number>()
+    m.set(s, (m.get(s) ?? 0) + 1)
+    sayac.set(dir, m)
+  }
+  const out = new Map<string, string>()
+  for (const [dir, m] of sayac) {
+    let enIyi = ''
+    let enCok = 0
+    for (const [s, n] of m) {
+      if (n > enCok || (n === enCok && enIyi && s < enIyi)) {
+        enIyi = s
+        enCok = n
+      }
+    }
+    if (enIyi) out.set(dir, enIyi)
+  }
+  return out
+}
+
 /** Ayni videoya ait ciktilari (video + ses + kapak + SEO) gruplar. */
 export function groupArtifacts(items: Artifact[]): ReportGroup[] {
   const map = new Map<string, ReportGroup>()
+  const dirStem = dirStemMap(items)
   for (const item of items) {
     const dir = path.dirname(item.path)
-    const stem = stripSuffix(item.name)
+    // final_*.mp4: ayni klasordeki (GunN) diger ciktilarla ayni grupta gorunsun.
+    const stem = FINAL_ONLY_RE.test(item.name) && dirStem.get(dir)
+      ? dirStem.get(dir)!
+      : stripSuffix(item.name)
     const key = `${dir}::${stem}`
     let group = map.get(key)
     if (!group) {

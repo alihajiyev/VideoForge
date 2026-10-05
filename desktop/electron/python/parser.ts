@@ -49,6 +49,7 @@ function detectArtifact(text: string): { kind: ArtifactKind; name: string } | un
   if (/_VOICEOVER\.mp3$/i.test(name)) return { kind: 'audio', name }
   if (/_SEO\.html$/i.test(name)) return { kind: 'seo', name }
   if (/_THUMB\.png$/i.test(name)) return { kind: 'thumb', name }
+  if (/^final_\d+\.mp4$/i.test(name)) return { kind: 'video', name }
   if (/^Kesif-Rapor.*\.html$/i.test(name)) return { kind: 'report', name }
   if (/^haftalik_plan\.json$/i.test(name) || /^haftalik_sonuc.*\.json$/i.test(name)) return { kind: 'plan', name }
   return undefined
