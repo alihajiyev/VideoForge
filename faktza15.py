@@ -38,34 +38,42 @@ Rules:
 
 Write ONLY the voiceover text, no headers or tags."""
 
-TITLE_PROMPT = """Based on this voiceover text, write a YouTube Shorts title.
+TITLE_PROMPT = """Based on this voiceover text, write ONE YouTube Shorts title.
+
+Voiceover:
+{voice_text}
+
+This channel publishes vertical Shorts with interesting facts; titles are scored by professional tools (vidIQ), so follow EVERY rule:
+1. ONE hook, ONE promise — a strong question about the video's MAIN TOPIC/CONCEPT, not just the first sentence. Never two claims.
+2. HOOK IN THE FIRST 2-3 WORDS: the mobile feed shows only ~40 characters, so open with the hook word (Почему / Как / Зачем / Что / Кто / Секрет / Вот / Это).
+3. MAIN KEYWORD EARLY: the main subject/place/object/event name MUST appear as a PLAIN WORD inside the first 30 characters — not only inside a hashtag. Use the exact, searchable word (e.g. «Марианская впадина», not "глубина").
+4. Hook text (before the emoji) max 40 characters. TOTAL title (hook + 1 emoji + 1-2 hashtags) max 60 characters, hard limit 65. Never cut a word in the middle.
+5. EXACTLY ONE emoji, placed right before the hashtags. Two or more emojis look spammy and dilute the click.
+6. 1-2 hashtags max from the video's ACTUAL content, (e.g. #марианскаявпадина). NEVER generic (#факты, #интересное, #топ, #шортс, #shorts). No space before #.
+7. Numbers score extra when the topic naturally has one (year, count, "3 факта").
+8. Concrete, specific Russian: no vague hype ("смотри до конца", "невероятно", "шок"), no ALL-CAPS words, no promise the voiceover does not deliver. NEVER medical terms or weird literal translations.
+9. NEVER name a movie/character that is not in the voiceover. Official Russian names only; if unsure, keep the original name in guillemets «».
+
+Write ONLY the title, one line."""
+
+TAGS_PROMPT = """Based on this voiceover text, write the YouTube tag list for a Russian facts Shorts video.
 
 Voiceover:
 {voice_text}
 
 Rules:
-1. Title — strong hook question about the video's MAIN TOPIC/CONCEPT, not just the first sentence
-2. Add 1-2 emojis at the end, before the hashtag
-3. #hashtag(s) MUST come from the video's ACTUAL content: name ONE or TWO key topics actually discussed (2 hashtags if 2 topics are covered, 1 if only 1). NEVER use generic hashtags like #факты, #интересное, #топ, #шортс, #shorts. Do not leave a space before #.
-4. CRITICAL LENGTH BUDGET: the hook question text (before emoji) MUST be SHORT — max 38 characters — because the topic hashtag(s) will be appended at the end. TOTAL title (hook + emoji + hashtags) must NOT exceed 65 characters. Never cut a word in the middle.
-5. Use natural Russian words. NEVER use medical terms (e.g. "тремор", "судорога", "спазм") or weird literal translations.
-6. NEVER name a movie that is not in the voiceover/transcript. If you mention a movie, use its official Russian dub name; if you do NOT know it, keep the English name in guillemets «» — never substitute a different movie."""
+1. Output THREE lines in this exact order, comma-separated, no # symbols, no line labels:
+   - Line 1 — 10-12 EXACT tags: the exact subject/place/object/person names viewers type, official form + English original, plus long-tail phrases from THIS video. (e.g. "марианская впадина", "mariana trench", "глубоководные существа"). Write them as PHRASES of 2-4 words, not single words — viewers search phrases (e.g. "тор без молота", "хела против тора", "мстители судный день финал", "avengers doomsday ending explained").
+   - Line 2 — 10-12 NICHE tags: keywords of this video's field tied to the topic (science/history/space/biology terms that actually apply: "океанология", "батискаф", "тихоокеанский регион").
+   - Line 3 — 4-6 BROAD tags: "интересные факты", "наука", "природа", "история", "facts"
+2. Total 24-30 tags, 350-500 characters INCLUDING commas (YouTube's tag field limit is 500). Fill the field as far as GENUINELY RELEVANT keywords allow — never pad with junk, near-duplicates or made-up words. Most specific first, broadest last — YouTube weighs the first tags more.
+3. Include ONLY real alternative spellings viewers actually type (with/without hyphen, Latin vs Russian, singular/plural) — NEVER invent typos or garbled word forms; every tag must be a correctly spelled real keyword. Single-word tags are allowed only in the BROAD tier.
+4. ONLY names that actually appear in the transcript or are direct aliases of it. Correct official names and spellings.
+5. NEVER use vague abstract concepts (тайна, секрет, знание, судьба, жизнь, смерть, время, учёный, наследие) — no search volume, filtered out automatically.
+6. Spell-check every tag; no typos (only the intentional common variants from rule 3).
 
-TAGS_PROMPT = """Based on this voiceover text, write 15 comma-separated tags.
+Output exactly 3 lines (EXACT / NICHE / BROAD), comma-separated, no labels."""
 
-Voiceover:
-{voice_text}
-
-Rules:
-1. Exactly 15 tags, comma-separated
-2. No # symbols
-3. Mix of Russian and English keywords for search volume
-4. MOST IMPORTANT — every tag must be a SPECIFIC, SEARCHABLE keyword directly tied to THIS video's content. Concrete terms only: names, places, historical events, objects, people, dates. NEVER use vague abstract concepts like "история", "факты", "тайна", "тайны", "знание", "жизнь", "смерть", "время", "учёный", "великие" — a viewer would never search those words, and YouTube cannot match them to this video's content.
-5. Every tag must appear in the voiceover OR be a direct alias of something in it. Do not tag generic terms that fit any facts video.
-
-Write ONLY the tags, one line."""
-
-# Ses (voice ID) uygulamadan .env'deki VOICE_ID_CH2 ile degistirilebilir.
 VOICE_ID = os.environ.get("VOICE_ID_CH2", "M1CSR3PJBsfWU6ZquG3C")
 LANG = "ru"
 CHANNEL_NAME = "Fakt Za 15"

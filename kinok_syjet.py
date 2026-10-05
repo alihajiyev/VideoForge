@@ -44,34 +44,41 @@ Rules:
 
 Write ONLY the voiceover text, no headers or tags."""
 
-TITLE_PROMPT = """Based on this voiceover text, write a YouTube Shorts title.
+TITLE_PROMPT = """Based on this voiceover text, write ONE YouTube Shorts title.
+
+Voiceover:
+{voice_text}
+
+This channel publishes vertical cinema-story Shorts (calm narrator style, no questions anywhere); titles are scored by professional tools (vidIQ), so follow EVERY rule:
+1. ONE hook, ONE promise — a cinematic declarative hook about the video's MAIN TOPIC/CONCEPT, not just the first sentence. Never two claims. NEVER write a question or a question mark.
+2. HOOK IN THE FIRST 2-3 WORDS: the mobile feed shows only ~40 characters, so open with the hook word (Почему / Как / Зачем / Что / Кто / Секрет / Вот / Это).
+3. MAIN KEYWORD EARLY: the movie/character name in official Russian form MUST appear as a PLAIN WORD inside the first 30 characters — not only inside a hashtag.
+4. Hook text (before the emoji) max 40 characters. TOTAL title (hook + 1 emoji + 1-2 hashtags) max 60 characters, hard limit 65. Never cut a word in the middle.
+5. EXACTLY ONE emoji, placed right before the hashtags. Two or more emojis look spammy and dilute the click.
+6. 1-2 hashtags max from the video's ACTUAL content, official Russian form. NEVER generic (#кино, #фильм, #шортс, #shorts, #факты, #марвел). No space before #.
+7. Numbers score extra when the topic naturally has one (year, count, "3 факта").
+8. Concrete, specific Russian: no vague hype ("смотри до конца", "невероятно", "шок"), no ALL-CAPS words, no promise the voiceover does not deliver. NEVER medical terms or weird literal translations.
+9. NEVER name a movie/character that is not in the voiceover. Official Russian dub names only; if unsure, keep the English name in guillemets «» — never substitute a different movie.
+
+Write ONLY the title, one line."""
+
+TAGS_PROMPT = """Based on this voiceover text, write the YouTube tag list for a Russian cinema-story Shorts video.
 
 Voiceover:
 {voice_text}
 
 Rules:
-1. Title — strong hook about the video's MAIN TOPIC/CONCEPT, not just the first sentence
-2. Add 1-2 emojis at the end
-3. ##hashtag(s) MUST come from the video's ACTUAL content: name ONE or TWO key characters/topics actually discussed in the voiceover, in official Russian form (e.g. if Spider-Man vs Green Goblin → "#черный ###главный антагонíst). Use 2 hashtags if the video compares or discusses 2 subjects, 1 hashtag if only 1 main subject. NEVER use generic channel hashtags like ##кино, ##фильм, ##шортс, ##shorts, ##факты. Do not leave a space before #.
-4. CRITICAL LENGTH BUDGET: the hook question text (before emoji) MUST be SHORT — max 38 characters — because the topic hashtag(s) will be appended at the end. TOTAL title (hook + emoji + hashtags) must NOT exceed 65 characters. Never cut a word in the middle.
-5. Use natural Russian words. NEVER use medical terms (e.g. "тремор", "судорога", "спазм") or weird literal translations.
-6. NEVER name a movie that is not in the voiceover/transcript. If you mention a movie, use its official Russian dub name; if you do NOT know it, keep the English name in guillemets «» — never substitute a different movie."""
+1. Output THREE lines in this exact order, comma-separated, no # symbols, no line labels:
+   - Line 1 — 10-12 EXACT tags: exact movie/character names viewers type — official Russian forms + English originals + long-tail phrases from THIS video. (e.g. "мстители судный день", "avengers doomsday", "человек паук новый день"). Write them as PHRASES of 2-4 words, not single words — viewers search phrases (e.g. "тор без молота", "хела против тора", "мстители судный день финал", "avengers doomsday ending explained").
+   - Line 2 — 10-12 NICHE tags: cinema-story keywords tied to this video (character nicknames, actor names, studios, specific objects/places/events from the plot).
+   - Line 3 — 4-6 BROAD tags: "кино", "фильмы", "кино истории", "movie recap"
+2. Total 24-30 tags, 350-500 characters INCLUDING commas (YouTube's tag field limit is 500). Fill the field as far as GENUINELY RELEVANT keywords allow — never pad with junk, near-duplicates or made-up words. Most specific first, broadest last — YouTube weighs the first tags more.
+3. Include ONLY real alternative spellings viewers actually type (with/without hyphen, Latin vs Russian, singular/plural) — NEVER invent typos or garbled word forms; every tag must be a correctly spelled real keyword. Single-word tags are allowed only in the BROAD tier.
+4. ONLY names that actually appear in the transcript or are direct aliases of it. Correct official names ("Avengers Doomsday" not "Avengers Judgement Day" or "Avengers Doom"). NEVER tag a movie that is not mentioned.
+5. NEVER use vague abstract concepts (герой, судьба, наследие, технологии, преемник, будущее, сюжет) — no search volume, filtered out automatically.
+6. Spell-check every tag; no typos (only the intentional common variants from rule 3).
 
-TAGS_PROMPT = """Based on this voiceover text, write 15 comma-separated tags.
-
-Voiceover:
-{voice_text}
-
-Rules:
-1. Exactly 15 tags, comma-separated
-2. No # symbols
-3. Mix of Russian and English keywords for search volume (e.g. "Мстители Судный день", "Avengers Doomsday", "MCU", "Marvel", "УВИ", "инкурсия")
-4. Use correct movie names: "Avengers Doomsday" not "Avengers Judgement Day" or "Avengers Doom".
-5. ONLY use movie names and character names that actually appear in the transcript. NEVER use a movie that is not mentioned in the transcript (e.g. if the transcript is about "Spider-Man: Brand New Day", do NOT tag "Spider-Man: No Way Home").
-6. Spell-check every tag: no typos (e.g. "Секретные войны" not "Секретные Wars" misspelled variants).
-7. MOST IMPORTANT — every tag must be a SPECIFIC, SEARCHABLE keyword directly tied to THIS video's content and this channel's niche (cinema/film stories). Concrete terms only: character names, movie titles, actor names, specific locations/objects/abilities. NEVER use vague abstract concepts like "герой", "солдат", "сердце", "выбор", "технологии", "наследие", "преемник", "будущее" — a viewer would never search those words, and YouTube cannot match them to this video's content.
-
-Write ONLY the tags, one line."""
+Output exactly 3 lines (EXACT / NICHE / BROAD), comma-separated, no labels."""
 
 VOICE_ID = VOICE_ID_KINO_SYJET
 LANG = "ru"

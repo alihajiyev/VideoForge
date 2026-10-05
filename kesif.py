@@ -1046,7 +1046,11 @@ def main():
             "kanal_ad": kanal_ad,
             "tarih": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "toplam": len(results),
-            "gun_sayisi": gun_sayisi,
+            # Plan DOSYASINDA gun sayisi her zaman GERCEKTE bulunan video sayisidir:
+            # 19 istenip 15 bulununca eski kod gun_sayisi=19 yaziyordu; zincir basligi
+            # "19 gunluk" gosterip 15 gun isliyordu ve test tutarliligi kirmizi kaliyordu.
+            "gun_sayisi": len(results),
+            "istenen_gun": gun_sayisi,
             "videolar": [],
         }
         for r in results:
@@ -1065,9 +1069,9 @@ def main():
             })
         with open(PLAN_FILE, "w", encoding="utf-8") as f:
             json.dump(plan, f, indent=2, ensure_ascii=False)
-        print(f"   📅 {gun_sayisi} GUNLUK PLAN yazildi: {PLAN_FILE}")
+        print(f"   📅 {len(results)} GUNLUK PLAN yazildi: {PLAN_FILE}")
         if len(results) < gun_sayisi:
-            print(f"   ⚠️ {gun_sayisi} video bulunamadi, plan {len(results)} video ile olustu.")
+            print(f"   ⚠️ Istenen {gun_sayisi} video, bulunan {len(results)}: plan {len(results)} gun ile olustu.")
 
     # 6) RAPOR — Masaustune HTML (ana bottaki SEO raporu tarzinda)
     html = build_html_report(results, style, own_name, src_links, adaylar)

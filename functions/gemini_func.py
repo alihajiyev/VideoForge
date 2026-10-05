@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from google import genai
 from google.genai import types
-from constants import GEMINI_API_KEYS, GEMINI_MODELS, get_working_model, set_working_model, GENERIC_TITLE_HASHTAGS
+from constants import GEMINI_API_KEYS, GEMINI_MODELS, get_working_model, set_working_model, GENERIC_TITLE_HASHTAGS, GENERIC_TAGS
 from functions.seo_builder import build_seo_html
 
 class GeminiRateLimiter:
@@ -792,95 +792,106 @@ Rules:
     return raw.strip() if raw and not raw.startswith("❌") and len(raw) > 20 else text
 
 
-def fix_length(voice_text, char_limit, lang, channel_name, tam_metin, voice_prompt=None, max_retries=10):
-    """Step 8: Fix character length — Python-only. Too long → delete up to 2 middle sentences, else regenerate.
-    Channel-aware bounds: 1-2. kanal (sabit 500) -> 450-550; ПопкорнФакты (dinamik) -> 0.75x-1.1x."""
-    if questions_banned(channel_name):
-        lower = int(char_limit * 0.75)
-    else:
-        lower = int(char_limit * 0.9)
+def _sentences(text):
+    return [s.strip() for s in re.split(r'(?<=[.!?])\s+', text or "") if s.strip()]
+
+
+def _trim_to_upper(text, upper, max_delete=3):
+    """Deterministik kisaltma: en kisa ORTA cumleleri silip <= upper'a iner.
+    Ilk cumle (kanca) ve son cumle (final sorusu) ASLA silinmez; en az 3 cumle
+    korunur. Silme yetmezse metin degismeden doner (LLM'e tek tur sansi verilir)."""
+    sents = _sentences(text)
+    if len(sents) <= 3:
+        return text
+    removed = 0
+    while len(" ".join(sents)) > upper and removed < max_delete and len(sents) > 3:
+        middle = [(i, s) for i, s in enumerate(sents) if 0 < i < len(sents) - 1]
+        if not middle:
+            break
+        i, _ = min(middle, key=lambda x: len(x[1]))
+        sents.pop(i)
+        removed += 1
+    return " ".join(sents)
+
+
+def fix_length(voice_text, char_limit, lang, channel_name, tam_metin, voice_prompt=None, max_retries=2):
+    """Step 8: Uzunlugu hedefe oturt — DETERMINISTIK ve sinirli.
+
+    Eski davranis: +/-%10 bant icin Gemini'ye 10 kez "su aralikta yaz" diyordu;
+    LLM karakter sayamadigi icin kosular savruluyordu (448 -> 674 -> ... -> 836)
+    ve her video ~10 bos Gemini cagrisi yakiyordu. Yeni kural seti:
+      * bant icinde           -> 0 cagri (degismedi)
+      * hafif kisa (>= 0.75x) -> kabul, 0 cagri (kisa ses zararsiz; ses/video
+        eslesmesi kisaltma tarafinda guvenlidir)
+      * cok kisa              -> TEK genisletme cagrisi; tasarsa mekanik kirp
+      * cok uzun              -> once mekanik cumle silme, sonra TEK yeniden
+        yazma; sonuc asla girdiden uzun olmaz
+    Toplam en fazla ~2 Gemini cagrisi; cikti deterministik."""
+    lower = int(char_limit * 0.75) if questions_banned(channel_name) else int(char_limit * 0.9)
     upper = int(char_limit * 1.1)
     vlen = len(voice_text)
     if lower <= vlen <= upper:
         return voice_text, True
 
-    if vlen < lower:
-        # Too short — regenerate, asking Gemini to stay faithful to the transcript
-        # and cover nearly all of it (target ~75-90% of the original transcript).
-        # The old behavior just accepted the shortened text.
-        print(f"⚠️ [Bulut] Seslendirme {vlen} karakter (hedef ~{char_limit}), çok kısa, yeniden üretiliyor...")
-        expand_prompt = (voice_prompt or "") + (
-            f"\n\nCRITICAL: The text must be between {lower} and {upper} characters. "
-            f"Current version ({vlen} chars) is too short. "
-            f"Retell the transcript faithfully in your own words: keep ALL events in their original order. "
-            f"Condense wording only — do NOT drop whole events or details. "
-            f"NEVER drop the fact that explains WHY a theory or conclusion is plausible — keep that cause/effect detail even if you must shorten other sentences to fit. "
+    if vlen > upper:
+        # 1) Mekanik: en kisa orta cumleleri sil (0 Gemini cagrisi)
+        trimmed = _trim_to_upper(voice_text, upper)
+        if len(trimmed) <= upper:
+            print(f"🔧 [Bulut] Uzunluk fazla ({vlen}→{len(trimmed)}), en kısa orta cümle(ler) silindi.")
+            return trimmed, True
+        if _LAST_HARD_BLOCK:
+            return trimmed, True
+        # 2) Tek yeniden yazma turu (ana mantik odakli)
+        print(f"🔧 [Bulut] Uzunluk çok fazla ({vlen}), ana mantığa odaklanarak tek kez yeniden oluşturuluyor (hedef {char_limit}ch)...")
+        regen_prompt = (voice_prompt or "") + (
+            f"\n\nCRITICAL: The text must be between {int(char_limit*0.7)} and {char_limit} characters. "
+            f"Current version ({vlen} chars) is too long. Do NOT try to list every fact. "
+            f"Focus ONLY on the transcript's MAIN TOPIC and MAIN LOGIC. "
+            f"Cover only the most important facts that support the main point, keeping their ORIGINAL ORDER. "
+            f"Condense or rewrite sentences in your own style as needed, and drop the least important details first. "
+            f"NEVER drop the fact that explains WHY a theory or conclusion is plausible. "
             f"Never break the order of the facts as they appear in the transcript."
         )
-        if "{char_limit}" in expand_prompt:
-            expand_prompt = expand_prompt.replace("{char_limit}", str(char_limit))
-        best = voice_text
-        for _ in range(max_retries):
-            fresh = gemini_uret(f"Original Transcript:\n{tam_metin}", expand_prompt, channel_name, retry_feedback=f"Previous version was {vlen} chars (target {lower}-{upper}). Expand the retelling: keep ALL facts in order, add more detail from the transcript.")
-            if _LAST_HARD_BLOCK:
-                print("🛑 [Bulut] Hard-block: genisletme denemeleri durduruldu, mevcut metinle devam.")
-                break
-            if fresh and not fresh.startswith("❌") and len(fresh) > 20:
-                fresh = fresh.strip()
-                if lower <= len(fresh) <= upper:
-                    return fresh, True
-                if len(fresh) > len(best):
-                    best = fresh
-                print(f"⚠️ [Bulut] Yeniden üretim {len(fresh)}ch, hâlâ istenen aralıkta değil, tekrar deneniyor...")
-        print(f"⚠️ [Bulut] Yeniden üretim hedefe ulaşamadı ({len(best)} chars), en iyi haliyle kabul.")
-        return best, True
+        if "{char_limit}" in regen_prompt:
+            regen_prompt = regen_prompt.replace("{char_limit}", str(char_limit))
+        fresh = gemini_uret(f"Original Transcript:\n{tam_metin}", regen_prompt, channel_name,
+                            retry_feedback=f"Previous version was {vlen} chars (limit {char_limit}). Focus on the main topic, keep fact order, drop least important details.")
+        if fresh and not fresh.startswith("❌") and len(fresh) > 20:
+            fresh = _trim_to_upper(fresh.strip(), upper)
+            if len(fresh) <= upper:
+                print(f"✅ [Bulut] Yeniden yazim hedefe indi ({len(fresh)}ch).")
+                return fresh, True
+            if len(fresh) < len(trimmed):
+                trimmed = fresh
+        print(f"⚠️ [Bulut] Uzunluk hedefe tam inilemedi ({len(trimmed)}ch), en kısa haliyle kabul.")
+        return trimmed, True
 
-    # Too long — try deleting up to 2 middle sentences (length-based fallback)
-    deletions = 0
-    for _ in range(max_retries):
-        vlen = len(voice_text)
-        if vlen <= upper:
-            return voice_text, True
-        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', voice_text) if s.strip()]
-        if len(sentences) < 3:
-            break
-        deletions += 1
-        if deletions > 2:
-            print(f"🔧 [Bulut] Uzunluk çok fazla ({vlen}), ana mantığa odaklanarak yeniden oluşturuluyor (hedef {char_limit}ch)...")
-            regen_prompt = (voice_prompt or "") + (
-                f"\n\nCRITICAL: The text must be between {int(char_limit*0.7)} and {char_limit} characters. "
-                f"Current version ({vlen} chars) is too long. Do NOT try to list every fact. "
-                f"Focus ONLY on the transcript's MAIN TOPIC and MAIN LOGIC. "
-                f"Cover only the most important facts that support the main point, keeping their ORIGINAL ORDER. "
-                f"Condense or rewrite sentences in your own style as needed, and drop the least important details first. "
-                f"NEVER drop the fact that explains WHY a theory or conclusion is plausible — keep that cause/effect detail even if you must shorten other sentences to fit. "
-                f"Never break the order of the facts as they appear in the transcript."
-            )
-            if "{char_limit}" in regen_prompt:
-                regen_prompt = regen_prompt.replace("{char_limit}", str(char_limit))
-            fresh = gemini_uret(f"Original Transcript:\n{tam_metin}", regen_prompt, channel_name, retry_feedback=f"Previous version was {vlen} chars (limit {char_limit}). Focus on the main topic, keep fact order, drop least important details.")
-            if _LAST_HARD_BLOCK:
-                print("🛑 [Bulut] Hard-block: kisaltma denemeleri durduruldu, mevcut metinle devam.")
-                break
-            if fresh and len(fresh) > 20 and len(fresh) < vlen:
-                voice_text = fresh.strip()
-                vlen = len(voice_text)
-                if vlen <= upper:
-                    return voice_text, True
-            print(f"⚠️ [Bulut] Yeniden oluşturma {vlen}ch, hala uzun, mevcut haliyle kabul.")
-            break
-        middle_sentences = [(i, s) for i, s in enumerate(sentences) if 0 < i < len(sentences) - 1]
-        if not middle_sentences:
-            break
-        middle_sentences.sort(key=lambda x: len(x[1]))
-        idx, _ = middle_sentences[0]
-        candidate = " ".join([s for i, s in enumerate(sentences) if i != idx])
-        print(f"🔧 [Bulut] Uzunluk fazla ({vlen}→{len(candidate)}), en kısa orta cümle silindi.")
-        voice_text = candidate
-
-    vlen2 = len(voice_text)
-    if vlen2 > upper:
-        print(f"⚠️ [Bulut] Karakter sınırı sağlanamadı ({vlen2} chars), mevcut haliyle kabul.")
+    # --- Ses metni hedefin ALTINDA ---
+    soft_lower = int(char_limit * 0.75)
+    if vlen >= soft_lower:
+        print(f"ℹ️ [Bulut] Seslendirme {vlen}ch (hedef ~{char_limit}): kısa taraf toleransında kabul edildi.")
+        return voice_text, True
+    print(f"⚠️ [Bulut] Seslendirme {vlen} karakter (hedef ~{char_limit}), çok kısa — tek genişletme turu...")
+    expand_prompt = (voice_prompt or "") + (
+        f"\n\nCRITICAL: The text must be between {lower} and {upper} characters. "
+        f"Current version ({vlen} chars) is too short. "
+        f"Retell the transcript faithfully in your own words: keep ALL events in their original order. "
+        f"Condense wording only — do NOT drop whole events or details. "
+        f"NEVER drop the fact that explains WHY a theory or conclusion is plausible — keep that cause/effect detail even if you must shorten other sentences to fit. "
+        f"Never break the order of the facts as they appear in the transcript."
+    )
+    if "{char_limit}" in expand_prompt:
+        expand_prompt = expand_prompt.replace("{char_limit}", str(lower))
+    if _LAST_HARD_BLOCK:
+        return voice_text, True
+    fresh = gemini_uret(f"Original Transcript:\n{tam_metin}", expand_prompt, channel_name,
+                        retry_feedback=f"Previous version was {vlen} chars (target {lower}-{upper}). Expand the retelling: keep ALL facts in order, add more detail from the transcript.")
+    if fresh and not fresh.startswith("❌") and len(fresh) > 20:
+        fresh = _trim_to_upper(fresh.strip(), upper)
+        if len(fresh) > vlen:
+            print(f"✅ [Bulut] Genişletme sonucu {len(fresh)}ch kabul edildi (hedef bant {lower}-{upper}).")
+            return fresh, True
+    print(f"⚠️ [Bulut] Genişletme yeterli olmadı, mevcut metin korunuyor ({vlen}ch).")
     return voice_text, True
 
 
@@ -943,115 +954,310 @@ def fix_title_hashtags(title_text, tags_text):
     return result
 
 
-def generate_title(voice_text, title_prompt_template, channel_name, max_retries=5):
-    """Generate 3 title options with scores, pick the best, then validate format."""
+# ------------------------------------------------------------------
+# BASLIK + ETIKET — profesyonel Shorts SEO (2026 arastirmasi)
+#  * Shorts baslik denetleyicileri: 40-60 karakter ideal, ilk 2-3 kelime kanca,
+#    anahtar kelime ilk 30 karakterde, 1 emoji, 1-2 hashtag; ALL-CAPS/hype cezasi.
+#  * YouTube etiket alani 500 karakter (virguller dahil). Profesyonel yapi:
+#    "spesifik -> nis -> genel" piramidi, long-tail + yazim varyantlari; alakasiz
+#    etiketler erisimi bozar (silme/yayilma dususu).
+# ------------------------------------------------------------------
+TITLE_MAX_LEN = 65
+EMOJI_RE = re.compile(r'[\U0001F000-\U0010FFFF\u2600-\u27BF]')
+TAG_FIELD_LIMIT = 500
+TAG_MIN_COUNT = 20
+TAG_MIN_TOTAL = 300
+TAG_MAX_ITEM = 60
+
+# Ilk kelime CTR kararini verir: kanca acilislari
+_HOOK_OPENERS = (
+    "почему", "как", "зачем", "что", "кто", "когда", "где", "какой", "какая",
+    "это", "вот", "так", "секрет", "главный", "самый", "все", "никто", "однажды",
+    "представь", "узнай", "смотри", "стоп",
+)
+_TITLE_HYPE = ("шок", "невероятн", "смотри до конца", "вы не поверите", "безумие", "сенсац")
+_CHANNEL_EMOJI = {"kino sekrety": "🔥", "fakt za 15": "🤯", "попкорнфакты": "🎬"}
+
+
+def _title_ai_score(title):
+    """Deterministik Shorts baslik skoru (0-100). Profesyonel Shorts baslik
+    denetleyicilerinin agirlik sirasini taklit eder (uzunluk > kanca acilisi >
+    ozgulluk > emoji/hashtag hijyeni > kelime sayisi). generate_title bunu
+    modelin 1-10 skoruyla birlestirip EN IYI GECERLI adayi secer."""
+    t = (title or "").strip()
+    if not t:
+        return 0
+    score = 0
+    n = len(t)
+    body = EMOJI_RE.sub("", re.sub(r'#\S+', '', t)).strip()
+    body = re.sub(r'\s{2,}', ' ', body)
+    # 1) Uzunluk (22): mobil feed ~40-60 karakter gosterir
+    if 35 <= n <= 60:
+        score += 22
+    elif 30 <= n <= 65:
+        score += 14
+    elif n < 30:
+        score += 6
+    # 2) Kanca acilisi (18)
+    first = re.sub(r'^[«"\'(\s]+', '', body).split(" ")[0].lower() if body else ""
+    if first in _HOOK_OPENERS:
+        score += 18
+    elif body[:1].isupper():
+        score += 6
+    # 3) Bilgi boslugu / soru (8)
+    if "?" in t:
+        score += 8
+    # 4) Ozgulluk: ilk 30 karakterde ozel isim (10)
+    head = body[:30]
+    if re.search(r'\b[А-ЯЁ][а-яё]{2,}', head) or re.search(r'\b[A-Z][a-z]{2,}', head):
+        score += 10
+    # 5) Emoji hijyeni (12): tam 1 ideal
+    e = len(EMOJI_RE.findall(t))
+    score += 12 if e == 1 else (6 if e == 0 else (4 if e == 2 else 0))
+    # 6) Hashtag hijyeni (12): 1-2 ideal
+    h = len(re.findall(r'#\S+', t))
+    score += 12 if 1 <= h <= 2 else (6 if h == 0 else 2)
+    # 7) Kelime sayisi 5-12 (8)
+    w = len(body.split())
+    score += 8 if 5 <= w <= 12 else 3
+    # 8) Hype / ALL-CAPS cezasi (10)
+    caps = [x for x in body.split() if len(x) > 2 and x.isupper()]
+    if len(caps) >= 2:
+        score -= 6
+    if any(k in t.lower() for k in _TITLE_HYPE):
+        score -= 4
+    return max(0, min(100, score))
+
+
+def _title_issues(title):
+    issues = []
+    if not EMOJI_RE.search(title or ""):
+        issues.append("emoji missing")
+    if "#" not in (title or ""):
+        issues.append("hashtag missing")
+    if len(title or "") > TITLE_MAX_LEN:
+        issues.append(f"too long ({len(title)} chars)")
+    return issues
+
+
+def _finalize_title(title, channel_name=""):
+    """0 Gemini cagrisiyla basligi kurala uydur (son sans): tek emoji (yoksa
+    kanal emojisi), hashtag'ler sonda, <= 65 karakter (kuyruktan kelime kirpma),
+    hashtag yoksa basliktaki ozel isimden deterministik hashtag turetir."""
+    t = re.sub(r'\s{2,}', ' ', re.sub(r'\*+', '', (title or "").strip())).strip()
+    if not t:
+        return t
+    found = EMOJI_RE.findall(t)
+    t = re.sub(r'\s{2,}', ' ', EMOJI_RE.sub('', t)).strip()
+    m = re.search(r'((?:\s*#[^\s#]+)+\s*)$', t)
+    hashes = re.findall(r'#[^\s#]+', m.group(1)) if m else []
+    body = (t[:m.start()].strip() if m else t).strip()
+    emoji = found[0] if found else _CHANNEL_EMOJI.get((channel_name or "").strip().lower(), "🔥")
+    if not hashes:
+        words = re.findall(r'[А-ЯЁ][а-яё\-]{2,}', body)
+        for w in (words[1:] + words[:1]):
+            cand = w.lower()
+            if len(cand) >= 3 and cand not in GENERIC_TITLE_HASHTAGS:
+                hashes = ['#' + cand]
+                break
+
+    def build(b, hs, em):
+        parts = [b]
+        if em:
+            parts.append(em)
+        if hs:
+            parts.append(" ".join(hs[:2]))
+        return " ".join(x for x in parts if x).strip()
+
+    result = build(body, hashes, emoji)
+    while len(result) > TITLE_MAX_LEN and len(body.split()) > 3:
+        body = body.rsplit(" ", 1)[0].rstrip(" ,;:—-")
+        result = build(body, hashes, emoji)
+    if len(result) > TITLE_MAX_LEN and hashes:
+        for _ in range(len(hashes)):
+            hashes = hashes[:-1]
+            result = build(body, hashes, emoji)
+            if len(result) <= TITLE_MAX_LEN:
+                break
+    return result
+
+
+def generate_title(voice_text, title_prompt_template, channel_name, max_retries=2):
+    """Baslik uret: her turda 3 aday + model skoru gelir; adaylar Python'un
+    Shorts rubrigiyle puanlanir ve EN IYI GECERLI aday secilir. Gecersiz
+    cikarsa en fazla 2 tur; sonra tek fix_title (eski 5x3 + 10'luk dongu kalkti)."""
     title_sysp = title_prompt_template.format(voice_text=voice_text)
     score_prompt = f"""{title_sysp}
 
-IMPORTANT — Write 3 different title options. Score each 1-10 based on clickability, hook strength, and relevance.
+IMPORTANT — Write 3 different title options. Score each 1-10 for clickability (hook strength, curiosity gap, keyword clarity).
 
 Format:
 1. [Title 1] — Score: X/10
 2. [Title 2] — Score: X/10
 3. [Title 3] — Score: X/10"""
-    for attempt in range(max_retries):
-        raw = gemini_uret(f"Create 3 title options with scores.", score_prompt, channel_name)
-        if not raw:
-            continue
-        # Parse titles and scores
-        candidates = []
-        for line in raw.split("\n"):
-            m = re.match(r'\d+[\.\)]\s*(.+?)\s*[—-]\s*Score:\s*(\d+)/10', line.strip(), re.IGNORECASE)
-            if m:
-                title_text, score = m.group(1).strip(), int(m.group(2))
-                candidates.append((score, title_text))
-        if not candidates:
-            continue
-        # Pick highest-scored
-        candidates.sort(key=lambda x: -x[0])
-        title = candidates[0][1]
-        # Validate format
-        issues = []
-        if not re.search(r'[\U0001F600-\U0010FFFF]', title):
-            issues.append("emoji missing")
-        if "#" not in title:
-            issues.append("hashtag missing")
-        if len(title) > 65:
-            issues.append(f"too long ({len(title)} chars)")
+    best_any, best_any_total = "", -1
+    best_valid, best_valid_total = "", -1
+    for attempt in range(max(1, max_retries)):
+        raw = gemini_uret("Create 3 title options with scores.", score_prompt, channel_name)
+        if raw:
+            for line in raw.split("\n"):
+                m = re.match(r'\d+[\.\)]\s*(.+?)\s*[—-]\s*Score:\s*(\d+)/10', line.strip(), re.IGNORECASE)
+                if not m:
+                    continue
+                cand = re.sub(r'\*+', '', m.group(1)).strip()
+                total = _title_ai_score(cand) + int(m.group(2)) * 3
+                if total > best_any_total:
+                    best_any, best_any_total = cand, total
+                if not _title_issues(cand) and total > best_valid_total:
+                    best_valid, best_valid_total = cand, total
+            if best_valid:
+                return best_valid, True
+        print(f"⚠️ [Bulut] Başlık adayları kural dışı, tur tekrar ediliyor... ({attempt+1}/{max_retries})")
+    if best_any:
+        return fix_title(best_any, channel_name)
+    return "", False
+
+
+def fix_title(title_text, channel_name, max_retries=2):
+    """Baslik bicim sorunlarini duzelt: en fazla 2 LLM turu, sonra DETERMINISTIK
+    bitirme (tek emoji + hashtag + <=65 karakter). Eskiden 10 tura kadar
+    donuyordu; artik tur sinirli ve cikti garanti."""
+    title_text = re.sub(r'\*+', '', (title_text or "").strip())
+    for attempt in range(max(1, max_retries)):
+        issues = _title_issues(title_text)
         if not issues:
-            return title, True
-        print(f"⚠️ [Bulut] Başlık sorunları: {', '.join(issues)}, yeniden deneniyor... ({attempt+1}/{max_retries})")
-    return title if candidates else "", False
-
-
-def fix_title(title_text, channel_name, max_retries=10):
-    """Step 8: Fix emoji + hashtag on existing title. Keeps trying until passes."""
-    for attempt in range(max_retries):
-        has_emoji = bool(re.search(r'[\U0001F600-\U0010FFFF]', title_text))
-        has_hash = "#" in title_text
-        if has_emoji and has_hash and len(title_text) <= 65:
             return title_text, True
-        issues = []
-        if not has_emoji: issues.append("Add 1-2 relevant emojis")
-        if not has_hash: issues.append("Add a #hashtag at the end")
-        if len(title_text) > 65: issues.append("Shorten to max 65 chars")
         print(f"🔧 [Bulut] Başlık düzeltiliyor: {', '.join(issues)}... ({attempt+1}/{max_retries})")
         fix_prompt = f"""Fix this YouTube Shorts title: {', '.join(issues)}.
-Keep the same topic and hook question, just {'add emojis' if not has_emoji else ''}{' and ' if not has_emoji and not has_hash else ''}{'add a #hashtag' if not has_hash else ''}. Max 65 chars.
+Keep the same topic and hook. Rules: hook in the first 2-3 words, the topic keyword as a plain word,
+exactly ONE emoji before the hashtags, 1-2 topic hashtags, max {TITLE_MAX_LEN} characters total.
 
 Current title: {title_text}
 
 Output ONLY the fixed title, one line."""
         raw = gemini_uret(f"Fix title: {title_text[:60]}", fix_prompt, channel_name)
         if raw and not raw.startswith("❌"):
-            title_text = re.sub(r'\*+', '', raw).strip()
-    return title_text, False
+            cleaned = re.sub(r'\*+', '', raw).strip()
+            if cleaned:
+                title_text = cleaned
+    return _finalize_title(title_text, channel_name), True
 
 
-def generate_tags(voice_text, tags_prompt_template, channel_name, max_retries=10):
-    """Step 9: Generate tags from voiceover. Keeps trying until perfect."""
+def _clean_tags(raw):
+    """Etiket listesini deterministik temizle: # yok, kucuk harf, tekrarsiz,
+    GENERIC_TAGS (genel/soyut kelimeler) atilir, cumle gibi uzun etiketler atilir."""
+    if not raw:
+        return ""
+    out, seen = [], set()
+    for it in re.split(r'[,\n;]+', raw):
+        tag = re.sub(r'\s{2,}', ' ', (it or "").strip().strip('"').strip("'")).strip()
+        tag = tag.lstrip('#').strip().strip('.').strip()
+        if not tag:
+            continue
+        key = tag.lower()
+        if key in seen or key in GENERIC_TAGS:
+            continue
+        if len(tag) < 3 or len(tag) > TAG_MAX_ITEM:
+            continue
+        if not re.search(r'[а-яёa-z0-9]', key):
+            continue
+        if ":" in tag:
+            # Baslik/etiket satiri ("Line 1:", "Here are the tags:") etiket degildir
+            continue
+        if len(key.split()) > 8:
+            # Cumle gibi etiketler arama terimi degildir (gercek long-tail 4-6 kelime olabilir)
+            continue
+        seen.add(key)
+        out.append(key)
+    return ", ".join(out)
+
+
+# Modelin ekleyebilecegi katman basliklari: "Line 1 — 10-12 EXACT tags:", "EXACT:",
+# "ТОЧНЫЕ ТЕГИ:" ... Etiket listesine sizmamalari icin deterministik ayiklama.
+_TIER_ETIKET_RE = re.compile(
+    r'^\s*(?:line\s*\d{1,2}\s*[—\-–:.]?\s*)?'
+    r'\(?\s*\d{0,3}\s*(?:[-–—]\s*\d{1,3})?\s*[\.\):]?\s*'
+    r'(?:EXACT|NICHE|BROAD|LONG[- ]?TAIL|ТОЧНЫЕ|НИШЕВЫЕ|ШИРОКИЕ)\s*(?:TAGS?|ТЕГИ)?\s*[\-–—:]\s*',
+    re.IGNORECASE)
+
+
+def _tierle_ayir(raw):
+    """Modelin 3 satirlik katmanli etiket ciktisini tek listeye cevir (sira korunur):
+    Line 1 EXACT -> Line 2 NICHE -> Line 3 BROAD. YouTube ilk etiketlere daha cok
+    agirlik verdigi icin sira onemlidir. Tek satir gelirse klasik temizlik uygulanir."""
+    lines = [l.strip() for l in (raw or "").splitlines() if l.strip()]
+    if not lines:
+        return ""
+    parcalar = []
+    for line in lines:
+        line = _TIER_ETIKET_RE.sub("", line).strip()
+        if not line or line.endswith(":"):
+            continue
+        parcalar.append(line)
+    return _clean_tags(", ".join(parcalar))
+
+
+def _fit_tag_field(tags_text, limit=TAG_FIELD_LIMIT, min_count=12):
+    """500 karakter alan sinirini asarsa SONDAKI (en genel) etiketlerden kirp."""
+    items = [t.strip() for t in (tags_text or "").split(",") if t.strip()]
+    while len(", ".join(items)) > limit and len(items) > min_count:
+        items.pop()
+    return ", ".join(items)
+
+
+def _tag_issues(tags_text):
+    """Etiket alani denetimi: YouTube alani 500 karakter (virguller dahil)."""
+    if not tags_text:
+        return ["empty"]
+    issues = []
+    if "#" in tags_text:
+        issues.append("no # symbols")
+    count = len([t for t in tags_text.split(",") if t.strip()])
+    if count < TAG_MIN_COUNT:
+        issues.append(f"only {count} tags (need {TAG_MIN_COUNT}+)")
+    total = len(tags_text)
+    if total > TAG_FIELD_LIMIT:
+        issues.append(f"{total} chars > {TAG_FIELD_LIMIT} field limit")
+    if total < TAG_MIN_TOTAL:
+        issues.append(f"only {total} chars (fill the {TAG_FIELD_LIMIT}-char field)")
+    return issues
+
+
+def generate_tags(voice_text, tags_prompt_template, channel_name, max_retries=2):
+    """Etiket uret: profesyonel piramit promptu (spesifik -> nis -> genel) +
+    500 karakter alan siniri. En fazla 2 tur; sonra deterministik temiz liste
+    dondurulur (eski 10 + 10 turluk dongu kaldirildi)."""
     tags_sysp = tags_prompt_template.format(voice_text=voice_text)
-    for attempt in range(max_retries):
-        raw = gemini_uret(f"Create tags for this voiceover.", tags_sysp, channel_name)
-        tags = raw.strip() if raw else ""
-        issues = []
-        if "#" in tags:
-            issues.append("no # symbols")
-        count = len([t for t in tags.split(",") if t.strip()]) if tags else 0
-        if "," not in tags:
-            issues.append("comma-separated")
-        if count < 10:
-            issues.append(f"only {count}/15 tags")
+    tags = ""
+    for attempt in range(max(1, max_retries)):
+        raw = gemini_uret("Create tags for this voiceover.", tags_sysp, channel_name)
+        tags = _fit_tag_field(_tierle_ayir(raw.strip() if raw else ""))
+        issues = _tag_issues(tags)
         if not issues:
-            if "," not in tags and " " in tags:
-                tags = ", ".join(tags.split())
             return tags, True
         print(f"⚠️ [Bulut] Etiket sorunları: {', '.join(issues)}, yeniden deneniyor... ({attempt+1}/{max_retries})")
-    if "," not in tags and " " in tags:
-        tags = ", ".join(tags.split())
     return tags, False
 
 
-def fix_tags(tags_text, channel_name, max_retries=10):
-    """Step 10: Fix tags format issues. Keeps trying until passes."""
-    for attempt in range(max_retries):
-        issues = []
-        if "#" in tags_text: issues.append("no # symbols")
-        count = len([t for t in tags_text.split(",") if t.strip()]) if tags_text else 0
-        if "," not in tags_text: issues.append("comma-separated")
-        if count < 10: issues.append(f"only {count} tags, need ~15")
-        if not issues:
-            return tags_text, True
-        print(f"🔧 [Bulut] Etiketler düzeltiliyor: {', '.join(issues)}... ({attempt+1}/{max_retries})")
-        fix_prompt = f"""Fix these tags: {', '.join(issues)}.
+def fix_tags(tags_text, channel_name, max_retries=1):
+    """Etiket bicim sorunlarini TEK turda duzelt, sonra deterministik bitir."""
+    issues = _tag_issues(tags_text)
+    if not issues:
+        return tags_text, True
+    print(f"🔧 [Bulut] Etiket düzeltiliyor: {', '.join(issues)}...")
+    fix_prompt = f"""Fix these YouTube tags: {', '.join(issues)}.
+Rules: KEEP every existing tag (fix, do not replace), then ADD more 2-4 word long-tail keyword phrases
+about the same topic until the list has 24-30 tags and the whole text is 350-{TAG_FIELD_LIMIT} characters
+(commas and spaces count). Order: most specific first, broadest last. Russian + English, no # symbols,
+no vague abstract words, no near-duplicate tags.
 Current tags: {tags_text}
-Output exactly 15 comma-separated tags, no # symbols, one line."""
-        raw = gemini_uret(f"Fix tags", fix_prompt, channel_name)
-        if raw and not raw.startswith("❌"):
-            tags_text = re.sub(r'\*+#', '', raw).strip()
-            if "," not in tags_text and " " in tags_text:
-                tags_text = ", ".join(tags_text.split())
-    return tags_text, False
+Output exactly 3 lines (EXACT / NICHE / BROAD), comma-separated, no labels."""
+    raw = gemini_uret("Fix tags", fix_prompt, channel_name)
+    if raw and not raw.startswith("❌"):
+        fixed = _fit_tag_field(_tierle_ayir(raw.strip()))
+        if fixed:
+            tags_text = fixed
+    return tags_text, True
 
 
 def translate_to_turkish(text, text_label, channel_name):
@@ -1079,33 +1285,49 @@ Rules:
     return best if best else text
 
 
+DEFAULT_TITLE_PROMPT = """Based on this voiceover text, write ONE YouTube Shorts title.
+
+Voiceover:
+{voice_text}
+
+Rules (Shorts mobil feed'e gore — hepsi zorunlu):
+1. ONE hook, ONE promise — a strong hook about the video's MAIN TOPIC/CONCEPT, not just the first sentence.
+2. HOOK IN THE FIRST 2-3 WORDS: mobile feed shows only ~40 characters, so open with the hook word (Почему / Как / Зачем / Что / Кто / Секрет / Вот / Это).
+3. MAIN KEYWORD EARLY: the main topic name MUST appear as a PLAIN WORD inside the first 30 characters (not only inside a hashtag).
+4. Hook text (before the emoji) max 40 characters. TOTAL title (hook + 1 emoji + 1-2 hashtags) max 60 characters, hard limit 65. Never cut a word in the middle.
+5. EXACTLY ONE emoji, placed right before the hashtags.
+6. 1-2 hashtags max, taken from the video's ACTUAL content. NEVER generic (#кино, #шортс, #shorts, #факты, #марвел). No space before #.
+7. Numbers score extra when the topic naturally has one (year, count, "3 факта").
+8. Concrete and specific: no vague hype ("смотри до конца", "невероятно", "шок"), no ALL-CAPS words, no promise the voiceover does not deliver.
+9. NEVER name a movie/character that is not in the voiceover; use official Russian dub names, «English» in guillemets when unsure.
+
+Write ONLY the title, one line."""
+
+DEFAULT_TAGS_PROMPT = """Based on this voiceover text, write the YouTube tag list for a Russian Shorts video.
+
+Voiceover:
+{voice_text}
+
+Rules:
+1. Output THREE lines in this exact order, comma-separated, no # symbols, no line labels:
+   - Line 1 — 10-12 EXACT tags: exact topic names viewers type (official Russian form + English original) and long-tail phrases from THIS video. Write them as PHRASES of 2-4 words, not single words — viewers search phrases (e.g. "тор без молота", "хела против тора", "мстители судный день финал", "avengers doomsday ending explained").
+   - Line 2 — 10-12 NICHE tags: the niche keywords tied to this video's sub-topic (character nicknames, actor names, specific objects/abilities/places/events).
+   - Line 3 — 4-6 BROAD tags: e.g. "марвел", "mcu", "marvel", "кино новости"
+2. Total 24-30 tags, 350-500 characters INCLUDING commas (YouTube's tag field limit is 500). Fill the field as far as GENUINELY RELEVANT keywords allow — never pad with junk, near-duplicates or made-up words. Most specific first, broadest last — YouTube weighs the first tags more.
+3. Include ONLY real alternative spellings viewers actually type (with/without hyphen, Latin vs Russian, singular/plural) — NEVER invent typos or garbled word forms; every tag must be a correctly spelled real keyword. Single-word tags are allowed only in the BROAD tier.
+4. ONLY real names/topics that appear in the voiceover or are direct aliases of it. Correct official names ("Avengers Doomsday" not "Avengers Judgement Day").
+5. NEVER use vague abstract concepts (герой, судьба, наследие, технологии) — no search volume, filtered out automatically.
+6. Spell every tag correctly (except intentional common variants).
+
+Output exactly 3 lines (EXACT / NICHE / BROAD), comma-separated, no labels."""
+
+
 def run_voice_pipeline(tam_metin, raw_title, voice_prompt, title_prompt_template, tags_prompt_template, channel_name, lang, char_limit):
     """Main pipeline: sequential decomposed steps. Each rule must pass before next starts."""
     if title_prompt_template is None:
-        title_prompt_template = """Based on this voiceover text, write a YouTube Shorts title.
-
-Voiceover:
-{voice_text}
-
-Rules:
-1. Title must be a question related to the first sentence
-2. Add 1-2 emojis at the end, before the hashtag
-3. #hashtag(s) MUST come from the video's actual content: name ONE or TWO key characters/topics actually discussed (2 hashtags if 2 subjects are compared/discussed, 1 if only 1). NEVER use generic hashtags like #марвел, #кино, #шортс, #facts, #shorts.
-4. CRITICAL LENGTH BUDGET: the hook question text (before emoji) MUST be SHORT — max 38 characters — because the topic hashtag(s) will be appended at the end. TOTAL title (hook + emoji + hashtags) must NOT exceed 65 characters. Never cut a word in the middle.
-
-Write ONLY the title, one line."""
+        title_prompt_template = DEFAULT_TITLE_PROMPT
     if tags_prompt_template is None:
-        tags_prompt_template = """Based on this voiceover text, write 15 comma-separated tags.
-
-Voiceover:
-{voice_text}
-
-Rules:
-1. Exactly 15 tags, comma-separated
-2. No # symbols
-3. Only relevant tags — mix of Russian and English keywords for search volume (e.g. "Мстители Судный день", "Avengers Doomsday", "MCU", "Marvel")
-
-Write ONLY the tags, one line."""
+        tags_prompt_template = DEFAULT_TAGS_PROMPT
     lang_label = {"ru": "Russian", "de": "German"}.get(lang, "Russian")
     t_key = f"title_{lang}"
     v_key = f"voice_{lang}"
@@ -1216,30 +1438,23 @@ Write ONLY the tags, one line."""
     voice_text, _ = fix_length(voice_text, char_limit, lang, channel_name, tam_metin, voice_prompt=voice_prompt)
     print("✅ [Bulut] Uzunluk OK")
 
-    # === STEP 9: GENERATE TITLE (Gemini verified, loops until pass) ===
+    # === STEP 9: GENERATE TITLE (tek gecis; deterministik bitirme) ===
+    # Eski hali: 8 tur x 5 deneme + 10 turluk fix dongusu. Simdi: generate_title
+    # en fazla 2 tur (3 aday) + gerekirse TEK fix_title; fix_title kendi icinde
+    # 2 LLM turu ile sinirli, sonra 0 cagriyla kurallara uydurur.
     print("📰 [Baslik olusturuluyor...")
-    for _ in range(MAX_VERIFY_RETRIES):
-        title_text, title_ok = generate_title(voice_text, title_prompt_template, channel_name)
-        if not title_ok:
-            title_text, title_ok = fix_title(title_text, channel_name)
-        if title_ok:
-            break
-        print("🔁 [Bulut] Baslik basarisiz, yeniden deneniyor...")
-    else:
-        print("⚠️ [Bulut] Baslik max deneme, mevcut haliyle devam.")
+    title_text, title_ok = generate_title(voice_text, title_prompt_template, channel_name)
+    if not title_ok:
+        print("⚠️ [Bulut] Baslik uretilemedi, son duzeltme turu...")
+        title_text, _ = fix_title(title_text, channel_name)
     print("✅ [Bulut] Baslik OK")
 
-    # === STEP 10: GENERATE TAGS (Gemini verified, loops until pass) ===
+    # === STEP 10: GENERATE TAGS (tek gecis; 500 karakter alani) ===
     print("🏷️ [Bulut] Etiketler olusturuluyor...")
-    for _ in range(MAX_VERIFY_RETRIES):
-        tags_text, tags_ok = generate_tags(voice_text, tags_prompt_template, channel_name)
-        if not tags_ok:
-            tags_text, tags_ok = fix_tags(tags_text, channel_name)
-        if tags_ok:
-            break
-        print("🔁 [Bulut] Etiketler basarisiz, yeniden deneniyor...")
-    else:
-        print("⚠️ [Bulut] Etiketler max deneme, mevcut haliyle devam.")
+    tags_text, tags_ok = generate_tags(voice_text, tags_prompt_template, channel_name)
+    if not tags_ok:
+        print("⚠️ [Bulut] Etiket formati tam tutmadi, tek duzeltme turu...")
+        tags_text, _ = fix_tags(tags_text, channel_name)
     print("✅ [Bulut] Etiketler OK")
 
     # Derive the title's hashtag(s) from the video's main topics in the generated tags

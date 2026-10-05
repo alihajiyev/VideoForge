@@ -102,9 +102,20 @@ for chn, betik in haftalik_islet.CHN_SCRIPT.items():
 if os.path.exists("haftalik_plan.json"):
     plan = json.loads(oku("haftalik_plan.json"))
     videolar = plan.get("videolar") or []
-    kontrol("Gercek plan gun sayisi ile video sayisi tutarli",
-            int(plan.get("gun_sayisi") or 0) == len(videolar) and int(plan.get("toplam") or 0) == len(videolar),
-            f"gun_sayisi={plan.get('gun_sayisi')} toplam={plan.get('toplam')} video={len(videolar)}")
+    _plan_tutarli = (int(plan.get("gun_sayisi") or 0) == len(videolar)
+                     and int(plan.get("toplam") or 0) == len(videolar))
+    if _plan_tutarli:
+        kontrol("Gercek plan gun sayisi ile video sayisi tutarli", True,
+                f"gun_sayisi={plan.get('gun_sayisi')} video={len(videolar)}")
+    elif "istenen_gun" not in plan:
+        # Eski surumle yazilmis plan dosyasi (gun_sayisi=istenen, video=bulunan).
+        # Yeni kesif kosusunda dosya kendiliginden duzelir; kodun yazimi dogrulanir.
+        kontrol("Plan yazimi kodda tutarli: gun_sayisi = bulunan video sayisi",
+                '"gun_sayisi": len(results)' in oku("kesif.py"),
+                f"eski plan dosyasi (gun_sayisi={plan.get('gun_sayisi')}, video={len(videolar)})")
+    else:
+        kontrol("Gercek plan gun sayisi ile video sayisi tutarli", False,
+                f"gun_sayisi={plan.get('gun_sayisi')} toplam={plan.get('toplam')} video={len(videolar)}")
     kontrol("Plan zincir icin kanal ve ad tasiyor", bool(plan.get("chn")) and bool(plan.get("kanal_ad")), f"chn={plan.get('chn')} / {plan.get('kanal_ad')}")
 else:
     kontrol("Gerçek plan dosyasi var", False, "haftalik_plan.json bulunamadi")
@@ -674,6 +685,162 @@ if _font and _ffmpeg_var and _cv2_var:
             kontrol("Kapak 1080x1920 (9:16) boyutunda", _boyut == (1080, 1920), str(_boyut))
 else:
     print("  NOT   ffmpeg/cv2/font bulunamadi, kapak uctan uca testi atlandi.")
+
+# --------------------------------------------------------------------------
+bolum("P) UZUNLUK DONGUSU + BASLIK/ETIKET: deterministik Shorts SEO (2026)")
+_gf = __import__("functions.gemini_func", fromlist=["gemini_func"])
+
+
+# Kontrollu uzunlukta Rusca metin uret (ag YOK; Gemini stub'lanir)
+def _cumle(boy, son="."):
+    n = max(1, (int(boy) - 1) // 5)
+    return ("тест " * n).strip() + son
+
+
+def _metin(boylar):
+    return " ".join(_cumle(b) for b in boylar)
+
+
+_gemini_gercek = _gf.gemini_uret
+_gemini_cevaplar = []
+_gemini_cagri = {"n": 0}
+
+
+def _sahte_gemini(input_text, system_prompt, channel_name, retry_feedback=None, json_mode=False):
+    _gemini_cagri["n"] += 1
+    if _gemini_cevaplar:
+        return _gemini_cevaplar.pop(0)
+    return "❌ sahte hata"
+
+
+_gf.gemini_uret = _sahte_gemini
+try:
+    # 1) Kullanicinin GERCEK vakasi: hedefin ~%10 altinda metin (448ch/500)
+    _v448 = _metin([148, 148, 148])
+    kontrol("Test senaryosu kullanicinin vakasi (hedef bandin ~%10 alti)",
+            375 <= len(_v448) < 450, f"{len(_v448)}ch")
+    _gemini_cagri["n"] = 0
+    _sonuc, _ = _gf.fix_length(_v448, 500, "ru", "Kino Sekrety", "transcript")
+    kontrol("Kisa-tolerans: metin korunur, 0 Gemini cagrisi (eski 10 tur savrulmasi bitti)",
+            _gemini_cagri["n"] == 0 and _sonuc == _v448, f"cagri={_gemini_cagri['n']}, {len(_sonuc)}ch")
+
+    # 2) Cok kisa (300ch): TEK genisletme cagrisi, tasan sonuc mekanik kirpilir
+    _v300 = _metin([100, 100, 100])
+    _gemini_cagri["n"] = 0
+    _gemini_cevaplar[:] = [_metin([200, 200, 200, 200])]
+    _sonuc, _ = _gf.fix_length(_v300, 500, "ru", "Kino Sekrety", "transcript")
+    kontrol("Cok kisa metin: en fazla 1 Gemini cagrisi",
+            _gemini_cagri["n"] <= 1, f"cagri={_gemini_cagri['n']}")
+    kontrol("Tasan genisletme mekanik kirpildi (hedefe yakin, <= 1.2x) ve uzadi",
+            len(_sonuc) <= 600 and len(_sonuc) > len(_v300), f"{len(_sonuc)}ch")
+
+    # 3) Cok uzun (900ch): 0 Gemini cagrisi, en kisa orta cumleler silinir
+    _v900 = _metin([150, 150, 150, 150, 150, 150])
+    _gemini_cagri["n"] = 0
+    _sonuc, _ = _gf.fix_length(_v900, 500, "ru", "Kino Sekrety", "transcript")
+    kontrol("Cok uzun metin 0 cagriyla hedefe indi",
+            _gemini_cagri["n"] == 0 and len(_sonuc) <= 550, f"cagri={_gemini_cagri['n']}, {len(_sonuc)}ch")
+
+    # 4) Tek cumle + uzun: mekanik silme yapilamaz -> tam 1 LLM turu
+    _gemini_cagri["n"] = 0
+    _gemini_cevaplar[:] = [_metin([175, 175, 175, 175])]
+    _sonuc, _ = _gf.fix_length(_cumle(900), 500, "ru", "Kino Sekrety", "transcript")
+    kontrol("Tek cumlede tek yeniden yazma turu, sonuc <= 550ch",
+            _gemini_cagri["n"] == 1 and len(_sonuc) <= 550, f"cagri={_gemini_cagri['n']}, {len(_sonuc)}ch")
+
+    # 5) Kirpma ilk (kanca) ve son (final sorusu) cumleye dokunmaz
+    _bes = [_cumle(300), _cumle(60, "?"), _cumle(60, "?"), _cumle(60, "?"), _cumle(300, "?")]
+    _kirp = _gf._trim_to_upper(" ".join(_bes), 400)
+    kontrol("Kirpma ilk ve son cumleyi korur",
+            _kirp.startswith(_bes[0]) and _kirp.endswith(_bes[-1]) and len(_kirp) < sum(len(x) for x in _bes) + 4)
+
+    # 6) Shorts baslik rubrigi
+    _iyi = "Почему Тор потерял Мьёльнир в «Рагнарёке»? 🔥 #тор"
+    _kotu = ("ИНТЕРЕСНЫЙ И НЕВЕРОЯТНЫЙ ФИЛЬМ ПРО ТОРА И ПРО ТО ЧТО БЫЛО ДАЛЬШЕ "
+             "СО МНОГИМИ СПОЙЛЕРАМИ И ПОДРОБНОСТЯМИ")
+    kontrol("Shorts rubrigi iyi basligi >=60 puanliyor",
+            _gf._title_ai_score(_iyi) >= 60, str(_gf._title_ai_score(_iyi)))
+    kontrol("Rubrik uzun/ALL-CAPS basligi belirgin sekilde cezalandiriyor",
+            _gf._title_ai_score(_iyi) > _gf._title_ai_score(_kotu) + 20,
+            f"{_gf._title_ai_score(_iyi)} vs {_gf._title_ai_score(_kotu)}")
+    kontrol("Iyi baslik bicim denetiminden geciyor",
+            _gf._title_issues(_iyi) == [], str(_gf._title_issues(_iyi)))
+
+    # 7) 3 aday arasindan GECERLI olani secilir (model skoru yuksek gecersiz degil)
+    _adaylar = ("1. Очень длинный и совершенно непригодный заголовок без нужных знаков который точно не пройдет — Score: 10/10\n"
+                "2. Почему Тор потерял молот? 🔥 #тор — Score: 7/10\n"
+                "3. Коротко — Score: 2/10\n")
+    _gemini_cagri["n"] = 0
+    _gemini_cevaplar[:] = [_adaylar, _adaylar]
+    _baslik, _ok2 = _gf.generate_title("ses", _gf.DEFAULT_TITLE_PROMPT, "Kino Sekrety")
+    kontrol("generate_title gecerli adayi secer (tek tur, dogru aday)",
+            _ok2 is True and _baslik == "Почему Тор потерял молот? 🔥 #тор" and _gemini_cagri["n"] == 1,
+            f"{_baslik!r} cagri={_gemini_cagri['n']}")
+
+    # 8) fix_title: LLM iki kez bos donse de emoji + <=65 karakter garanti
+    _gemini_cagri["n"] = 0
+    _gemini_cevaplar[:] = ["", ""]
+    _baslik2, _ok3 = _gf.fix_title("Секрет Тора который изменил всё", "Kino Sekrety")
+    kontrol("fix_title deterministik bitirir: emoji var, <=65 karakter",
+            _ok3 is True and bool(_gf.EMOJI_RE.search(_baslik2)) and len(_baslik2) <= 65,
+            f"{_baslik2!r} ({len(_baslik2)}ch)")
+    kontrol("fix_title en fazla 2 LLM turu (eski 10 tur kalkti)",
+            _gemini_cagri["n"] == 2, str(_gemini_cagri["n"]))
+
+    # 9) Etiketler: 500 karakter alani + temizlik (genel kelime/tekrar/# temizligi)
+    _etik_raw = ", ".join(
+        ["#мстители судный день", "avengers doomsday", "мстители судный день"]
+        + ["интересные факты про кино номер %d" % i for i in range(30)]
+        + ["#герой", "судьба"]
+    )
+    _t = _gf._fit_tag_field(_gf._clean_tags(_etik_raw))
+    kontrol("Etiket alani 500 karakter sinirini asmiyor",
+            len(_t) <= _gf.TAG_FIELD_LIMIT, f"{len(_t)}ch")
+    kontrol("Temizlik: # yok, tekrar yok, genel kelimeler atildi",
+            "#" not in _t and "герой" not in _t and "судьба" not in _t
+            and _t.count("мстители судный день") == 1)
+    kontrol("Tek etiket sayisi korunuyor (>=12)",
+            len([x for x in _t.split(",") if x.strip()]) >= 12)
+    _guzel = ", ".join("ключ слово %d" % i for i in range(28))
+    kontrol("Dolu ve gecerli etiket listesi denetimden geciyor",
+            _gf._tag_issues(_guzel) == [], str(_gf._tag_issues(_guzel)))
+    _katmanli = ("Line 1 — 10-12 EXACT tags: тор без молота, тор против хелы, thor vs hela\n"
+                 "EXACT: мьёльнир тора, хела разбивает мьёльнир\n"
+                 "BROAD: марвел, marvel, mcu, кино новости")
+    _ta = _gf._tierle_ayir(_katmanli)
+    kontrol("Katmanli cikti tek listeye cevriliyor (etiket/baslik satirlari ayiklanir)",
+            _ta.startswith("тор без молота") and _ta.endswith("кино новости")
+            and ":" not in _ta and "Line" not in _ta and "#" not in _ta, _ta[:80])
+    kontrol("Katmanli ceviri sirasi korunuyor (EXACT -> NICHE -> BROAD)",
+            _gf._tierle_ayir(_katmanli).split(", ")[0] == "тор без молота")
+    _gemini_cagri["n"] = 0
+    _gemini_cevaplar[:] = [_guzel]
+    _et, _et_ok = _gf.generate_tags("ses", _gf.DEFAULT_TAGS_PROMPT, "Fakt Za 15")
+    kontrol("generate_tags tek cagride dolu liste dondurdu",
+            _et_ok is True and _gemini_cagri["n"] == 1
+            and _gf.TAG_MIN_TOTAL <= len(_et) <= _gf.TAG_FIELD_LIMIT,
+            f"{len(_et)}ch, cagri={_gemini_cagri['n']}")
+finally:
+    _gf.gemini_uret = _gemini_gercek
+
+# Prompt kaynaklari: uc kanal da yeni Shorts kurallarini tasiyor
+for _kanal_dosya in ("kinosekrety.py", "faktza15.py", "kinok_syjet.py"):
+    _kanal_kaynak = oku(_kanal_dosya)
+    kontrol(f"{_kanal_dosya}: baslik kurallari (kanca + tek emoji) yazili",
+            "HOOK IN THE FIRST 2-3 WORDS" in _kanal_kaynak and "EXACTLY ONE emoji" in _kanal_kaynak)
+    kontrol(f"{_kanal_dosya}: etiket 3 katmanli cikti + 500 karakter siniri yazili",
+            "Output THREE lines" in _kanal_kaynak and "tag field limit is 500" in _kanal_kaynak
+            and "EXACT" in _kanal_kaynak and "BROAD" in _kanal_kaynak)
+_kjs = oku("kinok_syjet.py")
+kontrol("kinok_syjet: bozuk '##hashtag' ve 'антагон' metni temizlendi",
+        "##" not in _kjs and "антагон" not in _kjs)
+kontrol("Varsayilan promptlar da yeni kurallari tasiyor",
+        "tag field limit is 500" in _gf.DEFAULT_TAGS_PROMPT
+        and "HOOK IN THE FIRST 2-3 WORDS" in _gf.DEFAULT_TITLE_PROMPT)
+kontrol("Eski uzunluk savrulmasi kodda kalmadi ('en iyi haliyle kabul' yok)",
+        "en iyi haliyle kabul" not in gem_kaynak)
+kontrol("Baslik/etiket 8+10 turluk ic ice donguleri kaldirildi",
+        "Baslik max deneme" not in gem_kaynak and "Etiketler max deneme" not in gem_kaynak)
 
 # --------------------------------------------------------------------------
 for y in temizlenecek:
