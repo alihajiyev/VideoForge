@@ -79,8 +79,50 @@ cd desktop
 npm install
 npm run dev            # gelistirme
 npm run package        # Windows kurulum + portable exe
-npm run test:smoke     # 147 kontrol, uctan uca test
+npm run test:smoke     # 297 kontrol, uctan uca test (Electron ana sureci)
+npm run test:bot       # 269 kontrol, Python tarafi (kesif/zincir/QA/performans)
 ```
+
+## Performans geri bildirimi (opsiyonel, salt-okuma)
+
+Bot, urettigi videolarin algoritmada **neyin tuttugunu** artik okuyabiliyor. Bunun icin API,
+OAuth veya yukleme GEREKMEZ (shadowban riski yok):
+
+1. YouTube Studio > **Icerik** sayfasi > **Disa aktar** (CSV) ile kendi kanalinin verisini indir.
+2. `.csv` dosyalarini `VideoForge/performans_csv/` klasorune birak (kanal bazli ayirmak icin
+   `performans_csv/kanal1/`, `kanal2/`, `kanal3/`). Hem Ingilizce hem Turkce Studio basliklari okunur.
+3. Bir kez calistir: `py -3 functions/performans.py`
+
+Bu adim `performans.json` uretir: video bazli izlenme/CTR/izlenme yuzdesi + **kazanilan kaliplar**
+(kazanan videolarin basliklarinda gecip kaybedenlerde gecmeyen kelimeler). Sonrasinda:
+
+- `kesif.py` adaylari siralarken kanitli temaya **deterministik bonus** verir (en fazla +1.0 puan);
+  kaliplar hem siralama promptuna hem stil profiline girer.
+- Baslik uretimi ayni kaliplari prompta ekler (basliklar tahmin yerine gercek veriye yaslanir).
+
+Veri yoksa hicbir davranis degismez. Tazeleme: yeni CSV'leri klasore birak, 3. adimi tekrarla.
+
+## Yayin oncesi QA kapisi
+
+ShortsStudio montaji biter bitmez final dosya **gercekten olculur** (yerel ffmpeg, ag yok):
+
+| Olcum | Ne yakalar |
+|---|---|
+| sure + en-boy orani | 15 sn alti / 60 sn ustu, dikey olmayan cikti |
+| siyah kare (blackdetect) | siyah acilis, eksik render |
+| donmus kare (freezedetect) | takilan sahne |
+| sessizlik (silencedetect) | kopuk / bos ses |
+| ses seviyesi (ebur128 LUFS) | hedef -14 LUFS'tan uzak ses (cok kisik/yuksek) |
+
+Puan 100 uzerinden hesaplanir; 70 altinda **uyari** verir ve duzeltme komutunu basar
+(`python haftalik_islet.py --yeniden-gun N` ya da `--sadece-studio N --chn X`). Otomatik harcama
+YAPMAZ, karar sende kalir. Rapor finalin yanina `<final>_qa.json` olarak yazilir. Tek video denemek icin:
+
+```bash
+py -3 functions/qa_kapisi.py "C:\Users\...\Gun1_...\final_123456.mp4"
+```
+
+QA adimini atlamak icin zincire `--qa-atla` ekle.
 
 ## Guncellemeler
 

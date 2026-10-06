@@ -1082,13 +1082,28 @@ def _finalize_title(title, channel_name=""):
     return result
 
 
+def _kanitlanmis_kaliplar(channel_name):
+    """Kendi kanalinin YouTube Studio verisinden cikan kanitlanmis kaliplar.
+
+    Veri yoksa bos doner (davranis degismez). Salt-okuma: API/anahtar yok.
+    """
+    try:
+        from functions.performans import kalip_blok, kanal_no_bul
+        return kalip_blok(kanal_no_bul(channel_name))
+    except Exception:
+        return ""
+
+
 def generate_title(voice_text, title_prompt_template, channel_name, max_retries=2):
     """Baslik uret: her turda 3 aday + model skoru gelir; adaylar Python'un
     Shorts rubrigiyle puanlanir ve EN IYI GECERLI aday secilir. Gecersiz
     cikarsa en fazla 2 tur; sonra tek fix_title (eski 5x3 + 10'luk dongu kalkti)."""
     title_sysp = title_prompt_template.format(voice_text=voice_text)
+    # Kanitlanmis kaliplar (varsa) prompta eklenir: basliklar gercek veriye yaslanir.
+    _blok = _kanitlanmis_kaliplar(channel_name)
+    _kalip_bolum = f"\n{_blok}\n" if _blok else ""
     score_prompt = f"""{title_sysp}
-
+{_kalip_bolum}
 IMPORTANT — Write 3 different title options. Score each 1-10 for clickability (hook strength, curiosity gap, keyword clarity).
 
 Format:

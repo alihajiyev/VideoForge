@@ -26,10 +26,14 @@ KULLANIM (kanal dosyasinda):
     response = cloud_orchestrator.remote(
         link, rand_num, v_bytes, raw_title, tam_metin, force=True,
         source_timeline=source_timeline,
-        system_prompt=PROMPT, voice_id=VOICE_ID, lang=LANG,
+        system_prompt=VOICE_PROMPT, voice_id=VOICE_ID, lang=LANG,
         channel_name=CHANNEL_NAME, voice_prompt=VOICE_PROMPT,
         title_prompt=TITLE_PROMPT, tags_prompt=TAGS_PROMPT,
     )
+
+NOT: `system_prompt` eski (tek prompt) cagrilar icin duruyor; kanal
+scriptleri artik TEK kaynak olarak `VOICE_PROMPT`'u gonderir — iki kopya
+prompt zamanla birbirinden kayiyordu.
 """
 import modal
 from shared import *

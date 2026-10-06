@@ -26,6 +26,7 @@ if BOT not in sys.path:
 
 gecen = 0
 hatalar = []
+atlandi = []
 temizlenecek = []
 
 
@@ -37,6 +38,12 @@ def kontrol(ad, kosul, detay=""):
     else:
         hatalar.append(ad)
         print(f"  FAIL  {ad}  ({detay})")
+
+
+def atla(ad, sebep):
+    """Ortam eksik oldugu icin calistirilamayan GERCEK test (sahte PASS yazilmaz)."""
+    atlandi.append(ad)
+    print(f"  SKIP  {ad}  ({sebep})")
 
 
 def bolum(ad):
@@ -842,12 +849,375 @@ kontrol("Eski uzunluk savrulmasi kodda kalmadi ('en iyi haliyle kabul' yok)",
 kontrol("Baslik/etiket 8+10 turluk ic ice donguleri kaldirildi",
         "Baslik max deneme" not in gem_kaynak and "Etiketler max deneme" not in gem_kaynak)
 
+bolum("Q) ALTYAZI ZINCIRI + GENIS HAVUZ / COP DOLDURMA")
+import functions.transcribe as _tr  # noqa: E402
+_trk_kaynak = oku("functions/transcribe.py")
+_ksf_kaynak = oku("kesif.py")
+_ork_kaynak = oku("functions/orchestrator.py")
+kontrol("Whisper yedegi SES odakli secici kullanir (muxed formati olmayan video da iner)",
+        "worstaudio" in _ksf_kaynak and '"worst/worst[ext=mp4]/best[ext=mp4]/best"' not in _ksf_kaynak)
+kontrol("Whisper yedegi cerezleri kullanir (kisitli videolar)",
+        "from functions.transcribe import _cookiefile as _cf" in _ksf_kaynak)
+kontrol("404/410/400 kalici hatadir: tek istek + negatif onbellek",
+        "_API_YOK" in _trk_kaynak and "_api_cevap_hata" in _trk_kaynak)
+kontrol("401/403 yetki/kredi hatasi net mesaj verir", "yetki/kredi hatasi" in _trk_kaynak)
+kontrol("Uzun 404 govdesi loga basilmiyor (log kalabaligi bitti)", "response.text}" not in _trk_kaynak)
+kontrol("YouTube altyazi yoksa yerel videodan ZAMANLI whisper",
+        "yerel videodan zaman damgali Whisper" in _trk_kaynak)
+kontrol("speech_recognition yoksa cokme yok (guvenli import)",
+        "speech_recognition kurulu degil" in _trk_kaynak)
+
+
+class _R404:
+    status_code = 404
+    text = '{"detail":"Video X is unavailable"}'
+
+
+_eski_get = _tr.requests.get
+_cagri = {"n": 0}
+
+
+def _sahte_404(*a, **k):
+    _cagri["n"] += 1
+    return _R404()
+
+
+try:
+    _tr.requests.get = _sahte_404
+    _tr._API_YOK.clear()
+    _tr._API_YETKI_HATA = False
+    _ilk = _tr.api_ile_transkript_cek("https://www.youtube.com/watch?v=ZZZZZZZZZZZ")
+    _ikinci = _tr.api_ile_transkript_cek("https://www.youtube.com/watch?v=ZZZZZZZZZZZ")
+    _chunk = _tr.api_ile_transkript_chunk_cek("https://www.youtube.com/watch?v=ZZZZZZZZZZZ")
+finally:
+    _tr.requests.get = _eski_get
+kontrol("Transcript API 404: 3 tekrar yerine TEK istek + None",
+        _cagri["n"] == 1 and _ilk is None and _ikinci is None and _chunk == [],
+        f"istek={_cagri['n']}")
+kontrol("404 sonucu video ID ile onbellege alindi (kredi bosuna yanmaz)",
+        "ZZZZZZZZZZZ" in _tr._API_YOK)
+
+
+class _R401:
+    status_code = 401
+    text = "{}"
+
+
+_cagri2 = {"n": 0}
+
+
+def _sahte_401(*a, **k):
+    _cagri2["n"] += 1
+    return _R401()
+
+
+try:
+    _tr.requests.get = _sahte_401
+    _tr._API_YOK.clear()
+    _tr._API_YETKI_HATA = False
+    _y1 = _tr.api_ile_transkript_cek("https://www.youtube.com/watch?v=AAAAAAAAAAA")
+    _bayrak = _tr._API_YETKI_HATA
+    _y2 = _tr.api_ile_transkript_cek("https://www.youtube.com/watch?v=BBBBBBBBBBB")
+finally:
+    _tr.requests.get = _eski_get
+    _tr._API_YOK.clear()
+    _tr._API_YETKI_HATA = False
+kontrol("Transcript API 401: tek deneme + yetki bayragi (video basina tekrar yok)",
+        _cagri2["n"] == 1 and _y1 is None and _y2 is None and _bayrak is True,
+        f"istek={_cagri2['n']}")
+
+kontrol("Genis havuz varsayilani 70 (on filtre baslikla bedava calisir)",
+        kesif.DEFAULT_CONFIG.get("havuz_sayisi") == 70)
+kontrol("Haftalik plan icin +10 aday (gun_sayisi + 10)", "gun_sayisi + 10" in _ksf_kaynak)
+kontrol("COP yedek doldurma varsayilan KAPALI (kalite > adet)",
+        kesif.DEFAULT_CONFIG.get("cop_doldur") is False and 'cfg.get("cop_doldur", False)' in _ksf_kaynak)
+kontrol("Eski 40 havuzu yeni degere tasinir (kullanici secimi korunur)",
+        'int(cfg.get("havuz_sayisi") or 0) == 40' in _ksf_kaynak)
+
+kontrol("Orchestrator tek prompt kaynagi kullanir (olu system_prompt degiskeni gitti)",
+        'vp = (voice_prompt or system_prompt or "")' in _ork_kaynak and "sp = system_prompt.replace" not in _ork_kaynak)
+for _kanal_dosya in ("kinosekrety.py", "faktza15.py", "kinok_syjet.py"):
+    _norm = oku(_kanal_dosya).replace("\r\n", "\n")
+    kontrol(f"{_kanal_dosya}: PROMPT kopyasi silindi, tek kaynak VOICE_PROMPT",
+            "system_prompt=VOICE_PROMPT" in _norm and "\nPROMPT = " not in _norm)
+
+# --------------------------------------------------------------------------
+bolum("R) PERFORMANS GERI BILDIRIMI (YouTube Studio CSV -> kanitlanmis kaliplar)")
+import functions.performans as _pf  # noqa: E402
+
+_eski_pf_csv, _eski_pf_perf = _pf.CSV_DIR, _pf.PERF_FILE
+_pf_tmp = gecici("vf-perf-")
+_pf_csv = os.path.join(_pf_tmp, "performans_csv")
+os.makedirs(os.path.join(_pf_csv, "kanal1"))
+_pf.PERF_FILE = os.path.join(_pf_tmp, "performans.json")
+_pf.CSV_DIR = _pf_csv
+
+try:
+    with open(os.path.join(_pf_csv, "k1.csv"), "w", encoding="utf-8-sig", newline="") as f:
+        f.write(
+            "Video title,Video publish time,Duration,Views,Impressions,"
+            "Impressions click-through rate (%),Average view duration,Average percentage viewed (%)\n"
+            "Why Thanos was right about everything,2026-09-01,0:45,\"322,000\",\"5,100,000\",6.3,0:21,47.5\n"
+            "The secret of Thor's hammer,2026-09-02,0:52,\"179,000\",\"3,000,000\",5.9,0:24,45.1\n"
+            "Why Thanos feared this Avenger,2026-09-03,0:48,\"130,000\",\"2,400,000\",5.4,0:22,46.0\n"
+            "Tom Holland contract drama explained,2026-09-04,0:50,4100,\"700,000\",1.1,0:12,22.4\n"
+            "Superman costume details nobody noticed,2026-09-05,0:47,3800,\"600,000\",1.0,0:11,20.1\n"
+            "Namor powers theory,2026-09-06,0:44,2100,\"400,000\",0.9,0:10,18.7\n"
+        )
+    # Turkce Studio CSV: ';' ayirici + ondalik virgul + noktali binlik
+    with open(os.path.join(_pf_csv, "kanal1", "k_try.csv"), "w", encoding="utf-8-sig", newline="") as f:
+        f.write(
+            "Video başlığı;Görüntülenme;Tıklama oranı;İzlenme yüzdesi\n"
+            "İşte Thanos'un gerçek planı;150.000;5,5;46,2\n"
+        )
+    # Ayni baslik 2. dosyada DAHA YUKSEK izlenmeyle -> birlestirme testi
+    with open(os.path.join(_pf_csv, "k2.csv"), "w", encoding="utf-8-sig", newline="") as f:
+        f.write("Video title,Views,Average percentage viewed (%)\n"
+                "Why Thanos was right about everything,\"410,000\",49.0\n")
+
+    _k1 = _pf.parse_studio_csv(os.path.join(_pf_csv, "k1.csv"))
+    kontrol("Studio CSV (EN) gercek dosyadan ayristirildi", len(_k1) == 6, f"{len(_k1)} satir")
+    kontrol("Binlik virgul dogru sayiya cevrilir (322,000 -> 322000)",
+            _k1[0]["izlenme"] == 322000.0, str(_k1[0]["izlenme"]))
+    kontrol("Yuzde ve sure dogru okunur (6.3% / 0:45)",
+            _k1[0]["ctr"] == 6.3 and _k1[0]["sure"] == 45.0,
+            f"ctr={_k1[0]['ctr']} sure={_k1[0]['sure']}")
+
+    _ktr = _pf.parse_studio_csv(os.path.join(_pf_csv, "kanal1", "k_try.csv"))
+    kontrol("Turkce Studio CSV (';' + 150.000 + 5,5) dogru ayristirildi",
+            bool(_ktr) and _ktr[0]["izlenme"] == 150000.0 and _ktr[0]["ctr"] == 5.5,
+            str(_ktr)
+            if not _ktr else f"{_ktr[0]['baslik']} {_ktr[0]['izlenme']} {_ktr[0]['ctr']}")
+
+    _sayi_hatalari = [(g, _pf.sayi_cek(g), b) for g, b in
+                      [("1,234", 1234.0), ("1.234", 1234.0), ("4,5", 4.5), ("6.3", 6.3),
+                       ("0:45", 45.0), ("1:02:33", 3753.0), ("2.100.000", 2100000.0),
+                       ("1.234,5", 1234.5), ("1,234.5", 1234.5), ("0,123", 0.123),
+                       ("", None), ("-", None)]
+                      if _pf.sayi_cek(g) != b]
+    kontrol("sayi_cek kenar durumlari (binlik/ondalik/sure/bos) dogru",
+            not _sayi_hatalari, str(_sayi_hatalari[:3]))
+
+    _pg = _pf.performans_yukle("genel")
+    kontrol("performans_yukle dosyalari birlestirdi", _pg["ozet"]["video_sayisi"] == 6,
+            f"{_pg['okunan_dosyalar']}")
+    _thanos = [v for v in _pg["videolar"] if v["baslik"] == "Why Thanos was right about everything"]
+    kontrol("Ayni baslik tek kayda indi ve EN YUKSEK izlenme kazandi",
+            len(_thanos) == 1 and _thanos[0]["izlenme"] == 410000.0 and _thanos[0]["ort_yuzde"] == 49.0,
+            str(_thanos)[:120])
+    kontrol("Kanal ozeti (toplam/ortalama/CTR) hesaplandi",
+            _pg["ozet"]["toplam_izlenme"] == 729000.0 and _pg["ozet"]["ort_ctr"] == 3.43,
+            str(_pg["ozet"]))
+
+    _kl = [k["kelime"] for k in _pg["kaliplar"]]
+    kontrol("Kalip madenciligi kazanan temasini buldu (thanos)", "thanos" in _kl, str(_kl))
+    kontrol("Kaybeden temasini kalip saymadi (holland)", "holland" not in _kl, str(_kl))
+
+    _kl2 = _pf.kaliplar_getir("genel")
+    kontrol("kalip_blok prompta gomulebilir metin uretir",
+            "PROVEN PATTERNS" in _pf.kalip_blok("genel") and '"thanos"' in _pf.kalip_blok("genel"))
+    _b_iyi = _pf.performans_bonusu("Why Thanos was right about everything", _kl2)
+    _b_kotu = _pf.performans_bonusu("Tom Holland contract drama explained", _kl2)
+    kontrol("performans_bonusu kanitli temaya puan verir, digerine sifir",
+            0 < _b_iyi <= 1.0 and _b_kotu == 0.0, f"iyi={_b_iyi} kotu={_b_kotu}")
+    kontrol("performans_bonusu bos baslikta cokmez", _pf.performans_bonusu("", _kl2) == 0.0)
+
+    _kno = _pf.kanal_no_bul("Kino Sekrety")
+    kontrol("Kanal ADI -> kanal no koprusu (Kiril/Latin) calisir",
+            _kno == "1" and _pf.kanal_no_bul("ПопкорнФакты") == "3"
+            and _pf.kanal_no_bul("bilinmeyen") == "genel",
+            f"{_kno}/{_pf.kanal_no_bul('ПопкорнФакты')}")
+
+    # Veri YOK iken hicbir sey patlamamali (yeni kurulum senaryosu).
+    _pf.PERF_FILE = os.path.join(_pf_tmp, "yok.json")
+    _pf.CSV_DIR = os.path.join(_pf_tmp, "yok_klasor")
+    _pf._ONBELLEK["anahtar"] = None
+    _pf._ONBELLEK["veri"] = None
+    kontrol("Veri yokken kalip/bonus guvenli ('' / [] / 0.0)",
+            _pf.kaliplar_getir("genel") == [] and _pf.kalip_blok("genel") == ""
+            and _pf.performans_bonusu("herhangi") == 0.0)
+finally:
+    _pf.CSV_DIR, _pf.PERF_FILE = _eski_pf_csv, _eski_pf_perf
+    _pf._ONBELLEK["anahtar"] = None
+    _pf._ONBELLEK["veri"] = None
+
+# gemini_rank GERCEK fonksiyonu: kaliplar hem prompta girmeli hem siralamayi etkilemeli.
+_eski_sira = (kesif.gemini_uret, kesif.kaliplar_getir, kesif.kalip_blok)
+_kap = {}
+
+
+def _sahte_gemini(a, b, c):
+    _kap["p"] = b
+    return "1|8.0|AAAAAAAAAAA|KAZANAN|guclu konu\n2|8.0|BBBBBBBBBBB|KAZANAN|thanos konusu"
+
+
+_kand = [
+    {"id": "AAAAAAAAAAA", "title": "Thor hammer secret", "views": 1000, "duration": 60,
+     "transcript": "x", "description": "y"},
+    {"id": "BBBBBBBBBBB", "title": "Thanos plan revealed", "views": 900, "duration": 60,
+     "transcript": "x", "description": "y"},
+]
+try:
+    kesif.gemini_uret = _sahte_gemini
+    kesif.kaliplar_getir = lambda kanal="1": [{"kelime": "thanos", "skor": 0.25, "adet": 2, "ornek": "Why Thanos"}]
+    kesif.kalip_blok = lambda kanal="1", adet=6: "PROVEN PATTERNS: thanos"
+    _r_kalipli = kesif.gemini_rank(_kand, "profil", "Kino Sekrety", kanal="1")
+    _p_kalipli = _kap.get("p", "")
+    kesif.kaliplar_getir = lambda kanal="1": []
+    kesif.kalip_blok = lambda kanal="1", adet=6: ""
+    _r_bos = kesif.gemini_rank(_kand, "profil", "Kino Sekrety", kanal="1")
+    _sahte_gemini("", "", "")
+    kesif.gemini_uret = lambda a, b, c: _sahte_gemini(a, b, c)
+    _style_kalipli = kesif.gemini_style_profile([{"title": "t", "views": 1}], "Kino Sekrety",
+                                               kanit_blok="PROVEN PATTERNS: thanos")
+    _p_style = _kap.get("p", "")
+finally:
+    kesif.gemini_uret, kesif.kaliplar_getir, kesif.kalip_blok = _eski_sira
+
+kontrol("gemini_rank kanitlanmis kaliplari PROMPTA koyar", "PROVEN PATTERNS" in _p_kalipli)
+kontrol("Kanitli tema esit puanda ONCE gelir (deterministik bonus)",
+        _r_kalipli and _r_kalipli[0]["id"] == "BBBBBBBBBBB" and _r_kalipli[0]["score"] > 8.0
+        and _r_kalipli[1]["kalip_bonusu"] == 0
+        and _r_kalipli[0].get("kalip_bonusu", 0) > 0,
+        str([(r["id"], r["score"], r.get("kalip_bonusu")) for r in _r_kalipli]))
+kontrol("Kaliplar KAPALI iken modelin sirasi aynen korunur (davranis degismedi)",
+        _r_bos and _r_bos[0]["id"] == "AAAAAAAAAAA" and "kalip_bonusu" not in _r_bos[0],
+        str([(r["id"], r["score"]) for r in _r_bos]))
+kontrol("Stil profili promptuna kanit blogu girer", "PROVEN PATTERNS" in _p_style)
+
+_gf_kaynak = oku("functions/gemini_func.py")
+_kontrol_kaynak = oku("functions/performans.py")
+_hl_kaynak2 = oku("haftalik_islet.py")
+kontrol("Baslik uretimi kanitlanmis kaliplari prompta ekliyor",
+        "_kanitlanmis_kaliplar(channel_name)" in _gf_kaynak and "_kalip_bolum" in _gf_kaynak)
+kontrol("Performans modulu AG KULLANMAZ (salt okuma: API/anahtar/OAuth yok)",
+        not any(x in _kontrol_kaynak for x in
+                ("import requests", "import urllib", "urllib.request", "http.client",
+                 "import google", "import elevenlabs")),
+        "")
+kontrol("kesif.py performans modulune bagli (import + kullanim)",
+        "from functions.performans import" in _ksf_kaynak
+        and "kalip_bonusu" in _ksf_kaynak and "kanit_blok=perf_blok" in _ksf_kaynak)
+
+# --------------------------------------------------------------------------
+bolum("S) YAYIN ONCESI QA KAPISI (finali ffmpeg ile GERCEKTEN olcer)")
+from functions import qa_kapisi as _qa  # noqa: E402
+
+_qa_tmp = gecici("vf-qa-")
+_ffmpeg_var = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
+_qa_iyi = os.path.join(_qa_tmp, "iyi.mp4")
+_qa_kotu = os.path.join(_qa_tmp, "kotu.mp4")
+
+
+def _ffmpeg_uret(hedef, komut_parcalari):
+    r = subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"] + komut_parcalari + [hedef],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
+    return r.returncode == 0 and os.path.exists(hedef)
+
+
+if not _ffmpeg_var:
+    atla("QA kapisi canli olcum", "ffmpeg/ffprobe PATH'te yok")
+else:
+    # IYI video: 20 sn, dikey 1080x1920, ses var (temiz sinyal)
+    _iyi_ok = _ffmpeg_uret(_qa_iyi, [
+        "-f", "lavfi", "-i", "testsrc=size=1080x1920:rate=30:duration=20",
+        "-f", "lavfi", "-i", "sine=frequency=200:duration=20",
+        "-vf", "format=yuv420p", "-af", "volume=0.4",
+        "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest",
+    ])
+    # KOTU video: 8 sn (kisa), yatay 1920x1080, ilk 3 sn KAPKARA, ilk 6 sn SESSIZ
+    _kotu_ok = _ffmpeg_uret(_qa_kotu, [
+        "-f", "lavfi", "-i", "testsrc=size=1920x1080:rate=30:duration=8",
+        "-f", "lavfi", "-i", "sine=frequency=200:duration=8",
+        "-vf", "drawbox=x=0:y=0:w=iw:h=ih:color=black@1:t=fill:enable='lt(t,3)',format=yuv420p",
+        "-af", "volume='if(lt(t,6),0,0.6)':eval=frame",
+        "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest",
+    ])
+    kontrol("Test videolari ffmpeg ile uretildi", _iyi_ok and _kotu_ok)
+
+    _r_iyi = _qa.video_denetle(_qa_iyi)
+    kontrol("Iyi video: sure/cozunurluk/ses gercekten okundu",
+            _r_iyi["sure"] and abs(_r_iyi["sure"] - 20) < 1.5 and _r_iyi["genislik"] == 1080
+            and _r_iyi["yukseklik"] == 1920 and _r_iyi["ses_var"] is True,
+            f"{_r_iyi['sure']}s {_r_iyi['genislik']}x{_r_iyi['yukseklik']} ses={_r_iyi['ses_var']}")
+    kontrol("Iyi video: siyah kare/donma yok, LUFS olculdu",
+            _r_iyi["siyah_oran"] <= 0.02 and _r_iyi["donmus_oran"] <= 0.05 and _r_iyi["lufs"] is not None,
+            f"siyah%{_r_iyi['siyah_oran'] * 100:.1f} donma%{_r_iyi['donmus_oran'] * 100:.1f} lufs={_r_iyi['lufs']}")
+    kontrol("Iyi video yayina hazir (skor >= 70, GECTI)",
+            _r_iyi["gecti"] is True and _r_iyi["skor"] >= 70, f"skor={_r_iyi['skor']}")
+
+    _r_kotu = _qa.video_denetle(_qa_kotu)
+    _sr_kotu = " | ".join(_r_kotu["sorunlar"])
+    kontrol("Kotu video: siyah kare GERCEKTEN yakalandi (>= 2 sn)",
+            _r_kotu["siyah_sn"] >= 2.0, f"siyah={_r_kotu['siyah_sn']}s")
+    kontrol("Kotu video: sessizlik yakalandi (>= 4 sn)",
+            _r_kotu["sessiz_sn"] >= 4.0, f"sessiz={_r_kotu['sessiz_sn']}s")
+    kontrol("Kotu video: kisa sure + yatay oran + siyah + sessiz sorun olarak listelendi",
+            not _r_kotu["gecti"] and _r_kotu["skor"] < 70 and "Cok kisa" in _sr_kotu
+            and "Dikey degil" in _sr_kotu and "Siyah kare" in _sr_kotu and "sessiz" in _sr_kotu,
+            f"skor={_r_kotu['skor']} ({_sr_kotu[:110]})")
+
+    _qa_json = _qa.rapor_yaz(_r_kotu)
+    _yazilan = {}
+    if _qa_json and os.path.exists(_qa_json):
+        with open(_qa_json, encoding="utf-8") as f:
+            _yazilan = json.load(f)
+    kontrol("QA raporu videonun yanina json olarak yazildi",
+            _yazilan.get("skor") == _r_kotu["skor"] and _yazilan.get("derece") == _r_kotu["derece"],
+            os.path.basename(_qa_json) if _qa_json else "yok")
+
+    _yok_r = _qa.video_denetle(os.path.join(_qa_tmp, "olmayan.mp4"))
+    kontrol("Olmayan dosya: net sonuc + rapor YAZILMAZ",
+            _yok_r["derece"] == "OLCULEMEDI" and _yok_r["gecti"] is False
+            and _qa.rapor_yaz(_yok_r) == "")
+
+    # CLI GERCEK surec olarak: kullanicinin kullanacagi arayuz + cikis kodu
+    _cli = subprocess.run([sys.executable, "functions/qa_kapisi.py", _qa_iyi],
+                          capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          timeout=180, env={**os.environ, "PYTHONUTF8": "1"})
+    kontrol("CLI: temiz video icin cikis kodu 0 ve rapor basiliyor",
+            _cli.returncode == 0 and "QA skoru" in _cli.stdout, f"rc={_cli.returncode}")
+    _cli2 = subprocess.run([sys.executable, "functions/qa_kapisi.py", _qa_kotu],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=180, env={**os.environ, "PYTHONUTF8": "1"})
+    kontrol("CLI: bozuk video icin cikis kodu 1 (uyari gorunur)",
+            _cli2.returncode == 1 and "Yayina hazir DEGIL" in _cli2.stdout, f"rc={_cli2.returncode}")
+
+# Puanlama mantigi (ffmpeg gerekmez): cezalar dogru yonde mi?
+_kusursuz = {"sure": 30.0, "genislik": 1080, "yukseklik": 1920, "ses_var": True,
+             "siyah_oran": 0.0, "donmus_oran": 0.0, "sessiz_oran": 0.05, "lufs": -14.0, "true_peak": -2.0,
+             "siyah_sn": 0.0}
+_sk, _sr = _qa._skorla(dict(_kusursuz))
+kontrol("Kusursuz video 100 puan alir (yanlis alarm yok)", _sk == 100 and _sr == [], f"{_sk} {_sr}")
+_ses_yok = dict(_kusursuz, ses_var=False)
+_sk2, _sr2 = _qa._skorla(_ses_yok)
+kontrol("Ses akisi yoksa puan duser ve sorun listelenir",
+        _sk2 < _sk and any("Ses akisi YOK" in s for s in _sr2), f"{_sk2} {_sr2}")
+_siyah = dict(_kusursuz, siyah_oran=0.25, siyah_sn=7.5)
+_sk3, _sr3 = _qa._skorla(_siyah)
+kontrol("Cok siyah kare puani ciddi dusurur",
+        _sk3 <= 70 and any("Siyah kare" in s for s in _sr3), f"{_sk3} {_sr3}")
+
+_qa_atlandi_kaynak = oku("haftalik_islet.py")
+kontrol("Zincir finali ShortsStudio sonrasi QA kapisinden geciriyor",
+        "qa_gate_calistir(" in _qa_atlandi_kaynak
+        and "video_denetle(final_yolu)" in _qa_atlandi_kaynak)
+kontrol("QA sonucu sonuc haritasina yaziliyor (gun -> skor)",
+        '"qa": QA_SONUCLARI' in _qa_atlandi_kaynak)
+kontrol("QA kapisi atlanabilir (--qa-atla) ve varsayilan ACIK",
+        "--qa-atla" in _qa_atlandi_kaynak and "qa_atla=False" in _qa_atlandi_kaynak)
+
 # --------------------------------------------------------------------------
 for y in temizlenecek:
     shutil.rmtree(y, ignore_errors=True)
 
 print("\n=========================================")
-print(f"  BOT OZELLIK KONTROLU: {gecen} basarili, {len(hatalar)} basarisiz")
+_ozet = f"  BOT OZELLIK KONTROLU: {gecen} basarili, {len(hatalar)} basarisiz"
+if atlandi:
+    _ozet += f", {len(atlandi)} atlandi"
+print(_ozet)
+if atlandi:
+    print("  Atlandi: " + " | ".join(atlandi))
 if hatalar:
     print("  Basarisiz: " + " | ".join(hatalar))
 print("=========================================\n")

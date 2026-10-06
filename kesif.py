@@ -28,6 +28,11 @@ import yt_dlp
 
 from constants import link_kayitlimi, oneri_kaydet, platform_tespit_et
 from functions.gemini_func import gemini_uret
+# Performans geri bildirimi (YouTube Studio CSV'si -> kanitlanmis kaliplar).
+# Salt-okuma: API/OAuth/upload YOK, video basina hicbir sey yuklenmez.
+from functions.performans import (
+    kalip_blok, kaliplar_getir, performans_bonusu, durum_metni as performans_durum,
+)
 from functions.transcribe import fetch_subs_ytdlp, api_ile_transkript_cek, yt_dlp_ile_alt_yazi_cek
 from functions.ui import header, footer_done, footer_fail, info, ok, warn, err, step
 from shared import ensure_fresh_ytdlp
@@ -56,14 +61,19 @@ def gun_adi(sira):
 DEFAULT_CONFIG = {
     "kaynak_video_limit": 20,
     "own_video_limit": 30,
-    "aday_sayisi": 6,
+    "aday_sayisi": 10,
     "oneri_sayisi": 5,
     # --haftalik / --gun deger verilmeden calistirilirsa kac gunluk plan kurulsun
     "gun_sayisi": 7,
     "transcript_ytdlp": True,
     "transcript_api": True,
     "whisper_yedek": True,
-    "havuz_sayisi": 40,
+    # Genis havuz: on filtre baslikla bedava calisir, buyuk havuz daha iyi aday
+    # demek. Transcript sadece on filtreden gecen adaylara cekilir.
+    "havuz_sayisi": 70,
+    # COP tip adaylar plana YEDEK olarak eklenmesin: kisa ve kaliteli plan,
+    # uzun ve vasat plandan iyidir (video basina izlenme/maliyet bozulmasin).
+    "cop_doldur": False,
     "kanallar": {
         "1": {
             "ad": "Kino Sekrety",
@@ -97,6 +107,11 @@ def load_config():
                 save_config(cfg)
             for k, v in DEFAULT_CONFIG.items():
                 cfg.setdefault(k, v)
+            # Eski varsayilan (40) hic degistirilmediyse yeni genis havuza gec.
+            # Kullanici bilerek farkli bir deger girdiyse ona dokunulmaz.
+            if int(cfg.get("havuz_sayisi") or 0) == 40:
+                cfg["havuz_sayisi"] = DEFAULT_CONFIG["havuz_sayisi"]
+                save_config(cfg)
             for _no, _p in cfg["kanallar"].items():
                 if isinstance(_p, dict):
                     _p.setdefault("ad", f"Kanal {_no}")
@@ -386,7 +401,7 @@ def fetch_description(url):
 _WHISPER_MODEL = None
 
 def fetch_whisper_fallback(vid, url_hint=""):
-    """Son care (sadece altyazi yoksa): en dusuk kalitede indir -> Whisper base -> sil.
+    """Son care (sadece altyazi yoksa): en dusuk kalitede SES indir -> Whisper base -> sil.
     Model bir kez yuklenir, tmp her seferinde temizlenir.
     TikTok/Instagram icin url_hint verilirse oradan indirir."""
     global _WHISPER_MODEL
@@ -402,13 +417,29 @@ def fetch_whisper_fallback(vid, url_hint=""):
             return None
     tmp = tempfile.mkdtemp()
     try:
-        vp = os.path.join(tmp, "v.mp4")
         indirme_url = url_hint or f"https://www.youtube.com/watch?v={vid}"
-        opts = {"quiet": True, "no_warnings": True, "format": "worst/worst[ext=mp4]/best[ext=mp4]/best",
-                "outtmpl": vp, "retries": 2, "sleep_requests": 2}
+        # SES odakli secici: bazi videolarda muxed (ses+goruntu tek dosyada)
+        # format HIC yoktur; "worst/best" secicileri o zaman "Requested format
+        # is not available" hatasi verir (gercek vaka: J_Vq5ssshyA). worstaudio
+        # her videoda bulunur ve indirmeyi de hizlandirir (sadece ses).
+        opts = {"quiet": True, "no_warnings": True, "noprogress": True,
+                "format": "worstaudio/bestaudio/worst*+bestaudio*/best*+bestaudio*",
+                "outtmpl": os.path.join(tmp, "v.%(ext)s"), "retries": 2,
+                "sleep_requests": 2, "noplaylist": True}
+        cf = None
+        try:
+            from functions.transcribe import _cookiefile as _cf
+            cf = _cf()
+        except Exception:
+            pass
+        if cf:
+            opts["cookiefile"] = cf
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([indirme_url])
-        if not os.path.exists(vp) or os.path.getsize(vp) < 10000:
+        dosyalar = [os.path.join(tmp, f) for f in os.listdir(tmp)
+                    if os.path.isfile(os.path.join(tmp, f))]
+        vp = max(dosyalar, key=os.path.getsize) if dosyalar else ""
+        if not vp or os.path.getsize(vp) < 10000:
             return None
         if _WHISPER_MODEL is None:
             print("   🎙️ Whisper modeli yukleniyor (ilk seferlik)...")
@@ -418,7 +449,7 @@ def fetch_whisper_fallback(vid, url_hint=""):
         txt = (res.get("text") or "").strip()
         return txt[:2500] if txt else None
     except Exception as e:
-        print(f"   ⚠️ whisper yedegi olmadi ({str(e)[:60]})")
+        print(f"   ⚠️ whisper yedegi olmadi ({str(e).replace(chr(10), ' ')[:80]})")
         return None
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -530,13 +561,14 @@ def build_html_report(results, style, own_name, src_links, adaylar):
 </html>"""
 
 
-def gemini_style_profile(own_videos, channel_name):
+def gemini_style_profile(own_videos, channel_name, kanit_blok=""):
     lines = "\n".join(f"- {v['title']} | {v['views']:,} izlenme" for v in own_videos)
+    kanit = f"\n{kanit_blok}\n" if kanit_blok else ""
     prompt = f"""You are a YouTube strategist for a Russian-language YouTube Shorts channel ("{channel_name}").
 Below are the channel's recent videos with view counts.
 
 {lines}
-
+{kanit}
 Tasks:
 1. Identify which topics/styles OVER-perform (views clearly above average) and which under-perform.
 2. Write a concise STYLE PROFILE: 5-8 bullets describing what content, topics, and title patterns fit this channel best.
@@ -604,6 +636,10 @@ Output ONLY the kept video IDs, one per line, nothing else."""
 
 
 def gemini_rank(candidates, style_profile, own_name, konu_filtresi=True, kanal="1", nis="", cop_dahil=False, limit=10):
+    # Kanitlanmis kalıplar (varsa) hem prompta hem de deterministik skor bonusuna girer.
+    kaliplar = kaliplar_getir(kanal)
+    _blok = kalip_blok(kanal)
+    kalip_bolum = f"\n{_blok}\n" if _blok else ""
     src_lines = []
     for c in candidates:
         dur_min = c["duration"] / 60 if c["duration"] else 0
@@ -690,7 +726,7 @@ RANKING ORDER: konu gucu (merak + tartisma potansiyeli) birincil, izlenme ikinci
 
 MY CHANNEL STYLE PROFILE:
 {style_profile or f"(analiz yapilamadi - genel {nis_ad} bilgisiyle karar ver)"}
-{gate}
+{gate}{kalip_bolum}
 CANDIDATE VIDEOS from a source channel (ID | views | duration | title):
 
 {src_text}
@@ -747,7 +783,16 @@ Output ONLY those lines, nothing else."""
         results.append({"rank": rank, "score": score, "id": vid, "reason": reason, "tip": tip})
     if not results:
         print(f"⚠️ Gemini ham cevabi parse edilemedi:\n{raw[:400]}")
-    results.sort(key=lambda r: r["rank"])
+    if kaliplar:
+        # Kanitli temayi iceren aday, ayni model puaninda ONCE gelir (en fazla +1.0).
+        basliklar = {c["id"]: (c.get("title") or "") for c in candidates if "id" in c}
+        for r in results:
+            r["kalip_bonusu"] = performans_bonusu(basliklar.get(r["id"], ""), kaliplar)
+            if r["kalip_bonusu"]:
+                r["score"] = round(r["score"] + r["kalip_bonusu"], 2)
+        results.sort(key=lambda r: (-r["score"], r["rank"]))
+    else:
+        results.sort(key=lambda r: r["rank"])
     return results
 
 
@@ -808,7 +853,8 @@ def main():
     haftalik = gun_sayisi > 0
     # Plan modunda siralamaya genis havuz gerekir: kaynak cesitliligi kotasi
     # (kaynak basina max 3) yuzunden aday sayisi gun sayisindan fazla olmali.
-    aday_sayisi = max(int(cfg["aday_sayisi"]), gun_sayisi + 5) if haftalik else int(cfg["aday_sayisi"])
+    # Her gun icin +10 aday: kotalar yuzunden elenenler olsa da plan dolsun.
+    aday_sayisi = max(int(cfg["aday_sayisi"]), gun_sayisi + 10) if haftalik else int(cfg["aday_sayisi"])
     oneri_sayisi = gun_sayisi if haftalik else cfg["oneri_sayisi"]
     if haftalik:
         print(f"\n📅 COK GUNLU PLAN MODU: {gun_sayisi} video bulunacak; skor sirasi = paylasim sirasi "
@@ -859,8 +905,18 @@ def main():
         print("❌ Kanalinda video bulunamadi.")
         return
 
+    # Performans verisi (YouTube Studio CSV'sinden) — varsa stil profiline de girer.
+    perf_blok = kalip_blok(chn)
+    if perf_blok:
+        print(f"\n📈 Performans geri bildirimi AKTIF: {performans_durum()}")
+        print("   Kanitlanmis kaliplar siralama ve baslik promptuna giriyor.")
+    else:
+        print("\n📈 Performans geri bildirimi: veri yok (istege bagli, kapali kalabilir).")
+        print("   Acmak icin: YouTube Studio > Icerik > 'Disa aktar' CSV'lerini")
+        print("   VideoForge/performans_csv/ klasorune birak, sonra: py -3 functions/performans.py")
+
     print("🤖 Gemini stil profili cikariyor...")
-    style = gemini_style_profile(own_videos, own_name)
+    style = gemini_style_profile(own_videos, own_name, kanit_blok=perf_blok)
     if style:
         print("   ✅ Stil profili hazir.")
     else:
@@ -938,7 +994,7 @@ def main():
     # 4) GENIS HAVUZ -> on filtre (baslik) -> transcriptli dar havuz -> siralama
     # Izlenmesi orta ama tipi guclu video kaybolmasin diye kapi genis havuzda baslar.
     all_candidates.sort(key=lambda v: -(v["views"] or 0))
-    havuz_sayisi = cfg.get("havuz_sayisi", 40)
+    havuz_sayisi = cfg.get("havuz_sayisi", 70)
     havuz = all_candidates[:havuz_sayisi]
     print(f"\n🔍 Genis havuz: {len(havuz)} video (izlenme sirali)")
     print("🤖 On filtre: basliga gore kaba eleme...")
@@ -962,7 +1018,7 @@ def main():
                 print(f"   {'✅' if c['transcript'] else '⚠️'} {c['id']} — {c['title'][:50]}")
         hala_yok = [c for c in adaylar if not c.get("transcript")]
         if hala_yok and cfg.get("whisper_yedek", True):
-            print(f"\n🎙️ Hala altyazisiz {len(hala_yok)} video icin Whisper yedegi (en dusuk kalite, is bitince silinir)...")
+            print(f"\n🎙️ Hala altyazisiz {len(hala_yok)} video icin Whisper yedegi (en dusuk SES kalitesi, is bitince silinir)...")
             for c in hala_yok:
                 tr = fetch_whisper_fallback(c["id"], c.get("url", ""))
                 c["transcript"] = tr
@@ -1009,7 +1065,8 @@ def main():
             alinan = {r["id"] for r in final}
             final += [r for r in _kotala(kazananlar, 99) if r["id"] not in alinan][:gun_sayisi - len(final)]
         cop_eklendi = 0
-        if len(final) < gun_sayisi:
+        cop_doldur = bool(cfg.get("cop_doldur", False))
+        if cop_doldur and len(final) < gun_sayisi:
             alinan = {r["id"] for r in final}
             for r in [r for r in cop_yedek if r["id"] not in alinan][:gun_sayisi - len(final)]:
                 r["reason"] = "⚠️ YEDEK (COP tip): " + r.get("reason", "")
@@ -1022,7 +1079,10 @@ def main():
         if cop_eklendi:
             print(f"   ⚠️ {cop_eklendi} gun COP yedekle dolduruldu (KAZANAN yetmedi, raporda isaretli).")
         if len(results) < gun_sayisi:
-            print(f"   ⚠️ Taze aday yetmedi ({len(adaylar)} aday tarandi): plan {len(results)} video ile kuruldu.")
+            print(f"   ⚠️ Taze KAZANAN yetmedi ({len(adaylar)} aday tarandi): plan {len(results)} video ile kuruldu.")
+            if cop_yedek and not cop_doldur:
+                print(f"      {len(cop_yedek)} COP tip aday var ama doldurma KAPALI (kalite > adet).")
+                print(f"      Isteginle acilir: kesif_config.json -> 'cop_doldur': true")
             print(f"      Cozum: kaynak kanallara yeni video gelince tekrar calistir ya da --adet'i yukselt.")
     else:
         results = results[:oneri_sayisi]
@@ -1066,6 +1126,7 @@ def main():
                 "skor": r["score"],
                 "tip": r.get("tip", ""),
                 "sebep": r.get("reason", ""),
+                "kalip_bonusu": r.get("kalip_bonusu", 0),
             })
         with open(PLAN_FILE, "w", encoding="utf-8") as f:
             json.dump(plan, f, indent=2, ensure_ascii=False)

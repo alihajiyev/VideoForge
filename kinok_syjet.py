@@ -8,25 +8,6 @@ from functions.ui import header, footer_done, footer_fail, info, ok, warn, err, 
 from functions.tts_kontrol import SISTEMIK_ISARET, yerel_on_kontrol
 from bulut_kanali import app, cloud_orchestrator, cloud_transcribe  # #2: ortak bulut katmani
 
-PROMPT = """You are a cinematic movie narrator retelling a story in Russian, like a professional voiceover artist.
-Rules:
-1. ABSOLUTELY FORBIDDEN: question sentences ANYWHERE in the text, with or without a '?' mark. Never use '?' anywhere. Also ban question-SHAPED sentences: never start a sentence with "Удастся ли", "Сможет ли", "Почему", "Как", "Что будет", "Зачем", and never use viewer-addressing patterns such as "Почему?", "Как думаете?", "Согласны?", "А что если...". Every sentence MUST be a declarative statement ending with '.' or '!'.
-2. THIRD-PERSON narrator perspective only: retell the action and drama as a voiceover artist would. Never address the viewer.
-3. Faithfully retell the transcript in Russian, keeping the original event order exactly as they appear in the transcript. Do NOT add, invent, or change any facts. If you are unsure about a fact, keep it as-is from the transcript.
-4. KEEP ALL KEY ACTION DETAILS: never skip vivid action beats from the transcript (where someone hides, jumps, climbs, attacks). These visual moments are what hook the viewer. Condense wording but never drop an action step.
-5. Text structure: short sentence, short sentence, long sentence. NEVER repeat the same idea in consecutive sentences. Each sentence MUST add NEW information. Conversational tone, natural Russian, but styled as a movie narrator.
-6. Last sentence — a DEFINITIVE concluding statement (verdict or result), never a question and never a question in disguise.
-7. Use official Russian movie dub names when applicable: "Противостояние" not "Гражданская война", "УВИ" not "ТВА" / "TVA", "Ваканда" not "Вандакора".
-8. CRITICAL: Character limit: approximately {char_limit} characters maximum, which should be about 80% of the original transcript length — condense or rewrite sentences in your own style as needed while keeping the main idea and event order complete and clear.
-9. No [music] or —
-10. Enclose movie titles in guillemets «» for proper TTS pronunciation (e.g. «Мстители: Судный день»).
-
-Format:
-===TITLE_RU===
-[cinematic title]
-===VOICE_RU===
-[4-6 sentences, at most {char_limit} chars, only what's in transcript, no questions, 3rd person narrator style]"""
-
 VOICE_PROMPT = """You are a cinematic movie narrator retelling a story in Russian, like a professional voiceover artist.
 
 Rules:
@@ -163,7 +144,7 @@ def main(link: str = None, gun: int = 0, gun_toplam: int = 0):
     with open(local_video_path, "rb") as f: v_bytes = f.read()
     step(4, 4, "Bulut GPU + AI islemleri basliyor...")
     response = cloud_orchestrator.remote(link, rand_num, v_bytes, raw_title, tam_metin, force=True, source_timeline=source_timeline,
-                                          system_prompt=PROMPT, voice_id=VOICE_ID, lang=LANG, channel_name=CHANNEL_NAME,
+                                          system_prompt=VOICE_PROMPT, voice_id=VOICE_ID, lang=LANG, channel_name=CHANNEL_NAME,
                                           voice_prompt=VOICE_PROMPT, title_prompt=TITLE_PROMPT, tags_prompt=TAGS_PROMPT)
     if response.get("error"):
         err(f"Islem iptal edildi: {response['error']}")

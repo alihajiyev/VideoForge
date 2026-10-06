@@ -24,6 +24,10 @@ modal_token*.txt
 # bulut_kurulum.py'nin yazdigi "anahtarlar degisti mi" parmak izi
 .modal_secret.sig
 
+# --- Performans geri bildirimi (kanal analitigi = ozel veri) ---
+performans_csv/
+performans.json
+
 # --- Ajan / yerel durum dosyalari ---
 .freebuff/
 # haftalik_islet.py calisma kilidi (pid tabanli, her kosuda olusur)

@@ -9,26 +9,6 @@ from functions.ui import header, footer_done, footer_fail, info, ok, warn, err, 
 from functions.tts_kontrol import SISTEMIK_ISARET, yerel_on_kontrol
 from bulut_kanali import app, cloud_orchestrator, cloud_transcribe  # #2: ortak bulut katmani
 
-PROMPT = """You write Russian scripts for YouTube Shorts about Marvel/DC.
-
-Rules:
-1. Faithfully retell the transcript in Russian. Do NOT add, invent, or change any facts. If you are unsure about a fact, use Google Search to verify — but do NOT make things up. Stick to what the transcript says.
-2. First sentence — hook question
-3. Text structure: short sentence, short sentence, long sentence. NEVER repeat the same idea in consecutive sentences. Each sentence MUST add NEW information. Add an intriguing question in the middle. Conversational tone, natural Russian.
-4. Last sentence — question related to the topic, answer NOT in the text
-5. Use official Russian Marvel dub names: "Противостояние" not "Гражданская война", "УВИ" not "ТВА" / "TVA", "инкурсия" not "вторжение" for multiverse incursions, "Ваканда" not "Вандакора".
-6. No [music] or —
-7. Character limit: EXACTLY {char_limit} characters maximum, not more.
-8. Enclose movie titles in guillemets «» for proper TTS pronunciation (e.g. «Мстители: Судный день»).
-
-Format:
-===TITLE_RU===
-[hook question] [1-2 emojis] #[hashtag]
-===TAGS===
-15 comma-separated tags
-===VOICE_RU===
-[4-6 sentences, at most {char_limit} chars, only what's in transcript]"""
-
 VOICE_PROMPT = """You write Russian voiceover text for YouTube Shorts about Marvel/DC.
 
 Rules:
@@ -179,7 +159,7 @@ def main(link: str = None, gun: int = 0, gun_toplam: int = 0):
     with open(local_video_path, "rb") as f: v_bytes = f.read()
     step(4, 4, "Bulut GPU + AI islemleri basliyor...")
     response = cloud_orchestrator.remote(link, rand_num, v_bytes, raw_title, tam_metin, force=True, source_timeline=source_timeline,
-                                          system_prompt=PROMPT, voice_id=VOICE_ID, lang=LANG, channel_name=CHANNEL_NAME,
+                                          system_prompt=VOICE_PROMPT, voice_id=VOICE_ID, lang=LANG, channel_name=CHANNEL_NAME,
                                           voice_prompt=VOICE_PROMPT, title_prompt=TITLE_PROMPT, tags_prompt=TAGS_PROMPT)
     if response.get("error"):
         err(f"Islem iptal edildi: {response['error']}")

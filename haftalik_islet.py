@@ -36,9 +36,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from constants import link_kayitlimi, init_db
 from functions.ui import header, footer_done, footer_fail, info, ok, warn, err
 from functions.tts_kontrol import SISTEMIK_ISARET, yerel_on_kontrol
+from functions.qa_kapisi import video_denetle, rapor_yaz, rapor_metni, KALITE_ESIGI
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PLAN_FILE = os.path.join(BASE_DIR, "haftalik_plan.json")
+
+# Gun -> QA raporu ozeti (final olcumleri). Sonuc haritasina da yazilir ki
+# uygulama/panel "hangi gun kac puan aldi" bilgisini gosterebilsin.
+QA_SONUCLARI = {}
 
 
 def sonuc_dosyasi(chn):
@@ -317,7 +322,7 @@ def kilit_birak():
         pass
 
 
-def studio_islet(gun, chn, gun_toplam=0):
+def studio_islet(gun, chn, gun_toplam=0, qa_atla=False):
     """3. adim: Gun klasorundeki ciktiyi ShortsStudio'dan gecir.
 
     TEK AKIS (kopyalama YOK): VideoForge ciktilari GunN klasorunde kalir; tam
@@ -330,6 +335,8 @@ def studio_islet(gun, chn, gun_toplam=0):
     bekletilmeden GunN klasorune tasinir (bkz. final_gun_klasorune_tasi).
 
     Donus: (True, 'GunN_.../final_XXXXXX.mp4') ya da (False, hata_mesaji).
+    (donen metin DEGISMEDI: panel/uygulama bu bicimi bekliyor; QA sonucu
+    QA_SONUCLARI sozlugune ve finalin yanindaki <ad>_qa.json dosyasina gider.)
     """
     desktop = _desktop()
     studio_dir = studio_dir_bul()
@@ -399,7 +406,40 @@ def studio_islet(gun, chn, gun_toplam=0):
     else:
         warn(f"⚠️ Final Gun klasorune alinamadi ({tasima_bilgi}); masaustu kokunde kaldi: {final_ad}")
 
+    qa_gate_calistir(final_yolu=os.path.join(gun_dir, final_ad) if tasindi
+                     else os.path.join(desktop, final_ad), gun=gun, chn=chn, atla=qa_atla)
+
     return True, os.path.join(os.path.basename(gun_dir), final_ad)
+
+
+def qa_gate_calistir(final_yolu, gun, chn, atla=False):
+    """Yayin oncesi QA kapisi: finali ffmpeg ile GERCEKTEN olcup skorlar.
+
+    Engelleyici DEGIL: puan dusukse net bir uyari + tek satir duzeltme komutu
+    basar (otomatik harcama yok, karar kullanicinin). Rapor finalin yanina
+    <ad>_qa.json olarak da yazilir. Donus: rapor sozlugu ya da None.
+    """
+    if atla:
+        info("🔎 QA kapisi atlandi (--qa-atla).")
+        return None
+    info("🔎 Yayin oncesi QA kapisi: final olculuyor (sure/siyah kare/donma/ses)...")
+    try:
+        rapor = video_denetle(final_yolu)
+    except Exception as e:
+        warn(f"⚠️ QA kapisi calistirilamadi: {e}")
+        return None
+    bas = ok if rapor.get("gecti") else warn
+    for satir in rapor_metni(rapor).splitlines():
+        bas(satir)
+    rapor_yaz(rapor)
+    QA_SONUCLARI[str(gun)] = {"skor": rapor.get("skor"), "derece": rapor.get("derece"),
+                              "sorunlar": rapor.get("sorunlar") or []}
+    if rapor.get("derece") == "OLCULEMEDI":
+        warn(f"   QA olculemedi: {rapor.get('olcum_hata', '?')}")
+    elif not rapor.get("gecti"):
+        warn(f"   Duzeltme yolu: python haftalik_islet.py --yeniden-gun {gun}")
+        warn(f"   (sadece montaji tekrarla: python haftalik_islet.py --sadece-studio {gun} --chn {chn})")
+    return rapor
 
 
 def main():
@@ -407,6 +447,7 @@ def main():
     parser.add_argument("--basla", type=int, default=1, help="Kacinci gunden baslasin (varsayilan 1)")
     parser.add_argument("--evet", action="store_true", help="Onay sormadan basla")
     parser.add_argument("--studio-atla", action="store_true", help="3. adimi (ShortsStudio montaji) atla, sadece VideoForge")
+    parser.add_argument("--qa-atla", action="store_true", help="Yayin oncesi QA kapisini atla (final olcumu yapilmaz)")
     parser.add_argument("--sadece-studio", type=int, default=0, help="SADECE 3. adim: verilen gunun Gun klasorunu montajla (VideoForge atlanir, DB'ye bakilmaz). Ornek: --sadece-studio 1 --chn 2")
     parser.add_argument("--chn", default=None, help="--sadece-studio ile kullanilir: hedef kanal no (yoksa plandan alinir)")
     parser.add_argument("--yeniden-gun", default=None, help="DB'de islenmis gorunse bile bu gunleri YENIDEN uret (or. --yeniden-gun 1,2,3). MP3'suz/eksik kalan gunleri duzeltmek icin: kayit silinir, gun bastan uretilir.")
@@ -433,7 +474,8 @@ def main():
             sys.exit(1)
         try:
             print(f" [Adim 3/3] ShortsStudio montaji (Gun {args.sadece_studio}, kanal {chn})...")
-            studio_ok, studio_bilgi = studio_islet(args.sadece_studio, chn, plan_toplam(plan))
+            studio_ok, studio_bilgi = studio_islet(args.sadece_studio, chn, plan_toplam(plan),
+                                                   qa_atla=args.qa_atla)
         finally:
             kilit_birak()
         if studio_ok:
@@ -589,7 +631,7 @@ def main():
             basarili.append(gun)
             continue
         print(f" [Adim 3/3] ShortsStudio montaj...")
-        studio_ok, studio_bilgi = studio_islet(gun, chn, toplam)
+        studio_ok, studio_bilgi = studio_islet(gun, chn, toplam, qa_atla=args.qa_atla)
         if studio_ok:
             ok(f"✅ Gun {gun} final hazir: {studio_bilgi}")
             basarili.append(gun)
@@ -609,7 +651,14 @@ def main():
     if basarisiz:
         print(f"  ❌ Basarisiz gunler: {basarisiz} (linkler islenmedi sayilir, tekrar kosuda otomatik denenir)")
     for g in sorted(final_haritasi, key=int):
-        print(f"     Gun {g} → {final_haritasi[g]}")
+        qa = QA_SONUCLARI.get(str(g))
+        qa_ek = f"  [QA {qa['skor']}/100 {qa['derece']}]" if qa else ""
+        print(f"     Gun {g} → {final_haritasi[g]}{qa_ek}")
+    zayif_gunler = sorted([g for g, q in QA_SONUCLARI.items() if q.get("derece") == "ZAYIF"],
+                          key=lambda x: int(x) if x.isdigit() else 0)
+    if zayif_gunler:
+        print(f"  ⚠️ QA: {KALITE_ESIGI} puan altinda kalan gunler: {', '.join(zayif_gunler)}")
+        print(f"     Duzeltmek icin: python haftalik_islet.py --yeniden-gun {','.join(zayif_gunler)}")
     if sistemik_hata:
         print(f"  🛑 Zincir sistemik hata yuzunden erken durduruldu: {sistemik_hata}")
         print("     (Ses/abonelik sorunu cozulunce ayni komutu tekrar calistir; kalan gunler otomatik devam eder.)")
@@ -620,6 +669,7 @@ def main():
             json.dump({"chn": chn, "kanal_ad": kanal_ad, "tarih": time.strftime("%Y-%m-%d %H:%M"),
                        "tam_final": basarili, "studio_eksik": studio_eksik,
                        "basarisiz": basarisiz, "finaller": final_haritasi,
+                       "qa": QA_SONUCLARI,
                        "sistemik_hata": sistemik_hata},
                       f, indent=2, ensure_ascii=False)
         print(f"  💾 Sonuc haritasi: {sonuc_file}")

@@ -10,9 +10,42 @@ import subprocess
 import requests
 from constants import API_KEY, API_URL, platform_tespit_et
 
+# Bu kosuda transcript API'nin KALICI olarak veremedigi videolar (404/400/410)
+# + yetki hatasi bayragi. Sebep: ayni video icin (kesif turu + ana kosu)
+# tekrar tekrar ucretli istek atilmasin; kredi ve log bosuna yanmasin.
+_API_YOK = set()
+_API_YETKI_HATA = False
+
+
+def _api_anahtar(video_url):
+    """API sonucunu hatirlamak icin anahtar (video ID varsa o, yoksa URL)."""
+    return _youtube_id(video_url) or (video_url or "").strip()
+
+
+def _api_cevap_hata(response, anahtar):
+    """200 disi cevabi siniflandirir. True: cagri sahibi temiz cikmali (None)."""
+    global _API_YETKI_HATA
+    kod = response.status_code
+    if kod in (400, 404, 410):
+        # Bu video icin transcript YOK (video kaldirilmis/bolgeye kapali ya da
+        # hic altyazisi yok). Kalici: 3 kez tekrar denemek anlamsiz.
+        _API_YOK.add(anahtar)
+        print(f"ℹ️ [Bulut] Transcript API bu videoda transcript veremiyor (HTTP {kod}) — diger altyazi yollari denenecek.")
+        return True
+    if kod in (401, 403):
+        _API_YETKI_HATA = True
+        print(f"❌ [Bulut] Transcript API yetki/kredi hatasi (HTTP {kod}): TRANSCRIPT_API_KEY ve bakiyeni kontrol et.")
+        return True
+    print(f"❌ [Bulut] Transcript API hatasi: {kod} - {response.text[:200]}")
+    return True
+
+
 def api_ile_transkript_cek(video_url):
     headers = {"Authorization": f"Bearer {API_KEY}"}
     params = {"video_url": video_url, "format": "text", "include_timestamp": "false"}
+    anahtar = _api_anahtar(video_url)
+    if _API_YETKI_HATA or anahtar in _API_YOK:
+        return None
     for attempt in range(3):
         try:
             response = requests.get(API_URL, headers=headers, params=params, timeout=30)
@@ -23,7 +56,7 @@ def api_ile_transkript_cek(video_url):
                 time.sleep(2 * (attempt + 1))
                 continue
             else:
-                print(f"❌ [Bulut] Transcript API hatasi: {response.status_code} - {response.text}")
+                _api_cevap_hata(response, anahtar)
                 return None
         except Exception as e:
             print(f"❌ [Bulut] Transcript API baglanti hatasi: {e}")
@@ -37,6 +70,9 @@ def api_ile_transkript_chunk_cek(video_url):
     """Fetch the transcript with per-chunk timings (start + duration, seconds)."""
     headers = {"Authorization": f"Bearer {API_KEY}"}
     params = {"video_url": video_url, "format": "json", "include_timestamp": "true"}
+    anahtar = _api_anahtar(video_url)
+    if _API_YETKI_HATA or anahtar in _API_YOK:
+        return []
     for attempt in range(3):
         try:
             response = requests.get(API_URL, headers=headers, params=params, timeout=30)
@@ -57,7 +93,7 @@ def api_ile_transkript_chunk_cek(video_url):
                 time.sleep(2 * (attempt + 1))
                 continue
             else:
-                print(f"❌ [Bulut] Transcript API hatasi: {response.status_code} - {response.text[:200]}")
+                _api_cevap_hata(response, anahtar)
                 return []
         except Exception as e:
             print(f"❌ [Bulut] Transcript API baglanti hatasi: {e}")
@@ -99,10 +135,24 @@ def transkript_cek_zamanli(link, video_path=None):
     source_timeline = [{'text','start','end'}] in seconds for the SOURCE video,
     [] if timings unavailable (fallback paths)."""
     platform = platform_tespit_et(link)
-    timeline = transkript_zaman_cizelgesi(link) if platform == "youtube" else []
-    if timeline:
-        text = " ".join(s["text"] for s in timeline)
-        return text, timeline
+    if platform == "youtube":
+        # Once ucretsiz yt-dlp altyazisi, olmazsa Transcript API (tek tur).
+        timeline = transkript_zaman_cizelgesi(link)
+        if timeline:
+            text = " ".join(s["text"] for s in timeline)
+            return text, timeline
+        # Altyazi/API yok: yerel videodan ZAMAN damgali Whisper. Eskiden burada
+        # transkript_cek() cagrilip altyazi + API IKINCI kez deniyordu (bosa
+        # istek + log kalabaligi), sonra zamansiz whisper'a dusuluyordu.
+        if video_path:
+            print("🎙️ Altyazi/API yok — yerel videodan zaman damgali Whisper uretiliyor...")
+            text, tl = whisper_ile_zamanli_transkript_cek(video_path)
+            if text:
+                return text, tl
+            text = whisper_ile_transkript_cek(video_path)
+            return (text or None), []
+        text = transkript_cek(link)
+        return (text if text else None), []
     if platform in ("tiktok", "instagram") and video_path:
         print("🌐 Ucretsiz altyazi deneniyor...")
         alt = yt_dlp_ile_alt_yazi_cek(link)
@@ -158,7 +208,11 @@ def whisper_ile_zamanli_transkript_cek(video_path, model_adi="small"):
         shutil.rmtree(tmp, ignore_errors=True)
 
 def whisper_ile_transkript_cek(video_path, dil=None):
-    import speech_recognition as sr
+    try:
+        import speech_recognition as sr
+    except Exception:
+        print("⚠️ speech_recognition kurulu degil, zamansiz Whisper yedegi atlaniyor.")
+        return None
     tmp = tempfile.mkdtemp()
     wav_path = os.path.join(tmp, "audio.wav")
     try:
@@ -422,7 +476,10 @@ def transkript_cek(link, video_path=None):
         if api_text:
             return api_text
         if video_path:
-            print("⚠️ API de vermedi, Whisper ile çekiliyor...")
+            print("⚠️ API de vermedi, yerel videodan Whisper ile cekiliyor...")
+            text, _tl = whisper_ile_zamanli_transkript_cek(video_path)
+            if text:
+                return text
             return whisper_ile_transkript_cek(video_path)
         return None
     elif platform == "tiktok":

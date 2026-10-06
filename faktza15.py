@@ -9,22 +9,6 @@ from functions.ui import header, footer_done, footer_fail, info, ok, warn, err, 
 from functions.tts_kontrol import SISTEMIK_ISARET, yerel_on_kontrol
 from bulut_kanali import app, cloud_orchestrator, cloud_transcribe  # #2: ortak bulut katmani
 
-PROMPT = """You write Russian scripts for YouTube Shorts about interesting facts.
-
-Rules:
-1. Retell the transcript in your own words (not literal translation)
-2. First sentence — hook question
-3. Last sentence — question related to the topic, answer NOT in the text
-4. No [music] or —
-
-Format:
-===TITLE_RU===
-[hook question] [1-2 emojis] #[hashtag]
-===TAGS===
-15 comma-separated tags
-===VOICE_RU===
-[4-6 sentences, ~600 chars, only facts from transcript]"""
-
 VOICE_PROMPT = """You write Russian voiceover text for YouTube Shorts about interesting facts.
 
 Rules:
@@ -172,7 +156,7 @@ def main(link: str = None, gun: int = 0, gun_toplam: int = 0):
     with open(video_path, "rb") as f: v_bytes = f.read()
     step(3, 4, "Temizlik + AI basliyor...")
     response = cloud_orchestrator.remote(link, rand_num, v_bytes, raw_title, tam_metin, force=True, source_timeline=source_timeline,
-                                          system_prompt=PROMPT, voice_id=VOICE_ID, lang=LANG, channel_name=CHANNEL_NAME,
+                                          system_prompt=VOICE_PROMPT, voice_id=VOICE_ID, lang=LANG, channel_name=CHANNEL_NAME,
                                           voice_prompt=VOICE_PROMPT, title_prompt=TITLE_PROMPT, tags_prompt=TAGS_PROMPT)
     if response.get("error"):
         err(f"Hata: {response['error']}")

@@ -860,8 +860,8 @@ def run_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, system_p
         char_limit = max(CHAR_LIMIT_KINO_SYJET, int(len(tam_metin) * 0.8))
     else:
         char_limit = min(600, max(500, get_char_limit()))
-    sp = system_prompt.replace("{char_limit}", str(char_limit))
-    vp = (voice_prompt or system_prompt).replace("{char_limit}", str(char_limit))
+    # Tek prompt kaynagi: voice_prompt (yoksa eski cagrilar icin system_prompt).
+    vp = (voice_prompt or system_prompt or "").replace("{char_limit}", str(char_limit))
 
     def _regen_shorter(current_text, new_limit):
         """Regenerate the voiceover at the target length instead of blindly

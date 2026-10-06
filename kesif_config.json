@@ -6,7 +6,7 @@
   "gun_sayisi": 7,
   "transcript_ytdlp": true,
   "whisper_yedek": true,
-  "havuz_sayisi": 40,
+  "havuz_sayisi": 70,
   "kanallar": {
     "1": {
       "ad": "Kino Sekrety",
@@ -38,5 +38,7 @@
         "https://www.tiktok.com/@anh.phan0485"
       ]
     }
-  }
+  },
+  "transcript_api": true,
+  "cop_doldur": false
 }
