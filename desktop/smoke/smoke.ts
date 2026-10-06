@@ -13,8 +13,16 @@ import { app, BrowserWindow } from 'electron'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { GUN_SAYISI_MAX, GUN_SAYISI_VARSAYILAN, IPC, normalGunSayisi } from '@shared/constants'
-import { CHANNELS } from '@shared/channels'
+import {
+  GUN_SAYISI_MAX,
+  GUN_SAYISI_VARSAYILAN,
+  IPC,
+  KLIP_SAYISI_VARSAYILAN,
+  normalGunSayisi,
+  normalKlipSayisi,
+  normalKlipSuresi,
+} from '@shared/constants'
+import { CHANNELS, STAGES } from '@shared/channels'
 import type { LogLine } from '@shared/types'
 import { registerIpc } from '../electron/ipc'
 import { registerWindowIpc, setMainWindow } from '../electron/core/window'
@@ -30,6 +38,7 @@ import { forgetLink, readLibrary } from '../electron/data/library'
 import { engineConfig } from '../electron/data/engine'
 import { readBotLog, weeklyData } from '../electron/data/logs'
 import { groupArtifacts, listArtifacts, previewHtml, scanArtifactsSince } from '../electron/data/reports'
+import { klipDurumu } from '../electron/data/klip'
 
 const ROOT = path.resolve(__dirname, '..')
 
@@ -321,6 +330,66 @@ async function main(): Promise<void> {
       check('SEO HTML onizlemesi (dosya yok, atlandi)', true, 'masaustunde _SEO.html yok')
     }
 
+    /* ---------------- 5b. KLIPCI ciktilari (Klip Studyo sayfasi) ---------------- */
+    section('5b) Klip Studyo cikti listesi (Masaustu/Klipler)')
+    const klipRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-klip-'))
+    check('Klipler klasoru yoksa bos liste doner (hata yok)', klipDurumu(klipRoot).ok && klipDurumu(klipRoot).klasorler.length === 0)
+    const klipKlasor = path.join(klipRoot, 'Reportaj_1937')
+    fs.mkdirSync(klipKlasor, { recursive: true })
+    const klipDosya = path.join(klipKlasor, 'klip_01_arsiv.mp4')
+    write(klipDosya, 'mp4-baytlari')
+    write(
+      path.join(klipKlasor, 'klip_plani.json'),
+      JSON.stringify({
+        baslik: 'Arsiv reportaji',
+        link: 'https://youtu.be/abc',
+        video: 'C:\\tmp\\abc.mp4',
+        konusmaci_sayisi: 2,
+        ayrim_yontemi: 'kmeans',
+        yuz_izi_sayisi: 2,
+        transkript_kaynagi: 'altyazi/api',
+        atilan_kesit: 7,
+        klipler: [
+          {
+            no: 1,
+            baslik: 'Arsivde 1937 kaydi var',
+            skor: 71.5,
+            sure: 41.2,
+            baslangic: 100,
+            bitis: 141.2,
+            panel_dagilimi: { '1': 3, '2': 2 },
+            dosya: klipDosya,
+            srt: path.join(klipKlasor, 'klip_01_arsiv.srt'),
+            qa: { puan: 88, derece: 'GECTI', sorunlar: [] },
+          },
+          { no: 2, baslik: 'Render edilemedi', skor: 60, sure: 30, dosya: null, hata: 'ffmpeg hatasi' },
+        ],
+      }),
+    )
+    fs.mkdirSync(path.join(klipRoot, 'Bozuk_klasor'), { recursive: true })
+    write(path.join(klipRoot, 'Bozuk_klasor', 'klip_plani.json'), '{ bu json degil')
+    const kd = klipDurumu(klipRoot)
+    check('Klip klasoru okundu (bozuk json sessizce atlandi)', kd.ok && kd.klasorler.length === 1, `${kd.klasorler.length} klasor`)
+    const kdKlasor = kd.klasorler[0]
+    check('Klip sayilari/konusmaci bilgisi plan dosyasindan geldi',
+      kd.toplamKlip === 2 && kdKlasor.konusmaciSayisi === 2 && kdKlasor.atilanKesit === 7 && Boolean(kdKlasor.link),
+      `klip=${kd.toplamKlip} konusmaci=${kdKlasor.konusmaciSayisi} atilan=${kdKlasor.atilanKesit}`)
+    check('Var olan dosya isaretlendi, olmayan dosya dosyaVar=false',
+      kdKlasor.klipler[0].dosyaVar === true && kdKlasor.klipler[0].boyut > 0 && kdKlasor.klipler[1].dosyaVar === false,
+      `${kdKlasor.klipler[0].boyut} bayt`)
+    check('QA puani/derecesi ve render hatasi tasindi',
+      kdKlasor.klipler[0].qaPuan === 88 && kdKlasor.klipler[0].qaDerece === 'GECTI' && kdKlasor.klipler[1].hata === 'ffmpeg hatasi',
+      `qa=${kdKlasor.klipler[0].qaPuan} hata=${kdKlasor.klipler[1].hata}`)
+    check('En iyi QA puani ozetlenir', kd.enIyiPuan === 88, String(kd.enIyiPuan))
+    const eskiRoot = process.env.VF_KLIP_ROOT
+    process.env.VF_KLIP_ROOT = klipRoot
+    check('VF_KLIP_ROOT override edilince varsayilan kok onu kullanir', klipDurumu().klasorler.length === 1)
+    if (eskiRoot === undefined) delete process.env.VF_KLIP_ROOT
+    else process.env.VF_KLIP_ROOT = eskiRoot
+    check('Klip sayisi/sure normalizasyonu',
+      normalKlipSayisi(0) === KLIP_SAYISI_VARSAYILAN && normalKlipSayisi(99) === 10 && normalKlipSuresi(3) === 45 && normalKlipSuresi(30) === 30,
+      `${normalKlipSayisi(99)} / ${normalKlipSuresi(3)}`)
+
     /* ---------------- 6. Log ve plan okuma ---------------- */
     section('6) Log ve haftalik plan')
     const log = readBotLog(50, '')
@@ -418,6 +487,35 @@ async function main(): Promise<void> {
 
     const clean = buildSteps({ kind: 'clean', link: 'https://youtu.be/abc' }, base)
     check('Temizleyici komutu dogru', clean.steps[0].cmd.join(' ').includes('modal run temizle.py --link https://youtu.be/abc'), clean.steps[0].cmd.join(' '))
+
+    /* KLIPCI: uzun video -> Shorts (yerel motor). Arguman dizilimi botun
+       functions/klipci.py CLI'siyle birebir olmali. */
+    const klip = buildSteps({ kind: 'klip', link: 'https://youtu.be/abc' }, base)
+    check(
+      'Klip komutu klipci.py + varsayilan 3 klip / 45 sn',
+      klip.steps[0].cmd.join(' ') === 'py -3 -X utf8 functions/klipci.py --link https://youtu.be/abc --klip 3 --sure 45',
+      klip.steps[0].cmd.join(' '),
+    )
+    check('Klip isi tek adim ve yerel (modal yok)', klip.steps.length === 1 && !klip.steps[0].cmd.includes('modal'), klip.steps[0].cmd.join(' '))
+    const klip2 = buildSteps(
+      { kind: 'klip', link: 'https://youtu.be/abc', klipSayisi: 4, klipSuresi: 30, klipHoparlor: '2', klipAltyazi: 'yak', klipYuzAtla: true, klipPlanSadece: true },
+      base,
+    )
+    check(
+      'Klip secenekleri komuta geciyor (sayi/sure/panel/altyazi/yuz/plan)',
+      ['--klip 4', '--sure 30', '--hoparlor 2', '--altyazi yak', '--yuz-atla', '--plan-sadece'].every((p) => klip2.steps[0].cmd.join(' ').includes(p)),
+      klip2.steps[0].cmd.join(' '),
+    )
+    const klipOto = buildSteps({ kind: 'klip', link: 'https://youtu.be/abc', klipHoparlor: 'auto' }, base)
+    check('Otomatik panel modu komuta yazilmaz (varsayilan)', !klipOto.steps[0].cmd.includes('--hoparlor'), klipOto.steps[0].cmd.join(' '))
+    const klipDuck = buildSteps({ kind: 'klip', link: 'https://youtu.be/abc', klipDucking: true, klipMuzik: 'C:\\m\\fon.mp3' }, base)
+    check('Ducking muzikle birlikte komuta geciyor', klipDuck.steps[0].cmd.join(' ').includes('--ducking --muzik C:\\m\\fon.mp3'), klipDuck.steps[0].cmd.join(' '))
+    check('Klip normalizasyonu (99 klip -> 10, 5 sn -> 15)',
+      buildSteps({ kind: 'klip', link: 'https://youtu.be/abc', klipSayisi: 99, klipSuresi: 5 }, base).steps[0].cmd.join(' ').includes('--klip 10 --sure 45'),
+      buildSteps({ kind: 'klip', link: 'https://youtu.be/abc', klipSayisi: 99, klipSuresi: 5 }, base).steps[0].cmd.join(' '))
+    check('Klip adimlari (STAGES.klip) tanimli', STAGES.klip.length >= 5 && STAGES.klip.some((s) => s.key === 'face'))
+    const klipBadLink = await startJob({ kind: 'klip', link: 'https://youtu.be/abc', klipDucking: true, klipMuzik: path.join(os.tmpdir(), 'yok-boyle-dosya.mp3') })
+    check('Var olmayan muzik dosyasi reddedilir', !klipBadLink.ok, klipBadLink.error)
 
     /* ---------------- 9. Gecersiz girdi korumalari ---------------- */
     section('9) Girdi korumalari')
@@ -531,8 +629,8 @@ async function main(): Promise<void> {
       '',
     )
     check(
-      'Yan menu ogeleri gorunur (minimalist 3)',
-      ['ana sayfa', 'çalıştır', 'ayarlar'].every((t) => dom1lc.includes(t)),
+      'Yan menu ogeleri gorunur (4 sayfa: ana sayfa, calistir, klip studyo, ayarlar)',
+      ['ana sayfa', 'çalıştır', 'klip stüdyo', 'ayarlar'].every((t) => dom1lc.includes(t)),
       '',
     )
     check('Ortam durumu karti gorunur', dom1lc.includes('ortam durumu'), '')
@@ -542,6 +640,7 @@ async function main(): Promise<void> {
     const navOk = await win.webContents.executeJavaScript(
       `(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent && x.textContent.includes('Ayarlar')); if (!b) return false; b.click(); return true; })()`,
     )
+    void navOk
     await sleep(800)
     const dom2 = tr((await win.webContents.executeJavaScript('document.body.textContent')) as string)
     check('Ayarlar sayfasina gecis calisti', navOk === true, String(navOk))
@@ -741,6 +840,7 @@ async function main(): Promise<void> {
     const SAYFALAR: { nav: string; ad: string; isaretler: string[] }[] = [
       { nav: 'Ana Sayfa', ad: 'Ana Sayfa', isaretler: ['keşif yap', 'link ile video üret', 'n günlük üretim'] },
       { nav: 'Çalıştır', ad: 'Çalıştır', isaretler: ['aktif işlem yok', 'geçmiş'] },
+      { nav: 'Klip Stüdyo', ad: 'Klip Stüdyo', isaretler: ['klip stüdyo', 'shorts üret', 'üretilen klipler'] },
       { nav: 'Ayarlar', ad: 'Ayarlar', isaretler: ['görünüm', 'yollar ve python'] },
     ]
     for (const sayfa of SAYFALAR) {

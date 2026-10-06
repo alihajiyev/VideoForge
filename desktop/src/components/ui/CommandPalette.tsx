@@ -4,6 +4,7 @@ import {
   Moon,
   Play,
   RefreshCw,
+  Scissors,
   Search,
   Settings,
   Square,
@@ -25,6 +26,7 @@ interface Komut {
 const SAYFALAR: { key: PageKey; etiket: string; ikon: ReactNode }[] = [
   { key: 'dashboard', etiket: 'Ana Sayfa', ikon: <LayoutDashboard className="size-4" /> },
   { key: 'run', etiket: 'Çalıştır', ikon: <Play className="size-4" /> },
+  { key: 'klip', etiket: 'Klip Stüdyo', ikon: <Scissors className="size-4" /> },
   { key: 'settings', etiket: 'Ayarlar', ikon: <Settings className="size-4" /> },
 ]
 

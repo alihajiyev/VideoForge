@@ -1,5 +1,5 @@
 /**
- * Smoke testi derlemesi: smoke/smoke.ts -> dist-smoke/smoke.cjs
+ * Smoke testi derlemesi: smoke/*.ts -> dist-smoke/*.cjs
  * Electron ana surec baglaminda calisir (gercek modulleri test eder).
  */
 import path from 'node:path'
@@ -9,8 +9,9 @@ import * as esbuild from 'esbuild'
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 
 await esbuild.build({
-  entryPoints: [path.join(root, 'smoke/smoke.ts')],
-  outfile: path.join(root, 'dist-smoke/smoke.cjs'),
+  entryPoints: [path.join(root, 'smoke/smoke.ts'), path.join(root, 'smoke/klip_page_check.ts')],
+  outdir: path.join(root, 'dist-smoke'),
+  outExtension: { '.js': '.cjs' },
   bundle: true,
   platform: 'node',
   target: 'node22',
@@ -22,4 +23,4 @@ await esbuild.build({
   alias: { '@shared': path.join(root, 'shared') },
   define: { 'process.env.NODE_ENV': JSON.stringify('production') },
 })
-console.log('[build-smoke] smoke testi derlendi')
+console.log('[build-smoke] smoke testleri derlendi')

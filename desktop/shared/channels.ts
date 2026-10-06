@@ -64,4 +64,15 @@ export const STAGES: Record<JobKind, StageDef[]> = {
     { key: 'gpu', label: 'ProPainter temizleme', hint: 'GPU' },
     { key: 'output', label: 'Çıktı', hint: 'Masaüstü' },
   ],
+  /* KLIPCI: uzun video -> dikey Shorts (yerel, anahtarsiz). */
+  klip: [
+    { key: 'download', label: 'İndirme', hint: 'yt-dlp (cookies.txt)' },
+    { key: 'transcript', label: 'Transkript', hint: 'Altyazı → API → Whisper' },
+    { key: 'score', label: 'Önem skoru', hint: 'Bilgi yoğunluğu + hook' },
+    { key: 'clean', label: 'Gereksiz temizlik', hint: 'Dolgu + tekrar + sessizlik' },
+    { key: 'speaker', label: 'Konuşmacı ayırma', hint: 'KMeans (ses parmak izi)' },
+    { key: 'face', label: 'Kafa takibi', hint: 'YuNet yüz izleme' },
+    { key: 'render', label: 'Dikey montaj', hint: '1/2/4 panel + kafa takibi' },
+    { key: 'qa', label: 'QA kapısı', hint: '15-60 sn · -14 LUFS · siyah kare' },
+  ],
 }

@@ -20,6 +20,7 @@
     "release": "node scripts/release.mjs",
     "build:smoke": "node scripts/build-smoke.mjs",
     "test:smoke": "npm run build && npm run build:smoke && electron dist-smoke/smoke.cjs",
+    "check:klip-ui": "npm run build && npm run build:smoke && electron dist-smoke/klip_page_check.cjs",
     "test:bot": "python smoke/bot_features_check.py",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:all": "npm run typecheck && npm run test:bot && npm run test:smoke"

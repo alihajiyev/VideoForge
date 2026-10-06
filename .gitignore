@@ -28,6 +28,12 @@ modal_token*.txt
 performans_csv/
 performans.json
 
+# --- KLIPCI: indirilen yuz modeli (232 KB, ilk kullanimda otomatik iner) ---
+models/
+# KLIPCI ciktilari (Masaustu/Klipler'e yazilir; depoya girmesin)
+Klipler/
+*_qa.json
+
 # --- Ajan / yerel durum dosyalari ---
 .freebuff/
 # haftalik_islet.py calisma kilidi (pid tabanli, her kosuda olusur)

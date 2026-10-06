@@ -12,7 +12,7 @@ export interface ChannelDef {
   note: string
 }
 
-export type JobKind = 'channel' | 'discover' | 'weekly' | 'clean'
+export type JobKind = 'channel' | 'discover' | 'weekly' | 'clean' | 'klip'
 export type JobStatus = 'running' | 'done' | 'error' | 'cancelled'
 
 export type LogLevel = 'info' | 'ok' | 'warn' | 'err' | 'step' | 'ai' | 'gpu' | 'tts' | 'raw'
@@ -66,6 +66,68 @@ export interface JobRequest {
   /** N gunluk uretimde: DB'de islenmis gorunse bile YENIDEN uretilecek gunler ("1,2,3").
    *  MP3'suz/eksik kalan gunleri duzeltmek icin (bot --yeniden-gun ile ayni). */
   yenidenGun?: string
+
+  /* ---- KLIPCI (uzun video -> Shorts) ozel alanlari ---- */
+  /** Kac klip uretilsin (functions/klipci.py --klip) */
+  klipSayisi?: number
+  /** Hedef klip suresi, saniye (--sure) */
+  klipSuresi?: number
+  /** Konusmaci/panel modu: auto | 1 | 2 | 3 | 4 (--hoparlor) */
+  klipHoparlor?: string
+  /** Sadece analiz + plan (render yok): hizli test (--plan-sadece) */
+  klipPlanSadece?: boolean
+  /** Kafa takibini atla (--yuz-atla) */
+  klipYuzAtla?: boolean
+  /** Fon muzigi (ducking icin) */
+  klipMuzik?: string
+  /** Muzigi konusma varken kis (--ducking) */
+  klipDucking?: boolean
+  /** Altyazi modu: yok | srt | yak (--altyazi) */
+  klipAltyazi?: 'yok' | 'srt' | 'yak'
+}
+
+/** KLIPCI cikti klasorunde bulunan tek bir klip (klip_plani.json + dosya) */
+export interface KlipOgesi {
+  no: number
+  baslik: string
+  skor: number
+  sure: number
+  baslangic: number
+  bitis: number
+  panelDagilimi: Record<string, number>
+  dosya: string | null
+  dosyaVar: boolean
+  boyut: number
+  srt: string | null
+  qaPuan: number | null
+  qaDerece: string | null
+  qaSorunlar: string[]
+  hata?: string
+}
+
+/** KLIPCI klasoru (Masaustu/Klipler/<video>) ozeti */
+export interface KlipKlasoru {
+  klasor: string
+  ad: string
+  mtime: number
+  link: string
+  video: string
+  konusmaciSayisi: number
+  konusmaciYontemi: string
+  yuzIziSayisi: number
+  transkriptKaynagi: string
+  atilanKesit: number
+  planDosyasi: string
+  klipler: KlipOgesi[]
+}
+
+export interface KlipDurumu {
+  ok: boolean
+  error?: string
+  kok: string
+  klasorler: KlipKlasoru[]
+  toplamKlip: number
+  enIyiPuan: number | null
 }
 
 export interface JobState {
@@ -140,6 +202,8 @@ export interface KuyrukOgesi {
   force?: boolean
   haftalik?: boolean
   gunSayisi?: number
+  klipSayisi?: number
+  klipSuresi?: number
   status: KuyrukDurumu
   title: string
   addedAt: number

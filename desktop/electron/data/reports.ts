@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { KLIP_KLASOR } from '@shared/constants'
 import type { Artifact, ArtifactKind, ReportPreview } from '@shared/types'
 import { desktopDir } from '../core/paths'
 
@@ -11,6 +12,7 @@ const PATTERNS: { re: RegExp; kind: ArtifactKind }[] = [
   { re: /^Kesif-Rapor.*\.html$/i, kind: 'report' },
   { re: /_final\.mp4$/i, kind: 'video' },
   { re: /^final_.*\.mp4$/i, kind: 'video' },
+  { re: /^klip_\d+.*\.mp4$/i, kind: 'video' },
 ]
 
 export function classify(name: string): ArtifactKind | null {
@@ -24,6 +26,18 @@ function candidateDirs(kok: string = desktopDir): string[] {
     for (const entry of fs.readdirSync(kok, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue
       if (/^Gun\d+_/i.test(entry.name) || /^Gun\d+/i.test(entry.name)) dirs.push(path.join(kok, entry.name))
+      // KLIPCI ciktilari: Masaustu/Klipler/<video adi>/*.mp4
+      if (entry.name === KLIP_KLASOR) {
+        const klipKok = path.join(kok, entry.name)
+        dirs.push(klipKok)
+        try {
+          for (const alt of fs.readdirSync(klipKok, { withFileTypes: true })) {
+            if (alt.isDirectory()) dirs.push(path.join(klipKok, alt.name))
+          }
+        } catch {
+          /* Klipler okunamadi */
+        }
+      }
     }
   } catch {
     /* Desktop okunamadi */

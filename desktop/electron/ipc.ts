@@ -12,6 +12,7 @@ import { engineConfig, setCharLimit } from './data/engine'
 import { envCheck } from './data/env'
 import { forgetLink, readLibrary } from './data/library'
 import { readBotLog, weeklyData } from './data/logs'
+import { klipDurumu } from './data/klip'
 import { botGitStatus, checkForUpdate, downloadUpdate, launchDownloaded, openReleasePage, pullBotCode } from './update/updater'
 import { otomatikDurum, otomatikKontrol, otomatikKur } from './update/auto'
 import { groupArtifacts, listArtifacts, previewHtml } from './data/reports'
@@ -168,6 +169,14 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.weeklyPlan, () => {
     try {
       return ok(weeklyData())
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+
+  ipcMain.handle(IPC.klipDurum, () => {
+    try {
+      return ok(klipDurumu())
     } catch (err) {
       return fail(String(err))
     }

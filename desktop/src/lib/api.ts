@@ -12,6 +12,7 @@ import type {
   HarcamaOzeti,
   JobRequest,
   JobState,
+  KlipDurumu,
   KotaBilgisi,
   KrediServisi,
   KuyrukOgesi,
@@ -153,6 +154,62 @@ const mockLibrary: LibraryData = {
   ],
   settings: { char_limit: '500', working_model: 'gemini-flash-lite-latest' },
   counts: { videos: 2, oneriler: 2 },
+}
+
+const mockKlip: KlipDurumu = {
+  ok: true,
+  kok: 'C:\\Users\\Vafa\\Desktop\\Klipler',
+  toplamKlip: 2,
+  enIyiPuan: 90,
+  klasorler: [
+    {
+      klasor: 'C:\\Users\\Vafa\\Desktop\\Klipler\\Reportaj_1937',
+      ad: 'Reportaj_1937',
+      mtime: Date.now() - 900_000,
+      link: 'https://youtube.com/watch?v=abc',
+      video: 'C:\\tmp\\abc.mp4',
+      konusmaciSayisi: 2,
+      konusmaciYontemi: 'kmeans',
+      yuzIziSayisi: 2,
+      transkriptKaynagi: 'altyazi/api',
+      atilanKesit: 18,
+      planDosyasi: 'C:\\Users\\Vafa\\Desktop\\Klipler\\Reportaj_1937\\klip_plani.json',
+      klipler: [
+        {
+          no: 1,
+          baslik: 'Arsivde 1937 yilinda cekilmis 14 saniyelik bir kayit var',
+          skor: 78.4,
+          sure: 42.6,
+          baslangic: 132.4,
+          bitis: 175,
+          panelDagilimi: { '1': 4, '2': 2 },
+          dosya: 'C:\\Users\\Vafa\\Desktop\\Klipler\\Reportaj_1937\\klip_01_arsiv.mp4',
+          dosyaVar: true,
+          boyut: 18_400_000,
+          srt: 'C:\\Users\\Vafa\\Desktop\\Klipler\\Reportaj_1937\\klip_01_arsiv.srt',
+          qaPuan: 90,
+          qaDerece: 'GECTI',
+          qaSorunlar: [],
+        },
+        {
+          no: 2,
+          baslik: 'Uc sehrin elektrik plani 20 yil boyunca yanlis cizilmis',
+          skor: 71.2,
+          sure: 38.1,
+          baslangic: 402.5,
+          bitis: 440.6,
+          panelDagilimi: { '2': 3 },
+          dosya: 'C:\\Users\\Vafa\\Desktop\\Klipler\\Reportaj_1937\\klip_02_plan.mp4',
+          dosyaVar: true,
+          boyut: 15_100_000,
+          srt: null,
+          qaPuan: 74,
+          qaDerece: 'ORTA',
+          qaSorunlar: ['Donmus kare orani yuksek (%11)'],
+        },
+      ],
+    },
+  ],
 }
 
 const mockGroups: ReportGroupPayload[] = [
@@ -352,6 +409,7 @@ const mockApi: VideoForgeApi = {
     },
   }),
   weeklyPlan: async () => ({ ok: true, data: { ok: true, plan: [], results: [] } }),
+  klipDurum: async () => ({ ok: true, data: mockKlip }),
   engineConfig: async () => ({ ok: true, data: mockEngine }),
   engineSetCharLimit: async (v: number) => ({ ok: true, data: { ...mockEngine, charLimit: v } }),
   logsRead: async () => ({

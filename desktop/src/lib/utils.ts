@@ -100,4 +100,5 @@ export const KIND_LABEL: Record<string, string> = {
   discover: 'Keşif',
   weekly: 'Çok günlü zincir',
   clean: 'Temizleme',
+  klip: 'Klip Stüdyo',
 }

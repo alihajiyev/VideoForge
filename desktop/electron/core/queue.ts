@@ -51,6 +51,7 @@ function baslik(kind: JobKind, channelId: ChannelId, link?: string): string {
   }
   if (kind === 'discover') return `Keşif · ${ch?.name ?? channelId}`
   if (kind === 'weekly') return `Zincir · ${ch?.name ?? channelId}`
+  if (kind === 'klip') return `Klip · ${link ?? ''}`.trim()
   return ch?.name ?? 'İş'
 }
 
@@ -61,6 +62,9 @@ export interface KuyrukGirdi {
   force?: boolean
   haftalik?: boolean
   gunSayisi?: number
+  /** KLIPCI isleri icin (uzun video -> Shorts). */
+  klipSayisi?: number
+  klipSuresi?: number
 }
 
 export function kuyrukListesi(): KuyrukOgesi[] {
@@ -73,7 +77,7 @@ export function kuyrugaEkle(girdiler: KuyrukGirdi[]): KuyrukOgesi[] {
   for (const g of girdiler) {
     const channelId = (g.channelId ?? '1') as ChannelId
     const kind = g.kind
-    if ((kind === 'channel' || kind === 'clean') && !g.link) continue
+    if ((kind === 'channel' || kind === 'clean' || kind === 'klip') && !g.link) continue
     list.push({
       id: randomUUID(),
       kind,
@@ -82,6 +86,8 @@ export function kuyrugaEkle(girdiler: KuyrukGirdi[]): KuyrukOgesi[] {
       force: Boolean(g.force),
       haftalik: Boolean(g.haftalik),
       gunSayisi: g.gunSayisi,
+      klipSayisi: g.klipSayisi,
+      klipSuresi: g.klipSuresi,
       status: 'bekliyor',
       title: baslik(kind, channelId, g.link),
       addedAt: Date.now(),
@@ -124,6 +130,9 @@ function istekCevir(oge: KuyrukOgesi): JobRequest {
     force: oge.force,
     haftalik: oge.haftalik,
     gunSayisi: oge.gunSayisi ?? getSettings().gunSayisi,
+    ...(oge.kind === 'klip'
+      ? { klipSayisi: oge.klipSayisi, klipSuresi: oge.klipSuresi }
+      : {}),
   }
 }
 

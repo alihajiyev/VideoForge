@@ -1208,6 +1208,208 @@ kontrol("QA kapisi atlanabilir (--qa-atla) ve varsayilan ACIK",
         "--qa-atla" in _qa_atlandi_kaynak and "qa_atla=False" in _qa_atlandi_kaynak)
 
 # --------------------------------------------------------------------------
+bolum("T) SES ISLEME + KLIPCI (uzun video -> Shorts motoru; yerel ve ucretsiz)")
+
+import functions.ses_isleme as _si  # noqa: E402
+import functions.klipci as _kc  # noqa: E402
+
+FFMPEG_VAR = bool(shutil.which("ffmpeg")) and bool(shutil.which("ffprobe"))
+
+# --- T1) Ses isleme: GERCEK ffmpeg ile temizlik + LUFS esitleme + ducking ---
+if not FFMPEG_VAR:
+    atla("Ses isleme (gercek ffmpeg)", "ffmpeg PATH'te yok")
+else:
+    _ses_kok = gecici("vf_ses_")
+    _konusma = os.path.join(_ses_kok, "konusma.wav")
+    _fon = os.path.join(_ses_kok, "fon.wav")
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "anoisesrc=d=6:c=pink:a=0.02",
+                    "-f", "lavfi", "-i", "sine=f=220:d=6",
+                    "-filter_complex", "[1:a]vibrato=f=5:d=0.4,volume=0.5[v];[0:a][v]amix=inputs=2:normalize=0[o]",
+                    "-map", "[o]", "-ar", "48000", "-ac", "2", _konusma], check=True, capture_output=True)
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "sine=f=110:d=4,volume=0.4",
+                    "-f", "lavfi", "-i", "sine=f=165:d=4,volume=0.3",
+                    "-filter_complex", "[0:a][1:a]amix=inputs=2:normalize=0[o]",
+                    "-map", "[o]", "-ar", "48000", "-ac", "2", _fon], check=True, capture_output=True)
+    _temiz = os.path.join(_ses_kok, "temiz.wav")
+    _esit = os.path.join(_ses_kok, "esit.wav")
+    kontrol("ses_isleme.gurultu_temizle gercek dosya uretir",
+            _si.gurultu_temizle(_konusma, _temiz) and os.path.getsize(_temiz) > 10000)
+    kontrol("ses_isleme.ses_esitle calisir", _si.ses_esitle(_temiz, _esit, hedef_lufs=-14.0))
+    _olcum = _si.lufs_olc(_esit) or {}
+    kontrol("Esitleme sonrasi ses -14 LUFS hedefine yakin (+/-1.5)",
+            _olcum.get("lufs") is not None and abs(_olcum["lufs"] + 14.0) <= 1.5,
+            f"{_olcum.get('lufs')} LUFS")
+    _duck = os.path.join(_ses_kok, "duck.wav")
+    kontrol("Muzik ducking (sidechaincompress) calisir",
+            _si.muzik_ducking(_temiz, _fon, _duck, ducking_db=-16.0) and os.path.getsize(_duck) > 10000)
+    _tam = os.path.join(_ses_kok, "tam.wav")
+    kontrol("Tam zincir (temizle -> ducking -> LUFS) tek komutla calisir",
+            _si.tam_isle(_konusma, _tam, muzik=_fon, hedef_lufs=-14.0) and os.path.exists(_tam))
+    _cli_ses = subprocess.run([sys.executable, "functions/ses_isleme.py", "--giris", _konusma, "--olc"],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=300, env={**os.environ, "PYTHONUTF8": "1"})
+    kontrol("ses_isleme CLI LUFS olcumunu JSON basar",
+            _cli_ses.returncode == 0 and "lufs" in _cli_ses.stdout)
+
+# --- T2) KLIPCI: an skorlama, filler temizligi, konu butunluklu pencere ---
+_kok_klip = gecici("vf_klip_")
+_klip_ses = os.path.join(_kok_klip, "ses.wav")
+if FFMPEG_VAR:
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "sine=f=150:d=40,volume=0.3",
+                    "-ar", "16000", "-ac", "1", _klip_ses], check=True, capture_output=True)
+
+_metinler = [
+    (0.5, 4.0, "Bu arsivde 1937 yilinda cekilmis 14 saniyelik bir kayit var ve kimse bilmiyor."),
+    (4.2, 6.0, "Yani iste sey falan filan, ee hmm."),
+    (6.2, 10.0, "Raporda fabrikanin uretim sayisi yuzde 42 daha yuksek gorunuyor, bu cok buyuk bir hata."),
+    (10.2, 14.0, "Bu hata yuzunden uc sehrin plani 20 yil boyunca yanlis cizilmis."),
+    (14.2, 18.0, "Ayni cumle burada tekrar ediyor ve gereksiz yer kapliyor diyoruz simdi."),
+    (18.2, 22.0, "Raporda fabrikanin uretim sayisi yuzde 42 daha yuksek gorunuyor, bu cok buyuk bir hata."),
+    (22.2, 26.0, "Peki neden bu rakam bugune kadar hic yayinlanmadi, sorumlu kim?"),
+    (26.2, 30.0, "Cunku arsiv gorevlisi 1964 yilinda dosyayi kapattigini yazmis ama dosya hala acik."),
+]
+_kesitler = [{"start": a, "end": b, "text": t} for a, b, t in _metinler]
+if FFMPEG_VAR:
+    _kesitler = _kc.an_skorlari(_kesitler, _klip_ses)
+    _skorlar = [x["skor"] for x in _kesitler]
+    kontrol("KLIPCI her cumleye 0-100 arasi onem skoru veriyor",
+            all(0 <= s <= 100 for s in _skorlar) and len(set(_skorlar)) >= 3, str(_skorlar))
+    _dolgu_skor = next(x["skor"] for x in _kesitler if "falan filan" in x["text"])
+    _bilgi_skor = next(x["skor"] for x in _kesitler if "yuzde 42" in x["text"])
+    kontrol("Dolgu cumlesi bilgi dolu cumleden DAHA DUSUK puan alir",
+            _dolgu_skor < _bilgi_skor, f"dolgu={_dolgu_skor} bilgi={_bilgi_skor}")
+    kontrol("Skor kirilimi (bilgi/hook/nadirlik/vurgu/ceza) hesaplaniyor",
+            all(set(x["kirilim"]) == {"bilgi", "hook", "nadirlik", "vurgu", "dolgu_cezasi"} for x in _kesitler))
+    _temiz_k, _atilan_k = _kc.filler_temizle(_kesitler)
+    kontrol("Tekrar eden cumle ayiklanir (near-duplicate)",
+            any("tekrar" in (a.get("sebep") or "") for a in _atilan_k) or len(_temiz_k) < len(_kesitler),
+            f"atilan={[a.get('sebep') for a in _atilan_k]}")
+    _pencereler = _kc.klip_pencereleri(_temiz_k, adet=2, hedef_sure=25, min_sure=15, maks_sure=60)
+    kontrol("Konu butunluklu klip penceresi uretilir", len(_pencereler) >= 1,
+            f"{len(_pencereler)} pencere")
+    kontrol("Pencereler ortusmez",
+            all(not (a["start"] < b["end"] and b["start"] < a["end"])
+                for i, a in enumerate(_pencereler) for b in _pencereler[i + 1:]))
+    kontrol("Pencere sureleri Shorts sinirlari icinde (<=60 sn)",
+            all(12 <= p["sure"] <= 62 for p in _pencereler), str([p["sure"] for p in _pencereler]))
+    kontrol("Pencere icindeki kesitler zaman sirali",
+            all(all(p["kesitler"][i]["start"] < p["kesitler"][i + 1]["start"]
+                    for i in range(len(p["kesitler"]) - 1)) for p in _pencereler))
+else:
+    atla("KLIPCI skorlama/pencere (gercek ffmpeg + wav gerekir)", "ffmpeg PATH'te yok")
+
+# --- T3) Panel/kadraj plani: 1, 2 ve 4 kisi ayni anda konusunca ---
+_yuz_bilgi = {"fw": 1920, "fh": 1080, "izler": [
+    {"id": 0, "noktalar": [(0.0, (300.0, 300.0, 200.0, 220.0))], "hareket": []},
+    {"id": 1, "noktalar": [(0.0, (1400.0, 300.0, 200.0, 220.0))], "hareket": []},
+]}
+_esleme = {0: 0, 1: 1, 2: 0, 3: 1}
+_kutu_hatasi = []
+for _n in (1, 2, 3, 4):
+    _parca_kesitler = [{"start": 0.5 * i, "end": 10.0 + 0.5 * i, "text": f"konusmaci {i}", "skor": 60}
+                       for i in range(_n)]
+    _etiketler = {round(k["start"], 3): i for i, k in enumerate(_parca_kesitler)}
+    _pencere = {"start": 0.5, "end": 10.0, "sure": 9.5, "kesitler": _parca_kesitler,
+                "skor": 60, "en_yuksek": 60}
+    _parcalar = _kc.kadraj_plani(_pencere, _etiketler, _esleme, _yuz_bilgi["izler"], _yuz_bilgi)
+    if not _parcalar or any(p["panel_sayisi"] != _n for p in _parcalar):
+        _kutu_hatasi.append(f"{_n} kisi -> panel {[p['panel_sayisi'] for p in _parcalar]}")
+    for _p in _parcalar:
+        _hedef = 1080 * 1920
+        _toplam = sum(pp["hedef"][0] * pp["hedef"][1] for pp in _p["paneller"])
+        if _toplam != _hedef:
+            _kutu_hatasi.append(f"panel alanlari tam ekrani doldurmuyor ({_n} kisi)")
+        for pp in _p["paneller"]:
+            cw, ch, cx, cy = pp["kutu"]
+            if cx + cw > _yuz_bilgi["fw"] or cy + ch > _yuz_bilgi["fh"] or cw < 2 or ch < 2:
+                _kutu_hatasi.append(f"kadraj karesi disari tasiyor ({_n} kisi)")
+kontrol("Ayni anda 1/2/3/4 kisi -> 1/2/3/4 panel, alanlar tam ekran, kadraj kare icinde",
+        not _kutu_hatasi, "; ".join(_kutu_hatasi))
+_ikili = next((p for p in _kc.kadraj_plani(
+    {"start": 0.5, "end": 10.0, "sure": 9.5, "skor": 60, "en_yuksek": 60,
+     "kesitler": [{"start": 0.5, "end": 10.0, "text": "a", "skor": 60},
+                  {"start": 0.6, "end": 10.1, "text": "b", "skor": 60}]},
+    {0.5: 0, 0.6: 1}, _esleme, _yuz_bilgi["izler"], _yuz_bilgi) if p["panel_sayisi"] == 2), None)
+kontrol("Iki kisi ayni anda konusunca penceresi ALT/UST ikiye bolunuyor",
+        _ikili is not None and [pp["ad"] for pp in _ikili["paneller"]] == ["ust", "alt"],
+        str(_ikili and [pp["ad"] for pp in _ikili["paneller"]]))
+
+# --- T4) Render grafigi: ffmpeg gercekten calisir mi (etiket/crop hatalari) ---
+if FFMPEG_VAR:
+    _kaynak = os.path.join(_kok_klip, "kaynak.mp4")
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30:duration=3",
+                    "-f", "lavfi", "-i", "sine=f=200:d=3",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-shortest", _kaynak], check=True, capture_output=True)
+    # KAYNAK 640x360: kadraj hesabi yanlis boyuta gore yapilsa bile render
+    # duzeltilmis olmali (_kadrajlari_sinirla kare boyutuna kirpar).
+    _kucuk_yuz = {"fw": 1920, "fh": 1080, "izler": _yuz_bilgi["izler"]}
+    _parcalar2 = _kc.kadraj_plani(
+        {"start": 0.2, "end": 2.8, "sure": 2.6, "skor": 60, "en_yuksek": 60,
+         "kesitler": [{"start": 0.2, "end": 2.8, "text": "a", "skor": 60},
+                      {"start": 0.3, "end": 2.9, "text": "b", "skor": 60}]},
+        {0.2: 0, 0.3: 1}, _esleme, _kucuk_yuz["izler"], _kucuk_yuz)
+    _cikti = os.path.join(_kok_klip, "panel_test.mp4")
+    _ok, _hata = _kc.klip_render(_kaynak, _parcalar2, _cikti)
+    kontrol("2 panelli GERCEK render calisir (ffmpeg graf hatasi yok)",
+            _ok and os.path.getsize(_cikti) > 20000, _hata)
+    if _ok:
+        _bilgi = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                                 "-show_entries", "stream=width,height", "-of", "csv=p=0", _cikti],
+                                capture_output=True, text=True, timeout=120).stdout.strip()
+        kontrol("Render ciktisi dikey 1080x1920", _bilgi.replace(" ", "").startswith("1080,1920"), _bilgi)
+        _qa = _kc.video_denetle(_cikti)
+        kontrol("Render ciktisi QA kapisindan gecirilebiliyor (puan uretir)",
+                isinstance(_qa.get("skor"), int) and _qa.get("sure") is not None,
+                f"{_qa.get('skor')} {_qa.get('derece')}")
+
+# --- T5) Botun MEVCUT akisi bozulmadi mi? ---
+_korunan = ["kesif.py", "haftalik_islet.py", "kinosekrety.py", "faktza15.py", "kinok_syjet.py",
+            "temizle.py", "bulut_kanali.py"]
+_kirilan = [ad for ad in _korunan
+            if "klipci" in oku(ad) or "ses_isleme" in oku(ad)]
+kontrol("Mevcut uretim zinciri klipci/ses_isleme'e bagimli DEGIL (akis bozulmadi)",
+        not _kirilan, ", ".join(_kirilan))
+for _ad in _korunan:
+    _calistirilabilir = os.path.exists(_ad)
+    if not _calistirilabilir:
+        kontrol(f"{_ad} yerinde", False)
+kontrol("Yeni motorlar ayri dosyalar (functions/klipci.py + functions/ses_isleme.py) ve CLI'lari var",
+        "def _cli" in oku("functions/klipci.py") and "def _cli" in oku("functions/ses_isleme.py"))
+kontrol("KLIPCI yuz modelini gerektiginde indirir (models/ yolu + gitignore)",
+        "models" in oku("functions/klipci.py") and "models/" in oku(".gitignore"))
+_kli_cli = subprocess.run([sys.executable, "functions/klipci.py", "--help"],
+                          capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          timeout=120, env={**os.environ, "PYTHONUTF8": "1"})
+kontrol("klipci CLI --help calisir (--link/--klip/--sure/--hoparlor/--altyazi/--ducking)",
+        _kli_cli.returncode == 0 and all(x in _kli_cli.stdout for x in
+                                         ["--link", "--klip", "--sure", "--hoparlor", "--altyazi", "--ducking"]))
+kontrol("KLIPCI QA kapisini kullaniyor (her klip denetlenir ve rapor yazilir)",
+        "video_denetle" in oku("functions/klipci.py") and "rapor_yaz" in oku("functions/klipci.py"))
+
+# --- T6) Masaustu sayfasi ile sozlesme: klip_plani.json alanlari ---
+_klipci_kaynak = oku("functions/klipci.py")
+_okuyucu = oku(os.path.join("desktop", "electron", "data", "klip.ts"))
+_sozlesme = ["link", "video", "konusmaci_sayisi", "ayrim_yontemi", "yuz_izi_sayisi",
+             "transkript_kaynagi", "atilan_kesit", "klipler", "baslik", "skor", "sure",
+             "baslangic", "bitis", "panel_dagilimi", "dosya", "srt", "qa"]
+_yazilan = [a for a in _sozlesme if f'"{a}"' in _klipci_kaynak]
+_okunan = [a for a in _sozlesme if a in _okuyucu]
+kontrol("klip_plani.json sozlesmesi: yazan (klipci) ve okuyan (masaustu) alanlar ortusuyor",
+        len(_yazilan) == len(_sozlesme) and len(_okunan) == len(_sozlesme),
+        f"yazan={len(_yazilan)}/{len(_sozlesme)} okuyan={len(_okunan)}/{len(_sozlesme)}")
+_klip_sayfa = oku(os.path.join("desktop", "src", "pages", "KlipPage.tsx"))
+kontrol("Klip Studyo sayfasi isi 'klip' turuyle baslatiyor ve ayarlari komuta aktariyor",
+        "kind: 'klip'" in _klip_sayfa and "klipSayisi" in _klip_sayfa and "klipHoparlor" in _klip_sayfa)
+kontrol("Klip Studyo sayfasi sol menude tanimli (Sidebar + App rotasi)",
+        "'klip'" in oku(os.path.join("desktop", "src", "components", "layout", "Sidebar.tsx"))
+        and "KlipPage" in oku(os.path.join("desktop", "src", "App.tsx")))
+
+# --------------------------------------------------------------------------
 for y in temizlenecek:
     shutil.rmtree(y, ignore_errors=True)
 

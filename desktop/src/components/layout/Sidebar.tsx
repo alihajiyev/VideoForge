@@ -1,14 +1,15 @@
 import type { ReactNode } from 'react'
-import { LayoutDashboard, Play, Settings } from 'lucide-react'
+import { LayoutDashboard, Play, Scissors, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/app/AppContext'
 
-/** Minimalist surum: yalnizca 3 ozellik (Ana Sayfa karti) + Calistir + Ayarlar. */
-export type PageKey = 'dashboard' | 'run' | 'settings'
+/** Ana Sayfa + Çalıştır + Klip Stüdyo + Ayarlar. */
+export type PageKey = 'dashboard' | 'run' | 'klip' | 'settings'
 
 const NAV: { key: PageKey; label: string; icon: ReactNode }[] = [
   { key: 'dashboard', label: 'Ana Sayfa', icon: <LayoutDashboard className="size-[22px]" /> },
   { key: 'run', label: 'Çalıştır', icon: <Play className="size-[22px]" /> },
+  { key: 'klip', label: 'Klip Stüdyo', icon: <Scissors className="size-[22px]" /> },
   { key: 'settings', label: 'Ayarlar', icon: <Settings className="size-[22px]" /> },
 ]
 
@@ -40,7 +41,8 @@ export function Sidebar({ page, onNavigate }: { page: PageKey; onNavigate: (page
             <span className={cn('flex-1 truncate text-[14px]', active ? 'font-semibold' : 'font-normal')}>
               {item.label}
             </span>
-            {item.key === 'run' && job?.status === 'running' ? (
+            {((item.key === 'run' && job?.status === 'running') ||
+              (item.key === 'klip' && job?.kind === 'klip' && job?.status === 'running')) ? (
               <span className="size-2 shrink-0 animate-pulse-soft rounded-full bg-brand" />
             ) : null}
             {item.key === 'settings' && problems > 0 ? (

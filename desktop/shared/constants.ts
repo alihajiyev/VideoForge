@@ -17,6 +17,7 @@ export const IPC = {
   reportsList: 'reports:list',
   reportsPreview: 'reports:preview',
   weeklyPlan: 'weekly:plan',
+  klipDurum: 'klip:durum',
   engineConfig: 'engine:config',
   engineSetCharLimit: 'engine:setCharLimit',
   logsRead: 'logs:read',
@@ -83,9 +84,33 @@ export const ARTIFACT_SUFFIXES: { re: RegExp; kind: 'video' | 'audio' | 'seo' | 
   { re: /_SEO\.html$/i, kind: 'seo' },
   { re: /_THUMB\.png$/i, kind: 'thumb' },
   { re: /^Kesif-Rapor.*\.html$/i, kind: 'report' },
+  { re: /^klip_\d+.*\.mp4$/i, kind: 'video' },
 ]
 
 export const MAX_LOG_LINES = 4000
+
+/** KLIPCI cikti klasoru adi (Masaustu/Klipler/<video adi>). */
+export const KLIP_KLASOR = 'Klipler'
+
+/** Klip penceresi sinirlari (functions/klipci.py ile ayni hedefler). */
+export const KLIP_SAYISI_MIN = 1
+export const KLIP_SAYISI_MAX = 10
+export const KLIP_SAYISI_VARSAYILAN = 3
+export const KLIP_SURE_MIN = 15
+export const KLIP_SURE_MAX = 60
+export const KLIP_SURE_VARSAYILAN = 45
+
+export function normalKlipSayisi(value?: number | string | null): number {
+  const v = Math.floor(Number(value))
+  if (!Number.isFinite(v) || v < KLIP_SAYISI_MIN) return KLIP_SAYISI_VARSAYILAN
+  return Math.min(KLIP_SAYISI_MAX, v)
+}
+
+export function normalKlipSuresi(value?: number | string | null): number {
+  const v = Math.floor(Number(value))
+  if (!Number.isFinite(v) || v < KLIP_SURE_MIN) return KLIP_SURE_VARSAYILAN
+  return Math.min(KLIP_SURE_MAX, v)
+}
 
 /** Kesif planinin gun sayisi sinirlari (7 sabit degil, kullanici seciyor). */
 export const GUN_SAYISI_MIN = 2

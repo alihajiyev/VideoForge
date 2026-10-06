@@ -4,7 +4,14 @@ import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { STAGES, channelById } from '@shared/channels'
-import { GUN_SAYISI_VARSAYILAN, IPC, MAX_LOG_LINES, normalGunSayisi } from '@shared/constants'
+import {
+  GUN_SAYISI_VARSAYILAN,
+  IPC,
+  MAX_LOG_LINES,
+  normalGunSayisi,
+  normalKlipSayisi,
+  normalKlipSuresi,
+} from '@shared/constants'
 import type { Artifact, JobRequest, JobState, LogLevel, RunHistoryItem } from '@shared/types'
 import { broadcast } from '../core/events'
 import { log } from '../core/logger'
@@ -218,6 +225,26 @@ export function buildSteps(req: JobRequest, base: string[]): { steps: JobStep[];
         subtitle: req.link || '',
       }
     }
+    case 'klip': {
+      // Uzun video -> dikey Shorts (yerel motor: yt-dlp + ffmpeg + Whisper + OpenCV).
+      const adet = normalKlipSayisi(req.klipSayisi)
+      const sure = normalKlipSuresi(req.klipSuresi)
+      const args = [...base, 'functions/klipci.py', '--link', req.link || '',
+        '--klip', String(adet), '--sure', String(sure)]
+      if (req.klipHoparlor && req.klipHoparlor !== 'auto') args.push('--hoparlor', String(req.klipHoparlor))
+      if (req.klipAltyazi) args.push('--altyazi', String(req.klipAltyazi))
+      if (req.klipYuzAtla) args.push('--yuz-atla')
+      if (req.klipPlanSadece) args.push('--plan-sadece')
+      if (req.klipDucking) {
+        args.push('--ducking')
+        if (req.klipMuzik) args.push('--muzik', req.klipMuzik)
+      }
+      return {
+        steps: [{ label: 'Uzun video -> Shorts (analiz + montaj)', cmd: args }],
+        title: `Klip Stüdyo - ${adet} klip`,
+        subtitle: `${req.link || ''} · hedef ${sure} sn${req.klipPlanSadece ? ' · sadece plan' : ''}`,
+      }
+    }
   }
 }
 
@@ -322,9 +349,15 @@ export async function startJob(req: JobRequest): Promise<{ ok: boolean; error?: 
   if (!fs.existsSync(path.join(b, 'shared.py'))) {
     return { ok: false, error: `${b} bir VideoForge klasörü gibi görünmüyor (shared.py yok).` }
   }
-  if (req.kind === 'channel' || req.kind === 'clean') {
+  if (req.kind === 'channel' || req.kind === 'clean' || req.kind === 'klip') {
     if (!req.link || !/^https?:\/\//i.test(req.link)) {
       return { ok: false, error: 'Geçerli bir video linki girin (http/https).' }
+    }
+  }
+  if (req.kind === 'klip' && req.klipDucking) {
+    const muzik = (req.klipMuzik || '').trim()
+    if (muzik && !fs.existsSync(muzik)) {
+      return { ok: false, error: `Fon müziği dosyası bulunamadı: ${muzik}` }
     }
   }
 
