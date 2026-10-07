@@ -79,8 +79,9 @@ cd desktop
 npm install
 npm run dev            # gelistirme
 npm run package        # Windows kurulum + portable exe
-npm run test:smoke     # 297 kontrol, uctan uca test (Electron ana sureci)
-npm run test:bot       # 269 kontrol, Python tarafi (kesif/zincir/QA/performans)
+npm run test:smoke     # 314 kontrol, uctan uca test (Electron ana sureci)
+npm run test:bot       # 319 kontrol, Python tarafi (kesif/zincir/QA/ses isleme/klip motoru)
+npm run check:klip-ui  # gercek arayuz: Klip Studyo formu + oynatici (ag + gercek klipci kosusu)
 ```
 
 ## Performans geri bildirimi (opsiyonel, salt-okuma)
@@ -123,6 +124,34 @@ py -3 functions/qa_kapisi.py "C:\Users\...\Gun1_...\final_123456.mp4"
 ```
 
 QA adimini atlamak icin zincire `--qa-atla` ekle.
+
+## Klip Studyo (uzun video → Shorts)
+
+Masaustu uygulamasindaki **Klip Studyo** sayfasi, elindeki uzun videoyu (roportaj, podcast, belgesel)
+OpusClip mantigiyla dikey Shorts'lara cevirir — tamami yerel ve ucretsiz:
+
+```bash
+py -3 -X utf8 functions/klipci.py --link "https://youtube.com/watch?v=XXXX" --klip 3 --sure 45
+py -3 -X utf8 functions/klipci.py --yerel "C:\\video\\reportaj.mp4" --plan-sadece   # sadece analiz
+```
+
+1. **Zamanli transkript** cikarilir (yt-dlp altyazisi → Transcript API → yerel Whisper): hangi saniyede
+   ne konusuldugu belli olur.
+2. **Konu bloklari** (TF-IDF kumeleme) + her cumleye **hook-first skor**: kanca cumlesi %40 agirlik,
+   ardindan bilgi yogunlugu, nadirlik (TF-IDF), ses vurgusu ve konuya uyum. Dolgu/tekrar cumleleri atilir.
+3. **Sahne plani**: kanca cumlesi klibin ilk 8 saniyesinde kalacak sekilde, konusma suresi uzerinden
+   (15-60 sn) ve **tek konu blogu** icinde kurulur; pencereler asla ortusmez.
+4. **Panel plani**: kac kisi **ayni anda kadrajda** ise o kadar panel (1/2/3/4). Ayni yuze dusen
+   konusmacilar tek kisiye birlesir; boylece tek kisilik video iki panele bolunmez.
+5. **Gorsel hook modu**: konusma yoksa (or. savas/aksiyon sahnesi) sahne kesmesi + hareket + ses enerjisi
+   ile hook bulunur, kadraj hareket merkezini izler.
+6. **Ses**: `afftdn` temizlik + `loudnorm` (-14 LUFS) + istege bagli fon muzigi ducking. Video ve ses
+   **ayni kesim sinirlarini** kullanir (kesit basina kayma olmaz).
+7. **QA kapisi**: her klip olculur (siyah kare, donma, sessizlik, LUFS, sure) ve `klip_plani.json`'a yazilir.
+
+Cikti klasoru: `Masaustu/Klipler/<video adi>/` — `klip_plani.json`, `transkript.json`, klipler + SRT.
+Masaustu sayfasi bu klasoru okur; klipleri **uygulama icinde oynatir** (`vfil://` protokolu, Range
+destekli), skor kirilimini ve kesit zaman cizgisini gosterir.
 
 ## Guncellemeler
 

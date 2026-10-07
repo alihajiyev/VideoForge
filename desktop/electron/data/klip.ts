@@ -1,7 +1,16 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { KLIP_KLASOR } from '@shared/constants'
-import type { KlipDurumu, KlipKlasoru, KlipOgesi } from '@shared/types'
+import type {
+  KlipDurumu,
+  KlipKesit,
+  KlipKirilim,
+  KlipKlasoru,
+  KlipMod,
+  KlipOgesi,
+  KlipTranskript,
+  TranskriptKesit,
+} from '@shared/types'
 import { desktopDir } from '../core/paths'
 
 /**
@@ -16,6 +25,52 @@ export function klipKok(): string {
 function sayi(deger: unknown, varsayilan = 0): number {
   const v = Number(deger)
   return Number.isFinite(v) ? v : varsayilan
+}
+
+function metin(deger: unknown, varsayilan = ''): string {
+  return typeof deger === 'string' ? deger : varsayilan
+}
+
+function mod(deger: unknown): KlipMod {
+  return deger === 'gorsel' ? 'gorsel' : 'konusma'
+}
+
+function kirilim(ham: unknown): KlipKirilim {
+  const kaynak = (ham || {}) as Record<string, unknown>
+  const cikti: KlipKirilim = {}
+  for (const anahtar of [
+    'hook',
+    'hook_acilis',
+    'bilgi',
+    'nadirlik',
+    'vurgu',
+    'konu',
+    'konu_orani',
+    'yogunluk',
+    'ceza',
+    'hareket',
+    'ses',
+    'kesme',
+    'zenginlik',
+  ] as const) {
+    const v = kaynak[anahtar]
+    cikti[anahtar] = v === undefined || v === null ? null : sayi(v)
+  }
+  return cikti
+}
+
+function kesitler(ham: unknown): KlipKesit[] {
+  if (!Array.isArray(ham)) return []
+  return ham.slice(0, 200).map((k) => {
+    const kk = (k || {}) as Record<string, unknown>
+    return {
+      bas: sayi(kk.bas),
+      son: sayi(kk.son),
+      panel: sayi(kk.panel, 1),
+      metin: metin(kk.metin),
+      skor: kk.skor === undefined || kk.skor === null ? null : sayi(kk.skor),
+    }
+  })
 }
 
 function dosyaBilgi(yol: string | null | undefined): { var: boolean; boyut: number } {
@@ -35,13 +90,18 @@ function klipOgesi(ham: Record<string, unknown>, indeks: number): KlipOgesi {
   const srt = typeof ham.srt === 'string' && ham.srt && fs.existsSync(ham.srt) ? ham.srt : null
   return {
     no: sayi(ham.no, indeks + 1),
-    baslik: String(ham.baslik || 'Klip'),
+    baslik: metin(ham.baslik, 'Klip') || 'Klip',
+    mod: mod(ham.mod),
+    konu: metin(ham.konu),
+    kirilim: kirilim(ham.kirilim),
+    kesitler: kesitler(ham.kesitler),
     skor: sayi(ham.skor),
+    enYuksek: sayi(ham.en_yuksek, sayi(ham.skor)),
     sure: sayi(ham.sure),
     baslangic: sayi(ham.baslangic),
     bitis: sayi(ham.bitis),
     panelDagilimi: (ham.panel_dagilimi as Record<string, number>) || {},
-    dosya: bilgi.var ? dosya : dosya,
+    dosya,
     dosyaVar: bilgi.var,
     boyut: bilgi.boyut,
     srt,
@@ -50,6 +110,21 @@ function klipOgesi(ham: Record<string, unknown>, indeks: number): KlipOgesi {
     qaSorunlar: Array.isArray(qa.sorunlar) ? qa.sorunlar.map((s) => String(s)) : [],
     hata: typeof ham.hata === 'string' ? ham.hata : undefined,
   }
+}
+
+function konularOku(ham: unknown): KlipKlasoru['konular'] {
+  if (!Array.isArray(ham)) return []
+  return ham.map((c, i) => {
+    const cc = (c || {}) as Record<string, unknown>
+    return {
+      no: sayi(cc.no, i),
+      etiket: metin(cc.etiket, `konu ${i + 1}`),
+      baslangic: sayi(cc.baslangic),
+      bitis: sayi(cc.bitis),
+      kesitSayisi: sayi(cc.kesit_sayisi),
+      skor: sayi(cc.skor),
+    }
+  })
 }
 
 function klasorOku(klasor: string): KlipKlasoru | null {
@@ -72,12 +147,15 @@ function klasorOku(klasor: string): KlipKlasoru | null {
     klasor,
     ad: path.basename(klasor),
     mtime,
-    link: String(plan.link || ''),
-    video: String(plan.video || ''),
+    link: metin(plan.link),
+    video: metin(plan.video),
+    mod: mod(plan.mod),
+    konular: konularOku(plan.konular),
+    transkriptVar: fs.existsSync(path.join(klasor, 'transkript.json')),
     konusmaciSayisi: sayi(plan.konusmaci_sayisi, 1),
-    konusmaciYontemi: String(plan.ayrim_yontemi || ''),
+    konusmaciYontemi: metin(plan.ayrim_yontemi),
     yuzIziSayisi: sayi(plan.yuz_izi_sayisi),
-    transkriptKaynagi: String(plan.transkript_kaynagi || ''),
+    transkriptKaynagi: metin(plan.transkript_kaynagi),
     atilanKesit: sayi(plan.atilan_kesit),
     planDosyasi: planYolu,
     klipler,
@@ -108,5 +186,46 @@ export function klipDurumu(kok: string = klipKok()): KlipDurumu {
     klasorler,
     toplamKlip: klasorler.reduce((toplam, k) => toplam + k.klipler.length, 0),
     enIyiPuan: puanlar.length ? Math.max(...puanlar) : null,
+  }
+}
+
+/**
+ * Tek bir klasorun transkript haritasi: hangi saniyede ne konusuldu.
+ * (klipci.py -> transkript.json; sadece konusma modunda yazilir.)
+ */
+export function klipTranskript(klasor: string): KlipTranskript {
+  const bos: KlipTranskript = { ok: true, kaynak: '', kesitler: [] }
+  if (!klasor || !videoYolu(klasor)) {
+    return { ...bos, ok: false, error: 'Gecersiz klasor' }
+  }
+  const yol = path.join(klasor, 'transkript.json')
+  let ham: Record<string, unknown>
+  try {
+    ham = JSON.parse(fs.readFileSync(yol, 'utf8')) as Record<string, unknown>
+  } catch {
+    return bos
+  }
+  const hamKesitler = Array.isArray(ham.kesitler) ? (ham.kesitler as Record<string, unknown>[]) : []
+  const kesitler: TranskriptKesit[] = hamKesitler.map((k) => ({
+    bas: sayi(k.bas),
+    son: sayi(k.son),
+    metin: metin(k.metin),
+    skor: k.skor === undefined || k.skor === null ? null : sayi(k.skor),
+    konu: k.konu === undefined || k.konu === null ? null : sayi(k.konu),
+    konuEtiket: metin(k.konu_etiket),
+    konuBasi: Boolean(k.konu_basi),
+  }))
+  return { ok: true, kaynak: metin(ham.kaynak), kesitler }
+}
+
+/** Klasor yolu yalnizca izinli kokler altindaysa true. */
+function videoYolu(hedef: string): boolean {
+  try {
+    const resolved = path.resolve(hedef)
+    const izinli = [desktopDir, klipKok()].map((p) => path.resolve(p).toLowerCase())
+    const alt = resolved.toLowerCase()
+    return izinli.some((a) => alt === a || alt.startsWith(a + path.sep))
+  } catch {
+    return false
   }
 }

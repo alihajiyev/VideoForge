@@ -76,8 +76,20 @@ MAKS_PARCA = 42                    # klip basina en fazla kac kesit (filtergraph
 YSA_ADIM = 0.5                     # yuz tarama adimi (sn)
 YSA_KUCUK_W = 128                  # hareket enerjisi icin kucuk kare genisligi
 ES_ZAMAN_PENCERE = 1.4             # "ayni anda konusuyor" kabul penceresi (sn)
-SILHOUETTE_ESIK = 0.12             # konusmaci ayrimi icin minimum ayrim gucu
+GORUNUR_TOL = 0.35                 # yuz izi bu yakinlikta "kadrajda" sayilir (sn = bir tarama adimi)
+SILHOUETTE_ESIK = 0.22             # konusmaci ayrimi icin minimum ayrim gucu
 FILTRE_UZUN = 0.15                 # iki kesit arasi: bu kadar on/arka pay birakilir
+
+# --- gorunsel hook modu (konusma olmayan videolar: savas sahnesi, spor, doga) ---
+GORSEL_ADIM = 0.4                  # gorsel analiz ornekleme adimi (sn)
+GORSEL_KUCUK_W = 96                # hareket analizi icin kucuk kare genisligi
+GORSEL_BLOK = 4                    # hareket merkezi icin 4x4 blok izgarasi
+LEAD_IN_MAKS = 8.0                 # kancadan once en fazla kac saniye baglam (konusma modu)
+MIN_KONUSMA_KESIT = 4              # bundan az konusma kesiti varsa gorunsel hook modu
+MIN_KONUSMA_SANIYE = 8.0           # toplam konusma bunun altindaysa gorunsel hook modu
+
+# Skor agirliklari: HOOK birinci sirada (kanca cumlesi klibi tasir).
+AGIRLIK = {"hook": 0.40, "bilgi": 0.20, "nadirlik": 0.16, "vurgu": 0.10, "konu": 0.14}
 
 YUZ_MODEL_URL = ("https://github.com/opencv/opencv_zoo/raw/main/models/"
                  "face_detection_yunet/face_detection_yunet_2023mar.onnx")
@@ -105,6 +117,13 @@ HOOK = {
     "but", "why", "how", "what", "never", "secret", "hidden", "first",
     "shocking", "incredible", "because", "however", "mistake", "biggest",
     "почему", "как", "секрет", "впервые", "самый", "шок", "ошибка", "потому",
+}
+
+# Izleyiciye dogrudan hitap eden kelimeler (Shorts kancasi icin degerli)
+HITAP = {
+    "sen", "siz", "size", "seni", "sana", "bana", "bizi", "bize", "benim",
+    "kanka", "arkadaslar", "arkadaşlar", "izleyici", "izleyenler", "dostum",
+    "you", "your", "yours", "ты", "вы", "вам", "вас",
 }
 
 # Turkce/Rusca/Ingilizce basit stopword listesi (nadirlik hesabinda kullanilir)
@@ -155,6 +174,19 @@ def _filtre_yolu(yol):
 
 
 # ---------------------------------------------------------------- 1. indirme
+def video_suresi(video):
+    """ffprobe ile video suresi (sn); okunamazsa 0."""
+    komut = [FFPROBE, "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", video]
+    tamam, cikti, _ = _calistir(komut, timeout=120)
+    if not tamam:
+        return 0.0
+    try:
+        return float((cikti or "0").strip().splitlines()[0])
+    except Exception:
+        return 0.0
+
+
 def video_boyut(video):
     """ffprobe ile gercek kare boyutu (kadraj sinirlamasi icin)."""
     komut = [FFPROBE, "-v", "error", "-select_streams", "v:0",
@@ -217,14 +249,27 @@ def yt_dlp_indir(link, hedef_klasor, maks_yukseklik=1080):
 
 # ---------------------------------------------------------------- 2. ses
 def ses_cikar(video, wav, timeout=3600):
-    """Videonun sesini 16 kHz mono wav olarak cikarir."""
+    """Videonun sesini 16 kHz mono wav olarak cikarir.
+
+    Ses akisi YOKSA (sessiz/animasyon video) bos dosya yerine videonun suresi
+    kadar SESSIZ wav uretilir; boylece gorsel hook modu da calisir.
+    """
     komut = [FFMPEG, "-y", "-hide_banner", "-nostats", "-i", video,
              "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", wav]
     tamam, _, hata = _calistir(komut, timeout=timeout)
-    if not tamam:
-        _yaz(f"❌ Ses cikarilamadi: {_hata_son(hata)}")
-        return None
-    return wav
+    if tamam:
+        return wav
+    sure = video_suresi(video)
+    if sure > 0:
+        _yaz(f"🔇 Ses akisi yok — {sure:.1f} sn sessiz ses uretiliyor (gorsel hook modu).")
+        sessiz = [FFMPEG, "-y", "-hide_banner", "-nostats", "-f", "lavfi",
+                  "-i", "anullsrc=r=16000:cl=mono", "-t", f"{sure:.3f}",
+                  "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", wav]
+        tamam2, _, _ = _calistir(sessiz, timeout=timeout)
+        if tamam2:
+            return wav
+    _yaz(f"❌ Ses cikarilamadi: {_hata_son(hata)}")
+    return None
 
 
 def ses_oku(wav, baslangic=0.0, sure=None, sr=16000):
@@ -379,6 +424,37 @@ def kesit_ozellikleri(sinyal, sr):
     ]).astype(np.float32)
 
 
+def _ayrim_guvenilir(X, etiketler, k):
+    """Kume dengeli mi ve merkezler yeterince uzak mi? (yanlis bolme korumasi)"""
+    if k < 2:
+        return True
+    etiketler = np.asarray(etiketler)
+    n = etiketler.size
+    boyutlar = [int((etiketler == c).sum()) for c in range(k)]
+    if min(boyutlar) < max(3, int(round(n * 0.15))):
+        return False
+    merkezler = np.vstack([X[etiketler == c].mean(axis=0) for c in range(k)])
+    d_min = min(float(np.linalg.norm(merkezler[a] - merkezler[b]))
+                for a in range(k) for b in range(a + 1, k))
+    yayilim = float(np.mean(np.linalg.norm(X - merkezler[etiketler], axis=1))) + 1e-6
+    return d_min >= 1.5 * yayilim
+
+
+def _etiketle(kesitler, indeks, kume_etiketleri):
+    """Kume etiketlerini kesit sirasina yayar (kisa kesitler komsusundan alir)."""
+    etiketler = [0] * len(kesitler)
+    for j, i in enumerate(indeks):
+        etiketler[i] = int(kume_etiketleri[j])
+    son = 0
+    kume = set(indeks)
+    for i in range(len(etiketler)):
+        if i in kume:
+            son = etiketler[i]
+        else:
+            etiketler[i] = son
+    return etiketler
+
+
 def hoparlor_ayir(kesitler, wav, mod="auto", sr=16000):
     """Kesitleri konusmacilara ayirir. Donus: (etiketler, k, ayrim_gucu, yontem)."""
     ozellikler = []
@@ -396,40 +472,63 @@ def hoparlor_ayir(kesitler, wav, mod="auto", sr=16000):
     from sklearn.cluster import KMeans
     from sklearn.metrics import silhouette_score
 
+    # Ayni ses parmak izine sahip kesitler TEK konusmacidir: tam tekrarlar
+    # elenip kumeleme onlarin uzerinde yapilir. Aksi halde 2 kisi 3-4 kumeye
+    # bolunebiliyordu (ayni noktanin keyfi bolunmesi).
+    Xu = np.unique(np.round(X, 3), axis=0)
+    if Xu.shape[0] < 3:
+        # Kumeleme icin cok az benzersiz parmak izi var: dogrudan uzaklik karari.
+        if Xu.shape[0] == 2 and float(np.linalg.norm(Xu[0] - Xu[1])) >= 2.0:
+            yakin0 = np.linalg.norm(X - Xu[0], axis=1) <= np.linalg.norm(X - Xu[1], axis=1)
+            return (_etiketle(kesitler, indeks, (~yakin0).astype(int)), 2, 1.0,
+                    "uzaklik (2 benzersiz ses)")
+        return [0] * len(kesitler), 1, 0.0, "tek konusmaci (ayni ses parmak izi)"
+
     zorlanan = None
     if str(mod).isdigit():
         zorlanan = max(1, int(mod))
     en_iyi_k, en_iyi_puan, en_iyi_model = 1, -1.0, None
+    if zorlanan == 1:
+        return [0] * len(kesitler), 1, 0.0, "tek konusmaci (zorlanmis)"
     adaylar = [zorlanan] if zorlanan else range(1, min(4, max(2, len(ozellikler) // 3)) + 1)
+    adaylar = [k for k in adaylar if k and 2 <= k <= Xu.shape[0]]
+    denemeler = []
     for k in adaylar:
-        if k < 2:
-            if zorlanan == 1:
-                en_iyi_k, en_iyi_puan, en_iyi_model = 1, 0.0, None
-                break
-            continue
         try:
-            model = KMeans(n_clusters=k, n_init=10, random_state=0).fit(X)
+            model = KMeans(n_clusters=k, n_init=10, random_state=0).fit(Xu)
         except Exception:
             continue
         try:
-            puan = float(silhouette_score(X, model.labels_))
+            puan = float(silhouette_score(Xu, model.labels_))
         except Exception:
             continue
-        if puan > en_iyi_puan:
-            en_iyi_k, en_iyi_puan, en_iyi_model = k, puan, model
-    if en_iyi_model is None or (zorlanan is None and en_iyi_puan < SILHOUETTE_ESIK):
-        return [0] * len(kesitler), 1, max(0.0, en_iyi_puan), "tek konusmaci"
-    etiketler = [0] * len(kesitler)
-    for j, i in enumerate(indeks):
-        etiketler[i] = int(en_iyi_model.labels_[j])
-    # Eksik kalan kesitler (cok kisa) en yakin komsusundan etiket alir.
-    son = 0
-    for i in range(len(etiketler)):
-        if i in indeks:
-            son = etiketler[i]
-        else:
-            etiketler[i] = son
-    return etiketler, en_iyi_k, round(max(0.0, en_iyi_puan), 3), "kmeans"
+        # Yanlis bolmeyi engelle: kume boyutlari (KESIT duzeyinde) dengeli ve
+        # merkezler birbirinden yeterince uzak olmali. Aksi halde "tek kisi =
+        # iki konusmaci" hatasi olusur.
+        if not zorlanan and (puan < SILHOUETTE_ESIK or
+                             not _ayrim_guvenilir(X, model.predict(X), k)):
+            continue
+        denemeler.append((k, puan, model))
+    if denemeler:
+        # Comertlik (parsimony): en iyi puana cok yakin olan EN KUCUK k secilir.
+        # Aksi halde 2 kisi 3-4 konusmaci sanilabiliyordu.
+        zirve = max(p for _k, p, _m in denemeler)
+        en_iyi_k, en_iyi_puan, en_iyi_model = min(
+            (d for d in denemeler if d[1] >= zirve - 0.03), key=lambda d: d[0])
+    if en_iyi_model is None:
+        # Kullanici zorladiysa (--hoparlor 2) yine de uygula; ama guven dusuk
+        # oldugu icin panel katmani yuz izleriyle ayrica dogrulanir.
+        if zorlanan and zorlanan <= Xu.shape[0]:
+            try:
+                model = KMeans(n_clusters=zorlanan, n_init=10, random_state=0).fit(Xu)
+                puan = float(silhouette_score(Xu, model.labels_))
+                return (_etiketle(kesitler, indeks, model.predict(X)), zorlanan,
+                        round(max(0.0, puan), 3), "kmeans (zorlanmis, ayrim zayif)")
+            except Exception:
+                pass
+        return [0] * len(kesitler), 1, round(max(0.0, en_iyi_puan), 3), "tek konusmaci (ayrim zayif)"
+    return (_etiketle(kesitler, indeks, en_iyi_model.predict(X)), en_iyi_k,
+            round(max(0.0, en_iyi_puan), 3), "kmeans")
 
 
 # ---------------------------------------------------------------- 5. yuz takibi
@@ -680,6 +779,47 @@ def yuz_kutusu(iz, t, fw, fh):
     return en_yakin[1]
 
 
+def iz_gorunur(iz, t, tol=GORUNUR_TOL):
+    """Yuz izi t aninda kadrajda mi? (kamera gecislerinde bos panel acmamak icin)"""
+    if not iz:
+        return False
+    return any(abs(n[0] - t) <= tol for n in (iz.get("noktalar") or []))
+
+
+def konusmaci_dogrula(etiketler, yuz_esleme, k, ayrim, yuz_bilgi):
+    """Konusmaci etiketlerini YUZ IZLERIYLE dogrular.
+
+    Ayni yuz izine dusen iki konusmaci etiketi ASLINDA ayni kisidir. Bu adim
+    olmadan tek kisilik video "2 konusmaci" sanilip ayni kisi iki panele
+    bolunuyordu. Donus: (etiketler, k, yuz_esleme, ayrim, yontem).
+    """
+    esleme = dict(yuz_esleme or {})
+    if k <= 1 or not etiketler:
+        return etiketler, (1 if etiketler else k), esleme, ayrim, "tek konusmaci"
+    izler = (yuz_bilgi or {}).get("izler") or []
+    if not izler:
+        return etiketler, k, esleme, ayrim, "yuz yok (dogrulanamadi)"
+    gecerli = {iz["id"] for iz in izler}
+    gruplar = {}
+    for e in sorted(set(etiketler)):
+        iz = esleme.get(e)
+        anahtar = ("iz", iz) if (iz is not None and iz in gecerli) else ("etiket", e)
+        gruplar.setdefault(anahtar, len(gruplar))
+    if len(gruplar) == len(set(etiketler)):
+        return etiketler, k, esleme, ayrim, "yuz izleriyle dogrulandi"
+    anahtar = {}
+    for e in sorted(set(etiketler)):
+        iz = esleme.get(e)
+        anahtar[e] = gruplar[("iz", iz) if (iz is not None and iz in gecerli) else ("etiket", e)]
+    yeni_etiket = [anahtar[e] for e in etiketler]
+    yeni_esleme = {}
+    for e in sorted(set(etiketler)):
+        iz = esleme.get(e)
+        if iz is not None and iz in gecerli:
+            yeni_esleme[anahtar[e]] = iz
+    return yeni_etiket, len(gruplar), yeni_esleme, ayrim, "ayni yuz -> birlestirildi"
+
+
 # ---------------------------------------------------------------- 6. skorlama
 def _kelimeler(metin):
     return [w for w in re.findall(r"[\w'’]+", (metin or "").lower()) if len(w) > 1]
@@ -687,6 +827,23 @@ def _kelimeler(metin):
 
 def _icerik_kelimeleri(metin):
     return [w for w in _kelimeler(metin) if w not in STOP and len(w) >= 3]
+
+
+def _skor_hesapla(k):
+    """Kirilim bilesenlerinden 0-100 skor uretir (HOOK birinci sirada).
+
+    konu (konuya uyum) bileseni 'konu_cikar' adiminda doldurulur; once 0.5
+    (notr) kabul edilir ki erken asamada skor anlamsiz sismesin.
+    """
+    c = k.get("kirilim") or {}
+    ham = (AGIRLIK["hook"] * float(c.get("hook", 0.0)) +
+           AGIRLIK["bilgi"] * float(c.get("bilgi", 0.0)) +
+           AGIRLIK["nadirlik"] * float(c.get("nadirlik", 0.0)) +
+           AGIRLIK["vurgu"] * float(c.get("vurgu", 0.0)) +
+           AGIRLIK["konu"] * float(c.get("konu", 0.5)))
+    skor = max(0.0, min(1.0, ham - float(c.get("ceza", 0.0))))
+    k["skor"] = round(skor * 100, 1)
+    return k["skor"]
 
 
 def an_skorlari(kesitler, wav, sr=16000):
@@ -716,10 +873,13 @@ def an_skorlari(kesitler, wav, sr=16000):
         yuzde = len(re.findall(r"%\s*\d|\d\s*%", metin))
         ozel = len([w for w in re.findall(r"\b[A-ZÇĞİÖŞÜА-Я][\w'’]+", metin)][1:])
         yogunluk = min(1.0, (sayi * 1.1 + yuzde * 1.4 + ozel * 0.9) / 3.2)
-        # b) hook/merak
+        # b) HOOK (kanca): merak kelimesi + soru + hitap + haykiris isareti.
+        #    Kullanici istegi: kanca cumlesi skorun EN AGIR bileseni.
         hook = len([w for w in kelimeler if w in HOOK])
         soru = 1 if "?" in metin else 0
-        hook_puan = min(1.0, (hook * 0.9 + soru * 1.3) / 2.6)
+        hitap = len([w for w in kelimeler if w in HITAP])
+        unlem = metin.count("!")
+        hook_puan = min(1.0, (hook * 0.8 + soru * 1.2 + hitap * 0.5 + unlem * 0.3) / 2.2)
         # c) nadirlik (TF-IDF benzeri: tum videoda gecmeyen kelimeler degerli)
         if belge:
             nadir = float(np.mean([math.log((toplam + 1) / (df.get(w, 0) + 1)) for w in belge]))
@@ -738,14 +898,13 @@ def an_skorlari(kesitler, wav, sr=16000):
             ceza = min(0.95, ceza + (6 - kelime_sayisi) * 0.05)
         elif kelime_sayisi > 45:
             ceza = min(0.95, ceza + 0.12)
-        ham = (0.30 * yogunluk + 0.30 * hook_puan + 0.22 * nadir_puan + 0.18 * vurgu)
-        skor = max(0.0, min(1.0, ham - ceza))
-        k["skor"] = round(skor * 100, 1)
         k["kirilim"] = {
-            "bilgi": round(yogunluk, 2), "hook": round(hook_puan, 2),
+            "hook": round(hook_puan, 2), "bilgi": round(yogunluk, 2),
             "nadirlik": round(nadir_puan, 2), "vurgu": round(vurgu, 2),
-            "dolgu_cezasi": round(ceza, 2),
+            "konu": 0.5,          # konu_cikar() adiminda gercek deger yazilir
+            "ceza": round(ceza, 2),
         }
+        _skor_hesapla(k)
         k["kelime"] = kelime_sayisi
         k["sure"] = round(k["end"] - k["start"], 2)
     return kesitler
@@ -796,89 +955,224 @@ def _ortusme(a, b):
     return len(a & b) / max(1, min(len(a), len(b)))
 
 
-def klip_pencereleri(kesitler, adet=VARSAYILAN_KLIP, hedef_sure=HEDEF_SURE,
-                     min_sure=MIN_SURE, maks_sure=MAKS_SURE):
-    """Skorlu anlardan konu butunlugu yuksek pencereler uretir.
+def _tfidf_vektor(belge, idf):
+    v = {}
+    for w in belge:
+        v[w] = v.get(w, 0.0) + 1.0
+    for w in list(v):
+        v[w] *= idf.get(w, 1.0)
+    return v
 
-    Tohum = en yuksek skorlu kesit. Pencere, komsu kesitlerin anahtar kelime
-    ortusmesi esik ustunde kaldigi surece ILERI ve GERI genisletilir; boylece
-    konu basindan sonuna kadar anlasilir olur (ortadan baslamaz).
+
+def _normalle(v):
+    norm = math.sqrt(sum(x * x for x in v.values())) or 1.0
+    for w in list(v):
+        v[w] /= norm
+    return v
+
+
+def _kosinus(a, b):
+    if len(a) > len(b):
+        a, b = b, a
+    return float(sum(x * b.get(w, 0.0) for w, x in a.items()))
+
+
+def konu_cikar(kesitler, maks_konu=8, esik=0.12):
+    """Transkriptteki KONU bloklarini bulur (yerel, model indirmez).
+
+    Amac: "yapay zeka konuyu anlasin". Yontem: TF-IDF vektorleri uzerinde zaman
+    sirali acgozlu kumeleme. Her kesite 'konu' (blok no), 'konu_etiket' (blogun
+    en ayirt edici kelimeleri), kirilim['konu'] (bloga uyum) ve 'konu_basi'
+    yazilir; skorlar bu konu uyumu ile YENIDEN hesaplanir.
+
+    Donus: zaman sirali konu listesi (etiket + sure + ortalama skor).
     """
     if not kesitler:
         return []
-    sirali = sorted(kesitler, key=lambda k: -(k.get("skor") or 0))
+    belgeler = [_icerik_kelimeleri(k["text"]) for k in kesitler]
+    n = len(kesitler)
+    df = {}
+    for belge in belgeler:
+        for kelime in set(belge):
+            df[kelime] = df.get(kelime, 0) + 1
+    idf = {w: math.log((n + 1) / (c + 1)) + 1.0 for w, c in df.items()}
+    vektorler = [_tfidf_vektor(b, idf) for b in belgeler]
+    bloklar = []
+    for i, v in enumerate(vektorler):
+        if not v:
+            continue
+        en_iyi, en_iyi_puan = None, 0.0
+        for bi, blok in enumerate(bloklar):
+            puan = _kosinus(v, blok["merkez"])
+            if puan > en_iyi_puan:
+                en_iyi, en_iyi_puan = bi, puan
+        if en_iyi is not None and (en_iyi_puan >= esik or len(bloklar) >= maks_konu):
+            bloklar[en_iyi]["uyeler"].append(i)
+            for w, x in v.items():
+                bloklar[en_iyi]["toplam"][w] = bloklar[en_iyi]["toplam"].get(w, 0.0) + x
+            bloklar[en_iyi]["merkez"] = _normalle(dict(bloklar[en_iyi]["toplam"]))
+        else:
+            bloklar.append({"toplam": dict(v), "merkez": _normalle(dict(v)), "uyeler": [i]})
+    konular = []
+    for bi, blok in enumerate(bloklar):
+        terimler = sorted(blok["merkez"].items(), key=lambda x: -x[1])
+        etiket = ", ".join(w for w, _ in terimler[:3])
+        konular.append({"no": bi, "etiket": etiket or f"konu {bi + 1}",
+                        "uyeler": list(blok["uyeler"])})
+    if not konular:
+        return []
+    atanmis = {i for blok in bloklar for i in blok["uyeler"]}
+    # Bos vektorlu (sayi/tek kelime) kesitleri en yakin zaman komsusunun konusuna ver.
+    for i in range(n):
+        if i in atanmis:
+            continue
+        onceki = next((j for j in range(i - 1, -1, -1) if j in atanmis), None)
+        sonraki = next((j for j in range(i + 1, n) if j in atanmis), None)
+        hedef = (onceki if onceki is not None and (sonraki is None or i - onceki <= sonraki - i)
+                 else sonraki)
+        if hedef is None:
+            konular[0]["uyeler"].append(i)
+            continue
+        for konu in konular:
+            if hedef in konu["uyeler"]:
+                konu["uyeler"].append(i)
+                break
+    for konu in konular:
+        for i in konu["uyeler"]:
+            k = kesitler[i]
+            k["konu"] = konu["no"]
+            k["konu_etiket"] = konu["etiket"]
+            if i in atanmis:
+                uyum = _kosinus(vektorler[i], bloklar[konu["no"]]["merkez"])
+                k.setdefault("kirilim", {})["konu"] = round(min(1.0, uyum * 1.8), 2)
+    for i, k in enumerate(kesitler):
+        k.setdefault("konu", 0)
+        kirilim = k.setdefault("kirilim", {})
+        if not isinstance(kirilim.get("konu"), (int, float)):
+            kirilim["konu"] = 0.5
+        onceki = kesitler[i - 1] if i else None
+        k["konu_basi"] = bool(onceki is None or onceki.get("konu") != k.get("konu")
+                              or (k["start"] - onceki["end"]) > 1.5)
+    for k in kesitler:
+        _skor_hesapla(k)
+    for konu in konular:
+        uyeler = sorted(konu.pop("uyeler"))
+        konu["kesit_sayisi"] = len(uyeler)
+        konu["baslangic"] = round(kesitler[uyeler[0]]["start"], 2) if uyeler else 0.0
+        konu["bitis"] = round(kesitler[uyeler[-1]]["end"], 2) if uyeler else 0.0
+        konu["skor"] = round(float(np.mean([kesitler[i].get("skor") or 0 for i in uyeler])), 1) if uyeler else 0.0
+        konu["baslik"] = kesitler[uyeler[0]]["text"][:70] if uyeler else ""
+    konular.sort(key=lambda c: c["baslangic"])
+    return konular
+
+
+def _konusma_suresi(kesitler, bas, son):
+    """bas..son (dahil) arasindaki GERCEK konusma suresi (sessizlik haric)."""
+    return float(sum(kesitler[i]["end"] - kesitler[i]["start"] for i in range(bas, son + 1)))
+
+
+def _acilis_skoru(k):
+    """Kesitin klip ACILISI olma degeri: kanca + skor + konu basi."""
+    c = k.get("kirilim") or {}
+    return (0.45 * float(c.get("hook", 0.0)) + 0.30 * (k.get("skor") or 0) / 100.0 +
+            0.15 * (1.0 if k.get("konu_basi") else 0.0) + 0.10 * float(c.get("nadirlik", 0.0)))
+
+
+def klip_pencereleri(kesitler, adet=VARSAYILAN_KLIP, hedef_sure=HEDEF_SURE,
+                     min_sure=MIN_SURE, maks_sure=MAKS_SURE):
+    """Hook-first + konu farkindalikli klip pencereleri.
+
+    1. Tohum: ACILIS skoru (kanca cumlesi / konu basi) en yuksek kesit.
+    2. Pencere ILERI buyur; hedef sureye ulasinca KONU BLOGUNU degistirmez
+       (konu butunlugu), uzun sessizlik bosluğunu atlar.
+    3. Sahne, dolgu ve sessizlik atildiktan sonra kalan GERCEK konusma suresine
+       gore kurulur (min_sure .. maks_sure).
+    4. Pencereler ASLA ortusmez.
+    """
+    if not kesitler:
+        return []
+    n = len(kesitler)
+    sirali = sorted(range(n), key=lambda i: -_acilis_skoru(kesitler[i]))
     pencereler = []
     for tohum in sirali:
-        if len(pencereler) >= adet:
+        if len(pencereler) >= adet * 4:
             break
-        if any(k["start"] <= tohum["start"] < k["end"] for k in pencereler):
+        if any(p["start"] <= kesitler[tohum]["start"] < p["end"] for p in pencereler):
             continue
-        # Tohum penceresi zaten secilmis bir klibin icindeyse atla; ama pencere
-        # genisledikten sonra ortusme kontrolu tekrar yapilir (asagida).
-        bas = kesitler.index(tohum)
-        kume = _kume(tohum["text"])
-        sure = tohum["end"] - tohum["start"]
-        i, j = bas, bas
-        while sure < maks_sure:
-            genisledi = False
-            adaylar = []
-            if i > 0:
-                adaylar.append((i - 1, "geri"))
-            if j < len(kesitler) - 1:
-                adaylar.append((j + 1, "ileri"))
-            adaylar.sort(key=lambda a: -_ortusme(_kume(kesitler[a[0]]["text"]), kume))
-            for idx, yon in adaylar:
-                yeni_kume = _kume(kesitler[idx]["text"])
-                sure_k = kesitler[idx]["end"] - kesitler[idx]["start"]
-                if _ortusme(yeni_kume, kume) < 0.12 and sure >= hedef_sure:
-                    continue
-                if sure + sure_k > maks_sure:
-                    continue
-                if yon == "geri":
-                    i = idx
-                else:
-                    j = idx
-                kume |= yeni_kume
-                sure += sure_k
-                genisledi = True
+        bas = son = tohum
+        konu = kesitler[tohum].get("konu")
+        kanca_t = kesitler[tohum]["start"]
+        sure = _konusma_suresi(kesitler, bas, son)
+        # 1) AYNI KONU blogunda ileri buyu (konu butunlugu bozulmaz).
+        while son + 1 < n:
+            sonraki = kesitler[son + 1]
+            yeni = sure + (sonraki["end"] - sonraki["start"])
+            if yeni > maks_sure or sonraki.get("konu") != konu:
                 break
-            if not genisledi:
+            if sure >= hedef_sure and sonraki["start"] - kesitler[son]["end"] > 2.0:
                 break
-        while sure < min_sure and (i > 0 or j < len(kesitler) - 1):
-            if i > 0:
-                i -= 1
-                sure += kesitler[i]["end"] - kesitler[i]["start"]
-            elif j < len(kesitler) - 1:
-                j += 1
-                sure += kesitler[j]["end"] - kesitler[j]["start"]
+            son += 1
+            sure = yeni
+        # 2) Kancadan ONCE sinirli baglam ekle (kanca ilk 8 saniyede kalsin).
+        while bas > 0:
+            onceki = kesitler[bas - 1]
+            yeni = sure + (onceki["end"] - onceki["start"])
+            if yeni > maks_sure or onceki.get("konu") != konu:
+                break
+            if kanca_t - onceki["start"] > LEAD_IN_MAKS:
+                break
+            bas -= 1
+            sure = yeni
+        # 3) Hala kisa ise konu disina tasarak doldur (once ileri, sonra geri).
+        while sure < min_sure and (son + 1 < n or bas > 0):
+            ileri = (son + 1 < n and
+                     sure + (kesitler[son + 1]["end"] - kesitler[son + 1]["start"]) <= maks_sure)
+            if ileri:
+                son += 1
+                sure += kesitler[son]["end"] - kesitler[son]["start"]
+            elif bas > 0:
+                bas -= 1
+                sure += kesitler[bas]["end"] - kesitler[bas]["start"]
+            else:
+                break
             if sure >= min_sure:
                 break
-        parcalar = kesitler[i:j + 1]
+        parcalar = kesitler[bas:son + 1]
         if not parcalar:
             continue
-        # Baslangic kancasi: ilk 3 kesit icinde hook varsa ve sure yetiyorsa basta kullan.
-        en_iyi_bas = 0
-        for p in range(0, min(3, len(parcalar))):
-            if (parcalar[p]["kirilim"]["hook"] if parcalar[p].get("kirilim") else 0) >= 0.35:
-                kalan_sure = sum(x["end"] - x["start"] for x in parcalar[p:])
-                if kalan_sure >= min_sure:
-                    en_iyi_bas = p
-                    break
-        parcalar = parcalar[en_iyi_bas:]
         bas_yeni = parcalar[0]["start"]
         son_yeni = parcalar[-1]["end"]
-        # Secilen pencereler ASLA ortusmez (ayni sahneyi iki kez klip yapmayalim).
+        konusma = sum(p["end"] - p["start"] for p in parcalar)
+        if konusma < min_sure or konusma > maks_sure:
+            continue
         if any(bas_yeni < p["end"] - 0.05 and p["start"] < son_yeni - 0.05 for p in pencereler):
             continue
+        span = max(0.01, son_yeni - bas_yeni)
+        yogunluk = min(1.0, konusma / span)
+        konu_orani = sum(1 for p in parcalar if p.get("konu") == parcalar[0].get("konu")) / len(parcalar)
+        kirilim = {a: round(float(np.mean([(p.get("kirilim") or {}).get(a, 0.0) for p in parcalar])), 2)
+                   for a in ("hook", "bilgi", "nadirlik", "vurgu", "konu")}
+        # Acilis kancasi: klibin ILK 8 saniyesindeki en guclu kanca cumlesi.
+        acilis_hook = [float((p.get("kirilim") or {}).get("hook", 0.0)) for p in parcalar
+                       if p["start"] - bas_yeni <= LEAD_IN_MAKS]
+        kirilim["hook_acilis"] = round(max(acilis_hook) if acilis_hook else 0.0, 2)
+        kirilim["konu_orani"] = round(konu_orani, 2)
+        kirilim["yogunluk"] = round(yogunluk, 2)
+        skor = (0.42 * kirilim["hook_acilis"] +
+                0.20 * (float(np.mean([p.get("skor") or 0 for p in parcalar])) / 100.0) +
+                0.16 * kirilim["nadirlik"] + 0.12 * konu_orani + 0.10 * yogunluk)
         pencereler.append({
-            "start": bas_yeni,
-            "end": son_yeni,
+            "start": bas_yeni, "end": son_yeni,
             "sure": round(son_yeni - bas_yeni, 2),
+            "konusma_suresi": round(konusma, 2),
             "kesitler": parcalar,
-            "skor": round(float(np.mean([p.get("skor") or 0 for p in parcalar])), 1),
+            "skor": round(skor * 100, 1),
             "en_yuksek": max((p.get("skor") or 0) for p in parcalar),
+            "konu": parcalar[0].get("konu_etiket") or "",
+            "konu_no": parcalar[0].get("konu"),
+            "kirilim": kirilim,
         })
-    pencereler.sort(key=lambda p: -(p["en_yuksek"] * 0.6 + p["skor"] * 0.4))
+    pencereler.sort(key=lambda p: -p["skor"])
     return pencereler[:adet]
 
 
@@ -932,13 +1226,14 @@ def _etiket_al(etiketler, kesit, varsayilan_index=0):
 
 def kadraj_plani(pencere, etiketler, yuz_esleme, izler, yuz_bilgi,
                  pencere_sn=ES_ZAMAN_PENCERE, mod="auto"):
-    """Pencereyi panel parcalarina boler: kim konusuyor -> hangi panel.
+    """Kesitleri panel parcalarina boler.
 
-    Ayni anda (yakin aralikta) kac kisi konusuyorsa o kadar panel acilir:
-      1 kisi -> tek panel (tam ekran, kafa takipli)
-      2 kisi -> ALT/UST iki panel
-      3 kisi -> ust tam + alt ikiye bolunmus
-      4 kisi -> 2x2 dort panel
+    ONEMLI: Panel sayisi ARTIK konusmaci etiketi sayisindan degil, o anda
+    KADRAJDA GERCEKTEN GORUNEN FARKLI YUZ sayisindan gelir:
+      * tek yuz kadrajda             -> tek panel (tam ekran + kafa takibi)
+      * ayni anda 2/3/4 farkli yuz   -> 2/3/4 panel
+    Boylece (a) tek kisilik videoda ayni kisi iki panele bolunmez,
+    (b) kamera gecisinde kadrajda olmayan kisi icin bos panel acilmaz.
     """
     iz_map = {iz["id"]: iz for iz in izler}
     fw = yuz_bilgi.get("fw") or 1920
@@ -948,37 +1243,43 @@ def kadraj_plani(pencere, etiketler, yuz_esleme, izler, yuz_bilgi,
     parcalar = []
     for sira, k in enumerate(kesitler):
         es = _etiket_al(etiketler, k, sira)
+        # Konusan + ayni konusma anindaki (yakin araliktaki) diger konusmacilar.
         yakin = {es}
         for j, diger in enumerate(kesitler):
             if j == sira:
                 continue
             if diger["start"] <= k["end"] + pencere_sn and diger["end"] >= k["start"] - pencere_sn:
                 yakin.add(_etiket_al(etiketler, diger, j))
+        # Etiket -> yuz izi; sadece o an kadrajda olan FARKLI izler panel alir.
+        adaylar = []
+        for e in [es] + sorted(x for x in yakin if x != es):
+            iz_id = yuz_esleme.get(e)
+            if iz_id is None or iz_id not in iz_map or iz_id in adaylar:
+                continue
+            if not iz_gorunur(iz_map[iz_id], k["start"]):
+                continue
+            adaylar.append(iz_id)
         if ust_sinir:
-            yakin = set(sorted(yakin)[:ust_sinir])
-        konusmacilar = sorted(yakin)
-        duzen = 1 if len(konusmacilar) <= 1 else (2 if len(konusmacilar) == 2 else (3 if len(konusmacilar) == 3 else 4))
+            adaylar = adaylar[:ust_sinir]
+        duzen = 1
+        if len(adaylar) >= 2:
+            duzen = 4 if len(adaylar) >= 4 else len(adaylar)
         panel_listesi = PANEL[duzen]
-        # Kim hangi panele: konusan ilk panele, digerleri sirayla.
-        sirali = [es] + [e for e in konusmacilar if e != es]
         paneller = []
         for idx, (ad, pw, ph) in enumerate(panel_listesi):
-            sahip = sirali[idx] if idx < len(sirali) else None
-            iz_id = yuz_esleme.get(sahip)
+            iz_id = adaylar[idx] if idx < len(adaylar) else None
             iz = iz_map.get(iz_id) if iz_id is not None else None
             kutu = yuz_kutusu(iz, k["start"], fw, fh) if iz else None
-            if kutu is None and len(paneller) == 0:
-                kutu = None  # yuz yok -> merkez kadraj
             oran = pw / max(1, ph)
             cw, ch, cx, cy = _pencere_kutusu(kutu, fw, fh, oran)
-            paneller.append({"ad": ad, "sahip": sahip, "yuz_izi": iz_id,
+            paneller.append({"ad": ad, "yuz_izi": iz_id, "sahip": iz_id,
                              "kutu": [cw, ch, cx, cy], "hedef": [pw, ph]})
         parca = {"start": k["start"], "end": k["end"], "panel_sayisi": duzen,
-                 "konusmacilar": konusmacilar, "paneller": paneller,
+                 "konusmacilar": sorted(adaylar), "paneller": paneller,
                  "metin": k["text"], "skor": k.get("skor")}
-        if parcalar and parcalar[-1]["panel_sayisi"] == duzen and \
-                parcalar[-1]["konusmacilar"] == konusmacilar and \
-                abs(parcalar[-1]["end"] - k["start"]) < 0.4:
+        if (parcalar and parcalar[-1]["panel_sayisi"] == duzen and
+                parcalar[-1]["konusmacilar"] == sorted(adaylar) and
+                abs(parcalar[-1]["end"] - k["start"]) < 0.4):
             parcalar[-1]["end"] = k["end"]
             parcalar[-1]["metin"] = (parcalar[-1]["metin"] + " " + k["text"]).strip()
             parcalar[-1]["strateji"] = "birlesik"
@@ -991,13 +1292,38 @@ def kadraj_plani(pencere, etiketler, yuz_esleme, izler, yuz_bilgi,
 
 
 # ---------------------------------------------------------------- 9. render
-def _kesit_video_zinciri(kaynak, kesit, paneller, cikis_etiket, onek=""):
+def _kesit_sinirlari(parcalar, pay=FILTRE_UZUN):
+    """Her kesit icin ON/AYNI payli tek sinir cifti: (bas, son).
+
+    SES KAYMASI'nin sebebi buydu: video kesiti [start, end] ile, ses kesiti
+    [start-0.15, end+0.15] ile kirpiliyordu. Ses her kesitte 0.3 sn daha uzun
+    oldugu icin concat sonrasi kacinci kesitteyse o kadar geriye kayiyordu.
+    Artik video ve ses AYNI (bas, son) araligini kullanir; kenarlardaki kucuk
+    pay hece kaybini onler, ust uste binme de kirpilir.
+    """
+    sinirlar = []
+    onceki_son = None
+    for p in parcalar:
+        bas = max(0.0, float(p["start"]) - pay)
+        son = float(p["end"]) + pay
+        if onceki_son is not None and bas < onceki_son:
+            bas = onceki_son
+        if son - bas < 0.2:
+            son = bas + 0.2
+        sinirlar.append((round(bas, 3), round(son, 3)))
+        onceki_son = son
+    return sinirlar
+
+
+def _kesit_video_zinciri(kaynak, kesit, paneller, cikis_etiket, onek="", sinir=None):
     """Bir kesitin video zincirini uretir: trim + (panel birlestirme) + dikey olcek.
 
     `onek`: ffmpeg etiketleri graf genelinde TEK olmak zorunda oldugu icin her
     kesit icin benzersiz bir on ek (orn. "3_") verilir.
+    `sinir`: ses ile AYNI olmasi gereken (bas, son) kesim siniri.
     """
-    oncu = f"{kaynak}trim=start={kesit['start']:.3f}:end={kesit['end']:.3f},setpts=PTS-STARTPTS"
+    bas, son = sinir if sinir else (kesit["start"], kesit["end"])
+    oncu = f"{kaynak}trim=start={bas:.3f}:end={son:.3f},setpts=PTS-STARTPTS"
     kuyruk = f"fps=30,format=yuv420p,setsar=1{cikis_etiket}"
     if len(paneller) == 1:
         cw, ch, cx, cy = paneller[0]["kutu"]
@@ -1057,8 +1383,11 @@ def _kadrajlari_sinirla(parcalar, video):
             panel["kutu"] = [cw, ch, cx, cy]
 
 
-def _ses_zinciri(parcalar, siddet="orta", etiket="[aout]"):
-    """Kesitleri tek ses akisina cevirir + temizlik/loudnorm uygular."""
+def _ses_zinciri(parcalar, siddet="orta", etiket="[aout]", sinirlar=None):
+    """Kesitleri tek ses akisina cevirir + temizlik/loudnorm uygular.
+
+    `sinirlar`: video ile AYNI kesim sinirlari (ses kaymasini onler).
+    """
     n = len(parcalar)
     zincir = []
     if n == 1:
@@ -1067,9 +1396,7 @@ def _ses_zinciri(parcalar, siddet="orta", etiket="[aout]"):
         zincir.append(f"[0:a]asplit={n}" + "".join(f"[a{i}]" for i in range(n)))
     cikislar = []
     for i, p in enumerate(parcalar):
-        # Kesitler arasi kisa pay: cumle kirpilirken hece kaybini onler.
-        bas = max(0.0, p["start"] - FILTRE_UZUN)
-        son = p["end"] + FILTRE_UZUN
+        bas, son = sinirlar[i] if sinirlar else (p["start"], p["end"])
         zincir.append(
             f"[a{i}]atrim=start={bas:.3f}:end={son:.3f},asetpts=PTS-STARTPTS,"
             f"aformat=sample_fmts=fltp:sample_rates={HEDEF_SPK}:channel_layouts=stereo[au{i}]")
@@ -1091,26 +1418,34 @@ def _ses_zinciri(parcalar, siddet="orta", etiket="[aout]"):
 
 
 def klip_render(video, parcalar, cikis, muzik=None, ducking_db=-16.0, siddet="orta",
-                altyazi_srt=None, altyazi_yak=False, timeout=7200):
-    """Klip parcalarini tek gecisde keser/birlestirir, sesi isler ve yazar."""
+                altyazi_srt=None, altyazi_yak=False, timeout=7200, sinirlar=None):
+    """Klip parcalarini tek gecisde keser/birlestirir, sesi isler ve yazar.
+
+    Video ve ses AYNI `sinirlar` ile kirpilir -> kesitler arasi ses kaymasi yok.
+    """
     if not parcalar:
         return False, "parca yok"
     if len(parcalar) > MAKS_PARCA:
         parcalar = parcalar[:MAKS_PARCA]
+        if sinirlar:
+            sinirlar = sinirlar[:MAKS_PARCA]
     n = len(parcalar)
+    if not sinirlar or len(sinirlar) != n:
+        sinirlar = _kesit_sinirlari(parcalar)
     _kadrajlari_sinirla(parcalar, video)
     video_zincir = []
     if n == 1:
-        zincir = _kesit_video_zinciri("[0:v]", parcalar[0], parcalar[0]["paneller"], "[v0]")
+        zincir = _kesit_video_zinciri("[0:v]", parcalar[0], parcalar[0]["paneller"], "[v0]",
+                                      sinir=sinirlar[0])
         video_zincir.append(zincir)
     else:
         video_zincir.append(f"[0:v]split={n}" + "".join(f"[s{i}]" for i in range(n)))
         for i, p in enumerate(parcalar):
             video_zincir.append(_kesit_video_zinciri(f"[s{i}]", p, p["paneller"], f"[v{i}]",
-                                                    onek=f"{i}_"))
+                                                    onek=f"{i}_", sinir=sinirlar[i]))
     video_zincir.append("".join(f"[v{i}]" for i in range(n)) +
                         ("null[vout]" if n == 1 else f"concat=n={n}:v=1:a=0[vout]"))
-    filtre = ";".join(video_zincir + [_ses_zinciri(parcalar, siddet=siddet)])
+    filtre = ";".join(video_zincir + [_ses_zinciri(parcalar, siddet=siddet, sinirlar=sinirlar)])
     gecici = cikis + ".sessiz.mp4"
     komut = [FFMPEG, "-y", "-hide_banner", "-nostats", "-i", video,
              "-filter_complex", filtre, "-map", "[vout]", "-map", "[aout]",
@@ -1171,8 +1506,12 @@ def klip_render(video, parcalar, cikis, muzik=None, ducking_db=-16.0, siddet="or
     return True, ""
 
 
-def srt_yaz(parcalar, yol):
-    """Klibin kesilmis zaman cizgisine gore SRT altyazi uretir (ucretsiz)."""
+def srt_yaz(parcalar, yol, sinirlar=None):
+    """Klibin kesilmis zaman cizgisine gore SRT altyazi uretir (ucretsiz).
+
+    Zaman cizgisi render ile AYNI `sinirlar` uzerinden kurulur; boylece altyazi
+    da sesten kaymaz.
+    """
     def _ts(sn):
         ms = int(round(sn * 1000))
         s, ms = divmod(ms, 1000)
@@ -1180,10 +1519,13 @@ def srt_yaz(parcalar, yol):
         sa, d = divmod(d, 60)
         return f"{sa:02d}:{d:02d}:{s:02d},{ms:03d}"
 
+    if not sinirlar or len(sinirlar) != len(parcalar):
+        sinirlar = _kesit_sinirlari(parcalar)
     satirlar = []
     imlec = 0.0
     for i, p in enumerate(parcalar, start=1):
-        sure = max(0.2, p["end"] - p["start"])
+        bas, son = sinirlar[i - 1]
+        sure = max(0.2, son - bas)
         metin = (p.get("metin") or "").strip()
         if not metin:
             continue
@@ -1196,10 +1538,215 @@ def srt_yaz(parcalar, yol):
     return yol
 
 
+# ---------------------------------------------------------------- 9b. gorsel hook modu
+def _sure_metni(saniye):
+    """saniye -> "1:12" (baslik/slug icin)."""
+    s = max(0, int(round(saniye or 0)))
+    return f"{s // 60}:{s % 60:02d}"
+
+
+def _merkez_pencere(merkez, fw, fh, oran, dolgu=0.92):
+    """Hareket merkezine gore istenen en-boy oraninda kadraj penceresi."""
+    if fh * oran <= fw:
+        ch = float(fh) * dolgu
+        cw = ch * oran
+    else:
+        cw = float(fw) * dolgu
+        ch = cw / oran
+    cx = float(merkez[0]) * fw - cw / 2
+    cy = float(merkez[1]) * fh - ch / 2
+    cx = max(0.0, min(fw - cw, cx))
+    cy = max(0.0, min(fh - ch, cy))
+    return max(2, int(cw) // 2 * 2), max(2, int(ch) // 2 * 2), int(cx) // 2 * 2, int(cy) // 2 * 2
+
+
+def gorsel_analiz(video, wav=None, adim=GORSEL_ADIM, sr=16000, maks_ornek=30000):
+    """Konusma OLMAYAN videolar icin gorsel hook analizi (yerel, hizli).
+
+    Marvel savas sahnesi gibi konusmasiz videolarda sahne secimi konusmaya gore
+    yapilamaz; bu yuzden GORSEL enerji olculur:
+      * kare farki                -> HAREKET (aksiyon yogunlugu)
+      * histogram farki           -> SAHNE KESMESI (yeni sahne = hook)
+      * gri standart sapma        -> gorsel zenginlik/kontrast
+      * ses RMS (varsa)           -> vurgu (patlama, muzik yukselmesi)
+      * 4x4 blok farki            -> HAREKET MERKEZI (akilli dikey kadraj)
+    """
+    import cv2
+    sonuc = {"adim": adim, "sure": 0.0, "fw": 0, "fh": 0, "fps": 30.0,
+             "hucreler": [], "kesme_sayisi": 0, "hata": ""}
+    if not os.path.exists(video):
+        sonuc["hata"] = "video yok"
+        return sonuc
+    cap = cv2.VideoCapture(video)
+    if not cap.isOpened():
+        sonuc["hata"] = "video acilamadi"
+        return sonuc
+    fw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    fh = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    kare_sayisi = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    sonuc.update({"fw": fw, "fh": fh, "fps": float(fps),
+                  "sure": kare_sayisi / fps if fps else 0.0})
+    kucuk_w = min(GORSEL_KUCUK_W, fw or GORSEL_KUCUK_W)
+    kucuk_h = max(GORSEL_BLOK, int(round(kucuk_w * (fh / fw)))) if fw else 54
+    if kucuk_w >= GORSEL_BLOK:
+        kucuk_w -= kucuk_w % GORSEL_BLOK
+    if kucuk_h >= GORSEL_BLOK:
+        kucuk_h -= kucuk_h % GORSEL_BLOK
+    adim_kare = max(1, int(round(fps * adim)))
+    idx = 0
+    ornekler = []
+    while len(ornekler) < maks_ornek:
+        if not cap.grab():
+            break
+        if idx % adim_kare == 0:
+            tamam, kare = cap.retrieve()
+            if not tamam:
+                break
+            gri = cv2.cvtColor(cv2.resize(kare, (kucuk_w, kucuk_h),
+                                          interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
+            hist = cv2.calcHist([gri], [0], None, [32], [0, 256]).flatten()
+            hist = hist / (float(hist.sum()) + 1e-9)
+            ornekler.append({"t": idx / fps, "gri": gri, "hist": hist})
+        idx += 1
+    cap.release()
+    if len(ornekler) < 3:
+        sonuc["hata"] = "kare okunamadi"
+        return sonuc
+    hareket, kesme, kontrast, merkezler = [], [], [], []
+    for a, b in zip(ornekler, ornekler[1:]):
+        fark = np.abs(a["gri"].astype(np.float32) - b["gri"].astype(np.float32))
+        hareket.append(float(fark.mean()))
+        kesme.append(float(0.5 * np.abs(a["hist"] - b["hist"]).sum()))
+        kontrast.append(float(b["gri"].std()))
+        bh, bw = fark.shape
+        bh -= bh % GORSEL_BLOK
+        bw -= bw % GORSEL_BLOK
+        if bh >= GORSEL_BLOK and bw >= GORSEL_BLOK:
+            blok = fark[:bh, :bw].reshape(GORSEL_BLOK, bh // GORSEL_BLOK,
+                                          GORSEL_BLOK, bw // GORSEL_BLOK).mean(axis=(1, 3))
+            toplam = float(blok.sum()) + 1e-6
+            bx = float((blok.sum(axis=0) * (np.arange(GORSEL_BLOK) + 0.5)).sum() / toplam) / GORSEL_BLOK
+            by = float((blok.sum(axis=1) * (np.arange(GORSEL_BLOK) + 0.5)).sum() / toplam) / GORSEL_BLOK
+            merkezler.append((bx, by))
+        else:
+            merkezler.append((0.5, 0.5))
+    sesler = []
+    for o in ornekler[1:]:
+        parca, _ = ses_oku(wav, o["t"], adim, sr) if wav else (None, sr)
+        sesler.append(rms(parca) if parca is not None else 0.0)
+
+    def _nrm(dizi, yuzdelik=95.0):
+        if not dizi:
+            return list(dizi)
+        tavan = float(np.percentile(dizi, yuzdelik)) + 1e-9
+        return [min(1.0, float(v) / tavan) for v in dizi]
+
+    hareket_n = _nrm(hareket)
+    ses_n = _nrm(sesler)
+    kontrast_n = _nrm(kontrast)
+    kesme_esik = float(np.mean(kesme) + 1.5 * (np.std(kesme) + 1e-6)) if kesme else 0.0
+    kesme_n = [1.0 if v >= kesme_esik and v > 0.06 else 0.0 for v in kesme]
+    yumusak = ([float(np.mean(hareket_n[max(0, i - 1):i + 2])) for i in range(len(hareket_n))]
+               if len(hareket_n) >= 3 else hareket_n)
+    hucreler = []
+    for i, o in enumerate(ornekler[1:]):
+        skor = (0.45 * yumusak[i] + 0.25 * kesme_n[i] + 0.18 * ses_n[i] + 0.12 * kontrast_n[i])
+        hucreler.append({
+            "t": round(o["t"], 2), "skor": round(skor, 3),
+            "hareket": round(hareket_n[i], 3), "kesme": int(kesme_n[i]),
+            "ses": round(ses_n[i], 3), "zenginlik": round(kontrast_n[i], 3),
+            "merkez": [round(merkezler[i][0], 3), round(merkezler[i][1], 3)],
+        })
+    sonuc["hucreler"] = hucreler
+    sonuc["kesme_sayisi"] = int(sum(kesme_n))
+    return sonuc
+
+
+def gorsel_pencereleri(hucreler, adet=VARSAYILAN_KLIP, sure=HEDEF_SURE,
+                       min_sure=MIN_SURE, maks_sure=MAKS_SURE, video_sure=None):
+    """Hook-first gorsel pencereler: en yuksek enerjili an klibin ACILISINDA."""
+    if not hucreler:
+        return []
+    if not video_sure:
+        video_sure = hucreler[-1]["t"] + GORSEL_ADIM
+    hedef = max(min_sure, min(maks_sure, float(sure)))
+    indeksler = sorted(range(len(hucreler)), key=lambda i: -hucreler[i]["skor"])
+    pencereler = []
+    for i in indeksler:
+        if len(pencereler) >= adet:
+            break
+        bas = hucreler[i]["t"]
+        son = min(video_sure, bas + hedef)
+        if son - bas < min_sure:
+            bas = max(0.0, son - min_sure)
+        if any(bas < p["end"] - 0.2 and p["start"] < son - 0.2 for p in pencereler):
+            continue
+        ic = [h for h in hucreler if bas <= h["t"] < son]
+        if not ic:
+            continue
+        acilis = [h["skor"] for h in ic if h["t"] - bas <= 2.0] or [ic[0]["skor"]]
+        kirilim = {
+            "hook_acilis": round(float(np.mean(acilis)), 2),
+            "hareket": round(float(np.mean([h["hareket"] for h in ic])), 2),
+            "ses": round(float(np.mean([h["ses"] for h in ic])), 2),
+            "kesme": int(sum(h["kesme"] for h in ic)),
+            "zenginlik": round(float(np.mean([h["zenginlik"] for h in ic])), 2),
+        }
+        skor = (0.45 * kirilim["hook_acilis"] + 0.25 * kirilim["hareket"] +
+                0.20 * kirilim["ses"] + 0.10 * min(1.0, kirilim["kesme"] / 6.0))
+        pencereler.append({
+            "start": round(bas, 2), "end": round(son, 2),
+            "sure": round(son - bas, 2), "konusma_suresi": 0.0,
+            "kesitler": [], "hucreler": ic,
+            "skor": round(skor * 100, 1), "en_yuksek": round(skor * 100, 1),
+            "konu": "görsel hook", "konu_no": 0, "kirilim": kirilim,
+        })
+    pencereler.sort(key=lambda p: -p["skor"])
+    return pencereler[:adet]
+
+
+def gorsel_kadraj_plani(pencere, fw, fh, adim=4.0):
+    """Gorsel hook klibini 1 panelli parcalara boler; kadraj hareketi izler."""
+    hucreler = pencere.get("hucreler") or []
+    if not hucreler:
+        return []
+    oran = OUT_W / OUT_H
+    parcalar = []
+    i = 0
+    while i < len(hucreler):
+        t0 = hucreler[i]["t"]
+        blok = [h for h in hucreler if t0 <= h["t"] < t0 + adim]
+        if not blok:
+            break
+        agirlik = sum(h["hareket"] + 0.01 for h in blok)
+        mx = sum(h["merkez"][0] * (h["hareket"] + 0.01) for h in blok) / agirlik
+        my = sum(h["merkez"][1] * (h["hareket"] + 0.01) for h in blok) / agirlik
+        merkez = [0.5 + (mx - 0.5) * 0.85, 0.5 + (my - 0.5) * 0.85]
+        bas = t0
+        son = min(pencere["end"], t0 + adim)
+        if son - bas < 0.3:
+            break
+        cw, ch, cx, cy = _merkez_pencere(merkez, fw, fh, oran)
+        paneller = [{"ad": "tam", "yuz_izi": None, "sahip": None,
+                     "kutu": [cw, ch, cx, cy], "hedef": [OUT_W, OUT_H]}]
+        parcalar.append({"start": round(bas, 2), "end": round(son, 2), "panel_sayisi": 1,
+                         "konusmacilar": [], "paneller": paneller, "metin": "",
+                         "skor": pencere.get("skor"), "strateji": "gorsel"})
+        i += len(blok)
+    return parcalar
+
+
 # ---------------------------------------------------------------- 10. ana akis
 def videoyu_analiz_et(video, link=None, dil=None, whisper_model="small", hoparlor="auto",
                       yuz_atla=False, ilerleme=None):
-    """Indirilmis videodan: transkript + konusmaci + yuz izleri (analiz katmani)."""
+    """Indirilmis videodan analiz katmani.
+
+    Konusma VARSA  -> 'konusma' modu: zamanli transkript -> konu bloklari ->
+                      hook skoru -> konusmaci/panel plani.
+    Konusma YOKSA  -> 'gorsel' modu: sahne kesmesi + hareket + ses ile
+                      gorsel hook plani (or. savas/aksiyon sahnesi).
+    """
     def adim(mesaj):
         _yaz(mesaj)
         if ilerleme:
@@ -1213,18 +1760,41 @@ def videoyu_analiz_et(video, link=None, dil=None, whisper_model="small", hoparlo
         return None
     adim("📝 Transkript hazirlaniyor (yt-dlp altyazisi -> API -> Whisper)...")
     kesitler, kaynak = transkript_al(link, video, dil=dil, whisper_model=whisper_model)
-    if not kesitler:
-        _yaz("❌ Transkript uretilemedi — klip cikarilamaz.")
+    toplam_konusma = sum(max(0.0, float(k["end"]) - float(k["start"])) for k in (kesitler or []))
+    yeterli = len(kesitler or []) >= MIN_KONUSMA_KESIT and toplam_konusma >= MIN_KONUSMA_SANIYE
+    if not yeterli:
+        adim(f"🎬 Konusma yok/az ({len(kesitler or [])} kesit, {toplam_konusma:.1f} sn) — GORSEL HOOK "
+             f"modu: sahne kesmesi + hareket + ses enerjisi analiz ediliyor...")
+        gorsel = gorsel_analiz(video, wav)
+        if gorsel.get("hata"):
+            _yaz(f"❌ Gorsel analiz de yapilamadi: {gorsel['hata']}")
+            shutil.rmtree(gecici, ignore_errors=True)
+            return None
+        adim(f"✅ {len(gorsel['hucreler'])} enerji hucresi, {gorsel['kesme_sayisi']} sahne kesmesi bulundu.")
         shutil.rmtree(gecici, ignore_errors=True)
-        return None
-    adim(f"✅ {len(kesitler)} konusma kesiti bulundu (kaynak: {kaynak}).")
-    adim("🎯 Onemli anlar skorlaniyor...")
+        return {
+            "mod": "gorsel", "video": video, "link": link, "kesitler": [], "atilan": [],
+            "konular": [], "etiketler": {}, "konusmaci_sayisi": 0, "ayrim_gucu": 0.0,
+            "ayrim_yontemi": "konusma yok",
+            "yuz": {"fw": gorsel.get("fw") or 0, "fh": gorsel.get("fh") or 0,
+                    "izler": [], "sure": gorsel.get("sure") or 0.0, "hata": ""},
+            "yuz_esleme": {}, "esleme_yontemi": "yok",
+            "transkript_kaynagi": kaynak or "yok (gorsel hook modu)",
+            "gorsel": gorsel,
+        }
+    adim(f"✅ {len(kesitler)} konusma kesiti bulundu (kaynak: {kaynak}, {toplam_konusma:.1f} sn konusma).")
+    adim("🎯 Onemli anlar skorlaniyor (hook-first)...")
     kesitler = an_skorlari(kesitler, wav)
     temiz, atilan = filler_temizle(kesitler)
     if temiz:
         adim(f"🧹 {len(atilan)} gereksiz/dolgu kesiti atildi, {len(temiz)} kesit kaldi.")
     else:
         temiz, atilan = kesitler, []
+    adim("🧠 Konu bloklari cikariliyor (hangi saniyede ne konusuluyor)...")
+    konular = konu_cikar(temiz)
+    if konular:
+        en_iyi = max(konular, key=lambda c: c["skor"])
+        adim(f"✅ {len(konular)} konu blogu bulundu (en guclu: “{en_iyi['etiket']}”).")
     adim(f"🗣️ Konusmacilar ayriliyor (mod: {hoparlor})...")
     etiketler, k, ayrim, yontem = hoparlor_ayir(temiz, wav, mod=hoparlor)
     adim(f"👥 {k} konusmaci bulundu (ayrim gucu {ayrim}, {yontem}).")
@@ -1238,12 +1808,21 @@ def videoyu_analiz_et(video, link=None, dil=None, whisper_model="small", hoparlo
         else:
             adim(f"✅ {len(yuz_bilgi['izler'])} yuz izi bulundu.")
         yuz_esleme, esleme_yontemi = konusmaci_yuz_esle(temiz, etiketler, yuz_bilgi["izler"])
+        # KRITIK DOGRULAMA: ayni yuz izine dusen konusmaci etiketleri ASLINDA ayni
+        # kisidir; birlestirilmezse tek kisi iki panele bolunuyordu.
+        yeni_etiketler, k2, yuz_esleme, ayrim, dogrulama = konusmaci_dogrula(
+            etiketler, yuz_esleme, k, ayrim, yuz_bilgi)
+        if k2 != k:
+            adim(f"🔧 Ayni yuz birden fazla konusmaciya dustu — {k} konusmaci {k2} kisiye indirildi.")
+        etiketler, k = yeni_etiketler, k2
+        esleme_yontemi = f"{esleme_yontemi} + {dogrulama}"
     if not yuz_bilgi.get("fw") or not yuz_bilgi.get("fh"):
         # Kafa takibi atlandi/basarisiz: kadraj icin gercek boyut yine sart.
         yuz_bilgi["fw"], yuz_bilgi["fh"] = video_boyut(video)
     shutil.rmtree(gecici, ignore_errors=True)
     return {
-        "video": video, "link": link, "kesitler": temiz, "atilan": atilan,
+        "mod": "konusma", "video": video, "link": link, "kesitler": temiz,
+        "atilan": atilan, "konular": konular,
         "etiketler": {round(kk["start"], 3): e for kk, e in zip(temiz, etiketler)},
         "konusmaci_sayisi": k, "ayrim_gucu": ayrim, "ayrim_yontemi": yontem,
         "yuz": yuz_bilgi, "yuz_esleme": yuz_esleme, "esleme_yontemi": esleme_yontemi,
@@ -1285,8 +1864,14 @@ def klip_uret(link=None, yerel=None, adet=VARSAYILAN_KLIP, sure=HEDEF_SURE,
         if not analiz:
             return False, {}
 
-        _yaz("🧩 Klip pencereleri seciliyor (konu butunlugu + skor)...")
-        pencereler = klip_pencereleri(analiz["kesitler"], adet=adet, hedef_sure=sure)
+        gorsel_mod = analiz.get("mod") == "gorsel"
+        if gorsel_mod:
+            _yaz("🧩 Konusma yok — gorsel hook pencereleri seciliyor (sahne kesmesi + hareket + ses)...")
+            pencereler = gorsel_pencereleri(analiz["gorsel"]["hucreler"], adet=adet, sure=sure,
+                                            video_sure=analiz["gorsel"].get("sure"))
+        else:
+            _yaz("🧩 Klip pencereleri seciliyor (hook-first + konu butunlugu)...")
+            pencereler = klip_pencereleri(analiz["kesitler"], adet=adet, hedef_sure=sure)
         if not pencereler:
             _yaz("❌ Uygun klip penceresi bulunamadi.")
             return False, {}
@@ -1295,6 +1880,7 @@ def klip_uret(link=None, yerel=None, adet=VARSAYILAN_KLIP, sure=HEDEF_SURE,
         plan = {
             "olusturma": baslangic.strftime("%Y-%m-%d %H:%M:%S"),
             "baslik": baslik, "link": link or "", "video": video,
+            "mod": "gorsel" if gorsel_mod else "konusma",
             "sure": round(analiz["yuz"].get("sure") or 0, 2),
             "transkript_kaynagi": analiz["transkript_kaynagi"],
             "konusmaci_sayisi": analiz["konusmaci_sayisi"],
@@ -1305,23 +1891,62 @@ def klip_uret(link=None, yerel=None, adet=VARSAYILAN_KLIP, sure=HEDEF_SURE,
             "atilan_kesit": len(analiz["atilan"]),
             "atilan_ornek": [{"metin": a["text"][:90], "sebep": a.get("sebep")}
                              for a in analiz["atilan"][:12]],
+            "konular": [{"no": c.get("no"), "etiket": c.get("etiket"),
+                          "baslangic": c.get("baslangic"), "bitis": c.get("bitis"),
+                          "kesit_sayisi": c.get("kesit_sayisi"), "skor": c.get("skor"),
+                          "baslik": c.get("baslik")} for c in (analiz.get("konular") or [])],
             "cikis_klasoru": kok, "klipler": [],
         }
+        if analiz.get("konular"):
+            _yaz("📚 Konu haritasi: " + " | ".join(
+                f"{c['etiket']} ({_sure_metni(c['baslangic'])}-{_sure_metni(c['bitis'])}, skor {c['skor']})"
+                for c in analiz["konular"][:6]))
+        if not gorsel_mod:
+            # Transkript haritasi (hangi saniyede ne konusuldu) diske yazilir;
+            # masaustu arayuzu bunu okuyup gosterebilsin.
+            try:
+                with open(os.path.join(kok, "transkript.json"), "w", encoding="utf-8") as f:
+                    json.dump({
+                        "kaynak": analiz["transkript_kaynagi"],
+                        "kesitler": [{"bas": k["start"], "son": k["end"], "metin": k["text"],
+                                      "skor": k.get("skor"), "konu": k.get("konu"),
+                                      "konu_etiket": k.get("konu_etiket"),
+                                      "konu_basi": bool(k.get("konu_basi")),
+                                      "kirilim": k.get("kirilim")} for k in analiz["kesitler"]],
+                    }, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                _yaz(f"⚠️ transkript.json yazilamadi: {str(e)[:100]}")
         for idx, pencere in enumerate(pencereler, start=1):
-            parcalar = kadraj_plani(pencere, analiz["etiketler"], analiz["yuz_esleme"],
-                                    analiz["yuz"].get("izler") or [], analiz["yuz"],
-                                    mod=hoparlor)
+            if gorsel_mod:
+                parcalar = gorsel_kadraj_plani(pencere, analiz["yuz"].get("fw") or 1920,
+                                               analiz["yuz"].get("fh") or 1080)
+            else:
+                parcalar = kadraj_plani(pencere, analiz["etiketler"], analiz["yuz_esleme"],
+                                        analiz["yuz"].get("izler") or [], analiz["yuz"],
+                                        mod=hoparlor)
             if not parcalar:
                 continue
-            dosya = os.path.join(kok, f"klip_{idx:02d}_{_slug(pencere['kesitler'][0]['text'], 32)}.mp4")
+            if gorsel_mod:
+                baslik_metni = (f"Görsel hook · {_sure_metni(pencere['start'])} "
+                                f"(hareket {pencere['kirilim'].get('hareket')}, "
+                                f"kesme {pencere['kirilim'].get('kesme')})")
+                dosya_slug = f"sahne_{_sure_metni(pencere['start']).replace(':', 'm')}s"
+            else:
+                baslik_metni = pencere["kesitler"][0]["text"][:110]
+                dosya_slug = _slug(pencere["kesitler"][0]["text"], 32)
+            dosya = os.path.join(kok, f"klip_{idx:02d}_{dosya_slug}.mp4")
+            sinirlar = _kesit_sinirlari(parcalar)
             srt_yolu = os.path.splitext(dosya)[0] + ".srt"
-            srt_yaz(parcalar, srt_yolu)
+            if not gorsel_mod:
+                srt_yaz(parcalar, srt_yolu, sinirlar)
             panel_ozet = {p["panel_sayisi"]: 0 for p in parcalar}
             for p in parcalar:
                 panel_ozet[p["panel_sayisi"]] = panel_ozet.get(p["panel_sayisi"], 0) + 1
             kayit = {
-                "no": idx,
-                "baslik": pencere["kesitler"][0]["text"][:110],
+                "no": idx, "mod": "gorsel" if gorsel_mod else "konusma",
+                "baslik": baslik_metni,
+                "konu": pencere.get("konu") or "",
+                "kirilim": pencere.get("kirilim") or {},
                 "skor": pencere["skor"], "en_yuksek": round(pencere["en_yuksek"], 1),
                 "baslangic": round(pencere["start"], 2), "bitis": round(pencere["end"], 2),
                 "sure": pencere["sure"], "kesit_sayisi": len(parcalar),
@@ -1334,14 +1959,15 @@ def klip_uret(link=None, yerel=None, adet=VARSAYILAN_KLIP, sure=HEDEF_SURE,
             if plan_sadece:
                 kayit["dosya"] = None
                 _yaz(f"   • Klip {idx}: {pencere['sure']} sn, skor {pencere['skor']}, "
-                     f"panel dagilimi {panel_ozet} (plan modu: render yok)")
+                     f"konu '{kayit['konu']}', panel dagilimi {panel_ozet} (plan modu: render yok)")
                 plan["klipler"].append(kayit)
                 continue
             _yaz(f"🎞️ Klip {idx}/{len(pencereler)} render ediliyor "
                  f"({pencere['sure']} sn, {len(parcalar)} kesit, panel {panel_ozet})...")
             tamam, hata = klip_render(
                 video, parcalar, dosya, muzik=muzik if ducking else None,
-                altyazi_srt=srt_yolu, altyazi_yak=(altyazi == "yak"))
+                altyazi_srt=srt_yolu, altyazi_yak=(altyazi == "yak" and not gorsel_mod),
+                sinirlar=sinirlar)
             if not tamam:
                 kayit["hata"] = hata
                 _yaz(f"   ❌ Render hatasi: {hata}")

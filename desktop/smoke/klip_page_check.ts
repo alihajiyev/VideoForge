@@ -19,10 +19,15 @@ import os from 'node:os'
 import path from 'node:path'
 import { registerIpc } from '../electron/ipc'
 import { registerWindowIpc } from '../electron/core/window'
+import { videoProtokolunuKaydet, videoSemasiniKaydet } from '../electron/core/video'
 import { defaultBotPath, desktopDir } from '../electron/core/paths'
 import { getSettings, setSettings } from '../electron/core/settings'
 import { getState } from '../electron/python/runner'
 import { execCapture } from '../electron/core/exec'
+
+// Yerel klip oynatma protokolu (gercek uygulamadaki gibi): sema hazir olmadan
+// once kaydedilmeli, gercek main process ile ayni sekilde.
+videoSemasiniKaydet()
 
 const ROOT = path.resolve(__dirname, '..')
 const LINK = (process.env.KLIP_UI_LINK || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ').trim()
@@ -60,6 +65,7 @@ async function main(): Promise<void> {
     /* test kendi kapanisini yonetir */
   })
   await app.whenReady()
+  videoProtokolunuKaydet()
   registerIpc()
   registerWindowIpc()
 
@@ -112,8 +118,11 @@ async function main(): Promise<void> {
 
     /* ---------------- 2) Formu doldur: link + 1 klip + 20 sn ---------------- */
     const form = (await win.webContents.executeJavaScript(
-      `(() => {
+      `(async () => {
          ${SETTER}
+         // Gelismis ayarlar kapaliysa ac (panel/altyazi secimleri orada).
+         const gel = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === 'Gelişmiş ayarlar');
+         if (gel) { gel.click(); await new Promise((r) => setTimeout(r, 400)); }
          const link = document.querySelector('input[placeholder^="https://www.youtube.com"]');
          if (!link) return { ok: false, neden: 'link kutusu yok' };
          vfSet(link, ${JSON.stringify(LINK)}, window.HTMLInputElement, 'input');
@@ -237,6 +246,84 @@ async function main(): Promise<void> {
       check('Klip gercekten dikey 1080x1920', boyut.startsWith('1080,1920'), boyut || probe.stderr.trim())
     } else {
       check('Klip gercekten dikey 1080x1920', false, 'urea dosyasi yok')
+    }
+
+    /* --------------- 5b) Uygulama ici oynatici + skorlar --------------- */
+    await win.webContents.executeJavaScript('window.scrollTo(0, document.body.scrollHeight)')
+    await sleep(1600)
+
+    const kart = (await win.webContents.executeJavaScript(
+      `(() => {
+         const kartlar = [...document.querySelectorAll('[role="button"]')].filter((x) => x.querySelector('video'));
+         if (!kartlar.length) return { var: false, adet: 0 };
+         kartlar[0].click();
+         return { var: true, adet: kartlar.length };
+       })()`,
+    )) as { var: boolean; adet: number }
+    check('Klip kartlari 9:16 onizleme ile listelendi', kart.var, `${kart.adet} kart`)
+    await sleep(900)
+
+    const oynatici = (await win.webContents.executeJavaScript(
+      `(async () => {
+         const v = document.querySelector('[role="dialog"] video') || document.querySelector('video');
+         if (!v) return { video: false };
+         const bekle = (ok) => new Promise((r) => {
+           const t = setTimeout(() => r(false), 9000);
+           v.addEventListener('loadedmetadata', () => { clearTimeout(t); r(true); }, { once: true });
+           v.addEventListener('error', () => { clearTimeout(t); r(false); }, { once: true });
+           if (ok) r(true);
+         });
+         const ok = v.readyState >= 1 ? true : await bekle(false);
+         const text = (document.body.textContent || '');
+         return {
+           video: true,
+           ok,
+           sure: Number.isFinite(v.duration) ? Math.round(v.duration * 10) / 10 : null,
+           src: v.currentSrc || v.src,
+           hata: v.error ? v.error.message : null,
+           skorKirilimi: text.includes('Skor kırılımı'),
+           hookBar: text.includes('Hook (açılış)'),
+           kesitler: text.includes('Kesitler'),
+         };
+       })()`,
+    )) as { video: boolean; ok?: boolean; sure?: number | null; src?: string; hata?: string | null; skorKirilimi: boolean; hookBar: boolean; kesitler: boolean }
+    check('Oynatici acildi ve video yuklendi (vfil:// protokolu)',
+      oynatici.video === true && oynatici.ok === true && (oynatici.sure ?? 0) > 1,
+      `src=${(oynatici.src || '').slice(0, 46)} sure=${oynatici.sure ?? '-'} hata=${oynatici.hata ?? '-'}`)
+    check('Oynaticida skor kirilimi gorunuyor (hook barlari)',
+      oynatici.skorKirilimi === true && oynatici.hookBar === true, `kirilim=${oynatici.skorKirilimi} hook=${oynatici.hookBar}`)
+    check('Oynaticida kesit zaman cizgisi var', oynatici.kesitler === true)
+
+    // Escape ile kapat
+    await win.webContents.executeJavaScript(
+      `(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); return true; })()`,
+    )
+    await sleep(500)
+    const kapandi = (await win.webContents.executeJavaScript('!document.querySelector("[role=dialog]")')) as boolean
+    check('Oynatici Escape ile kapandi', kapandi === true)
+
+    /* -------------------- 5c) Transkript haritasi (varsa) -------------------- */
+    const transkriptBtnVar = (await win.webContents.executeJavaScript(
+      `(() => {
+         const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === 'Transkript');
+         if (!b) return false;
+         b.click();
+         return true;
+       })()`,
+    )) as boolean
+    if (transkriptBtnVar) {
+      await sleep(1500)
+      const tr = (await win.webContents.executeJavaScript(
+        `(() => {
+           const kutu = [...document.querySelectorAll('div')].find((x) => (x.className || '').includes('max-h-[260px]'));
+           const satirlar = kutu ? kutu.querySelectorAll('div > div').length : 0;
+           return { metin: (kutu ? kutu.textContent : '') || '', satir: satirlar };
+         })()`,
+      )) as { metin: string; satir: number }
+      check('Transkript haritasi zaman damgalariyla listelendi', tr.metin.length > 40 && /\d:\d\d/.test(tr.metin),
+        `${tr.metin.slice(0, 60).replace(/\s+/g, ' ')}…`)
+    } else {
+      check('Transkript haritasi zaman damgalariyla listelendi', true, 'transkript yok (atlandi)')
     }
 
     /* ---------------- 6) Sayfa sonucu gosteriyor mu ---------------- */

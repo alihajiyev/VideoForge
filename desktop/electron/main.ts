@@ -9,8 +9,12 @@ import { cancelJob } from './python/runner'
 import { kuyrukBaslat } from './core/queue'
 import { zamanlayiciBaslat } from './core/scheduler'
 import { otomatikAcilisKontrol, otomatikGuncellemeBaslat } from './update/auto'
+import { videoProtokolunuKaydet, videoSemasiniKaydet } from './core/video'
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL
+
+// Ozel video semasi, uygulama hazir olmadan once kaydedilmek zorunda.
+videoSemasiniKaydet()
 
 let win: BrowserWindow | null = null
 
@@ -125,6 +129,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   applyTheme(getSettings().mode)
+  videoProtokolunuKaydet()
   registerIpc()
   registerWindowIpc()
   kuyrukBaslat()

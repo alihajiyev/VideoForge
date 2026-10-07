@@ -86,11 +86,47 @@ export interface JobRequest {
   klipAltyazi?: 'yok' | 'srt' | 'yak'
 }
 
+/** Klip motorunun modu: konusmali (transkript) ya da sadece gorsel hook. */
+export type KlipMod = 'konusma' | 'gorsel'
+
+/** Puanin kirilimi: hook/bilgi/nadirlik/vurgu/konu + gorsel mod bilesenleri. */
+export interface KlipKirilim {
+  hook?: number | null
+  hook_acilis?: number | null
+  bilgi?: number | null
+  nadirlik?: number | null
+  vurgu?: number | null
+  konu?: number | null
+  konu_orani?: number | null
+  yogunluk?: number | null
+  ceza?: number | null
+  hareket?: number | null
+  ses?: number | null
+  kesme?: number | null
+  zenginlik?: number | null
+}
+
+/** Klibin icindeki tek bir kesit (saniye + metin + skor). */
+export interface KlipKesit {
+  bas: number
+  son: number
+  panel: number
+  metin: string
+  skor: number | null
+}
+
 /** KLIPCI cikti klasorunde bulunan tek bir klip (klip_plani.json + dosya) */
 export interface KlipOgesi {
   no: number
   baslik: string
+  /** 'konusma' | 'gorsel' */
+  mod: KlipMod
+  /** Konu etiketi (orn. "shaolin, antrenman, dokuz") */
+  konu: string
+  kirilim: KlipKirilim
+  kesitler: KlipKesit[]
   skor: number
+  enYuksek: number
   sure: number
   baslangic: number
   bitis: number
@@ -105,6 +141,25 @@ export interface KlipOgesi {
   hata?: string
 }
 
+/** Transkriptteki tek bir zamanli konusma kesiti (transkript.json). */
+export interface TranskriptKesit {
+  bas: number
+  son: number
+  metin: string
+  skor: number | null
+  konu: number | null
+  konuEtiket: string
+  konuBasi: boolean
+}
+
+/** Transkript haritasi (hangi saniyede ne konusuldu). */
+export interface KlipTranskript {
+  ok: boolean
+  error?: string
+  kaynak: string
+  kesitler: TranskriptKesit[]
+}
+
 /** KLIPCI klasoru (Masaustu/Klipler/<video>) ozeti */
 export interface KlipKlasoru {
   klasor: string
@@ -112,6 +167,10 @@ export interface KlipKlasoru {
   mtime: number
   link: string
   video: string
+  /** 'konusma' | 'gorsel' */
+  mod: KlipMod
+  konular: { no: number; etiket: string; baslangic: number; bitis: number; kesitSayisi: number; skor: number }[]
+  transkriptVar: boolean
   konusmaciSayisi: number
   konusmaciYontemi: string
   yuzIziSayisi: number

@@ -18,6 +18,7 @@ export const IPC = {
   reportsPreview: 'reports:preview',
   weeklyPlan: 'weekly:plan',
   klipDurum: 'klip:durum',
+  klipTranskript: 'klip:transkript',
   engineConfig: 'engine:config',
   engineSetCharLimit: 'engine:setCharLimit',
   logsRead: 'logs:read',

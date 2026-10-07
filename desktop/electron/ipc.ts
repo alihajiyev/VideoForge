@@ -12,7 +12,7 @@ import { engineConfig, setCharLimit } from './data/engine'
 import { envCheck } from './data/env'
 import { forgetLink, readLibrary } from './data/library'
 import { readBotLog, weeklyData } from './data/logs'
-import { klipDurumu } from './data/klip'
+import { klipDurumu, klipTranskript } from './data/klip'
 import { botGitStatus, checkForUpdate, downloadUpdate, launchDownloaded, openReleasePage, pullBotCode } from './update/updater'
 import { otomatikDurum, otomatikKontrol, otomatikKur } from './update/auto'
 import { groupArtifacts, listArtifacts, previewHtml } from './data/reports'
@@ -177,6 +177,15 @@ export function registerIpc(): void {
   ipcMain.handle(IPC.klipDurum, () => {
     try {
       return ok(klipDurumu())
+    } catch (err) {
+      return fail(String(err))
+    }
+  })
+
+  ipcMain.handle(IPC.klipTranskript, (_e, klasor: string) => {
+    try {
+      // Yol denetimi data/klip.ts icinde (Masaustu + klip koku; VF_KLIP_ROOT dahil).
+      return ok(klipTranskript(String(klasor || '')))
     } catch (err) {
       return fail(String(err))
     }

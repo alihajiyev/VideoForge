@@ -13,6 +13,7 @@ import type {
   HarcamaOzeti,
   JobRequest,
   KlipDurumu,
+  KlipTranskript,
   JobState,
   KotaBilgisi,
   KrediServisi,
@@ -62,6 +63,8 @@ const api = {
 
   weeklyPlan: (): Promise<Result<unknown>> => ipcRenderer.invoke(IPC.weeklyPlan),
   klipDurum: (): Promise<Result<KlipDurumu>> => ipcRenderer.invoke(IPC.klipDurum),
+  klipTranskript: (klasor: string): Promise<Result<KlipTranskript>> =>
+    ipcRenderer.invoke(IPC.klipTranskript, klasor),
   engineConfig: (): Promise<Result<EngineConfig>> => ipcRenderer.invoke(IPC.engineConfig),
   engineSetCharLimit: (value: number): Promise<Result<EngineConfig>> => ipcRenderer.invoke(IPC.engineSetCharLimit, value),
 

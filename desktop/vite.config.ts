@@ -16,6 +16,7 @@ function devCspPlugin() {
         "script-src 'self' 'unsafe-inline'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: blob:",
+        "media-src 'self' vfil:",
         "font-src 'self' data:",
         "connect-src 'self' http://127.0.0.1:5212 ws://127.0.0.1:5212",
         "form-action 'none'",

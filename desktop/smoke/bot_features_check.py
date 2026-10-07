@@ -1281,8 +1281,9 @@ if FFMPEG_VAR:
     _bilgi_skor = next(x["skor"] for x in _kesitler if "yuzde 42" in x["text"])
     kontrol("Dolgu cumlesi bilgi dolu cumleden DAHA DUSUK puan alir",
             _dolgu_skor < _bilgi_skor, f"dolgu={_dolgu_skor} bilgi={_bilgi_skor}")
-    kontrol("Skor kirilimi (bilgi/hook/nadirlik/vurgu/ceza) hesaplaniyor",
-            all(set(x["kirilim"]) == {"bilgi", "hook", "nadirlik", "vurgu", "dolgu_cezasi"} for x in _kesitler))
+    kontrol("Skor kirilimi (hook/bilgi/nadirlik/vurgu/konu/ceza) hesaplaniyor",
+            all({"hook", "bilgi", "nadirlik", "vurgu", "konu", "ceza"} <= set(x["kirilim"])
+                for x in _kesitler))
     _temiz_k, _atilan_k = _kc.filler_temizle(_kesitler)
     kontrol("Tekrar eden cumle ayiklanir (near-duplicate)",
             any("tekrar" in (a.get("sebep") or "") for a in _atilan_k) or len(_temiz_k) < len(_kesitler),
@@ -1302,19 +1303,32 @@ else:
     atla("KLIPCI skorlama/pencere (gercek ffmpeg + wav gerekir)", "ffmpeg PATH'te yok")
 
 # --- T3) Panel/kadraj plani: 1, 2 ve 4 kisi ayni anda konusunca ---
+# Gercek yuz izleyici gibi 0.5 sn adimla kesintisiz nokta uretiriz; panel karari
+# artık "o anda KADRAJDA olan farkli yuz" kuralina dayanir.
+def _iz_uret(_id, _x, _t0=0.0, _t1=15.0, _adim=0.5):
+    _noktalar = [(round(_t, 2), (_x, 300.0, 200.0, 220.0))
+                 for _t in [_t0 + _adim * i for i in range(int((_t1 - _t0) / _adim) + 1)]]
+    return {"id": _id, "noktalar": _noktalar, "aktif": [n[0] for n in _noktalar],
+            "hareket": [(n[0], 1.0) for n in _noktalar]}
+
+
 _yuz_bilgi = {"fw": 1920, "fh": 1080, "izler": [
-    {"id": 0, "noktalar": [(0.0, (300.0, 300.0, 200.0, 220.0))], "hareket": []},
-    {"id": 1, "noktalar": [(0.0, (1400.0, 300.0, 200.0, 220.0))], "hareket": []},
+    _iz_uret(0, 300.0),
+    _iz_uret(1, 1400.0),
 ]}
 _esleme = {0: 0, 1: 1, 2: 0, 3: 1}
 _kutu_hatasi = []
-for _n in (1, 2, 3, 4):
+for _n in (1, 2, 4):
     _parca_kesitler = [{"start": 0.5 * i, "end": 10.0 + 0.5 * i, "text": f"konusmaci {i}", "skor": 60}
                        for i in range(_n)]
     _etiketler = {round(k["start"], 3): i for i, k in enumerate(_parca_kesitler)}
     _pencere = {"start": 0.5, "end": 10.0, "sure": 9.5, "kesitler": _parca_kesitler,
                 "skor": 60, "en_yuksek": 60}
-    _parcalar = _kc.kadraj_plani(_pencere, _etiketler, _esleme, _yuz_bilgi["izler"], _yuz_bilgi)
+    # _n kisi icin _n AYRI yuz izi sart: ayni yuz iki panele bolunemez.
+    _izler_n = [_iz_uret(i, 200.0 + 400.0 * i) for i in range(_n)]
+    _yuz_n = {"fw": 1920, "fh": 1080, "izler": _izler_n}
+    _esleme_n = {i: i for i in range(_n)}
+    _parcalar = _kc.kadraj_plani(_pencere, _etiketler, _esleme_n, _izler_n, _yuz_n)
     if not _parcalar or any(p["panel_sayisi"] != _n for p in _parcalar):
         _kutu_hatasi.append(f"{_n} kisi -> panel {[p['panel_sayisi'] for p in _parcalar]}")
     for _p in _parcalar:
@@ -1324,15 +1338,40 @@ for _n in (1, 2, 3, 4):
             _kutu_hatasi.append(f"panel alanlari tam ekrani doldurmuyor ({_n} kisi)")
         for pp in _p["paneller"]:
             cw, ch, cx, cy = pp["kutu"]
-            if cx + cw > _yuz_bilgi["fw"] or cy + ch > _yuz_bilgi["fh"] or cw < 2 or ch < 2:
+            if cx + cw > _yuz_n["fw"] or cy + ch > _yuz_n["fh"] or cw < 2 or ch < 2:
                 _kutu_hatasi.append(f"kadraj karesi disari tasiyor ({_n} kisi)")
-kontrol("Ayni anda 1/2/3/4 kisi -> 1/2/3/4 panel, alanlar tam ekran, kadraj kare icinde",
+        _sahipler = [pp["yuz_izi"] for pp in _p["paneller"]]
+        if len(set(_sahipler)) != len(_sahipler):
+            _kutu_hatasi.append(f"ayni yuz iki panele bolundu ({_n} kisi)")
+kontrol("Ayni anda 1/2/4 kisi -> 1/2/4 panel, alanlar tam ekran, kadraj kare icinde",
         not _kutu_hatasi, "; ".join(_kutu_hatasi))
+
+# --- T3b) YANLIS BOLME KORUMASI: ayni kisi asla iki panele bolunmez ---
+_tek_iz = [_iz_uret(0, 300.0)]
+_tek_pencere = {"start": 0.5, "end": 10.0, "sure": 9.5, "skor": 60, "en_yuksek": 60,
+                "kesitler": [{"start": 0.5, "end": 10.0, "text": "a", "skor": 60},
+                             {"start": 0.6, "end": 10.1, "text": "b", "skor": 60}]}
+_tek_parcalar = _kc.kadraj_plani(_tek_pencere, {0.5: 0, 0.6: 1}, {0: 0, 1: 0}, _tek_iz,
+                                {"fw": 1920, "fh": 1080, "izler": _tek_iz})
+kontrol("TEK YUZ: 2 konusmaci sanilsa bile 1 panel kalir (ayni kisi iki kez gosterilmez)",
+        all(p["panel_sayisi"] == 1 for p in _tek_parcalar),
+        str([p["panel_sayisi"] for p in _tek_parcalar]))
+_ayrik_iz = [_iz_uret(0, 300.0, 0.0, 3.0), _iz_uret(1, 1400.0, 3.4, 15.0)]
+_ayrik = _kc.kadraj_plani(_tek_pencere, {0.5: 0, 0.6: 1}, {0: 0, 1: 1}, _ayrik_iz,
+                          {"fw": 1920, "fh": 1080, "izler": _ayrik_iz})
+kontrol("KAMERA GECISI: ayni anda tek yuz kadrajda -> tek panel (bos panel acilmaz)",
+        all(p["panel_sayisi"] == 1 for p in _ayrik), str([p["panel_sayisi"] for p in _ayrik]))
+_yeni_etiket, _yeni_k, _yeni_esleme, _ayrim_g, _dogrulama = _kc.konusmaci_dogrula(
+    [0, 1, 0, 1], {0: 0, 1: 0}, 2, 0.3, {"izler": _tek_iz})
+kontrol("AYNI YUZ: etiketler tek konusmaciya birlestirilir (video 1 kisi)",
+        _yeni_k == 1 and set(_yeni_etiket) == {0}, f"k={_yeni_k} ({_dogrulama})")
+_izsiz = _kc.kadraj_plani(_tek_pencere, {0.5: 0, 0.6: 1}, {}, [],
+                          {"fw": 1920, "fh": 1080, "izler": []})
+kontrol("YUZ YOK (kafa takibi kapali): tek panel (ayni goruntu iki kez gosterilmez)",
+        all(p["panel_sayisi"] == 1 for p in _izsiz))
 _ikili = next((p for p in _kc.kadraj_plani(
-    {"start": 0.5, "end": 10.0, "sure": 9.5, "skor": 60, "en_yuksek": 60,
-     "kesitler": [{"start": 0.5, "end": 10.0, "text": "a", "skor": 60},
-                  {"start": 0.6, "end": 10.1, "text": "b", "skor": 60}]},
-    {0.5: 0, 0.6: 1}, _esleme, _yuz_bilgi["izler"], _yuz_bilgi) if p["panel_sayisi"] == 2), None)
+    _tek_pencere, {0.5: 0, 0.6: 1}, _esleme, _yuz_bilgi["izler"], _yuz_bilgi)
+    if p["panel_sayisi"] == 2), None)
 kontrol("Iki kisi ayni anda konusunca penceresi ALT/UST ikiye bolunuyor",
         _ikili is not None and [pp["ad"] for pp in _ikili["paneller"]] == ["ust", "alt"],
         str(_ikili and [pp["ad"] for pp in _ikili["paneller"]]))
@@ -1408,6 +1447,202 @@ kontrol("Klip Studyo sayfasi isi 'klip' turuyle baslatiyor ve ayarlari komuta ak
 kontrol("Klip Studyo sayfasi sol menude tanimli (Sidebar + App rotasi)",
         "'klip'" in oku(os.path.join("desktop", "src", "components", "layout", "Sidebar.tsx"))
         and "KlipPage" in oku(os.path.join("desktop", "src", "App.tsx")))
+_new_alanlar = ["mod", "konu", "kirilim", "kesitler", "konular", "en_yuksek"]
+kontrol("klip_plani.json yeni alanlari (mod/konu/kirilim/kesitler/konular) hem yazilir hem okunur",
+        all(a in _klipci_kaynak for a in _new_alanlar) and all(a in _okuyucu for a in _new_alanlar)
+        and "transkript.json" in _klipci_kaynak and "transkript.json" in _okuyucu,
+        f"yazan={[a for a in _new_alanlar if a in _klipci_kaynak]}")
+_oynatici = oku(os.path.join("desktop", "src", "components", "klip", "KlipOynatici.tsx"))
+_oyun_protokolu = oku(os.path.join("desktop", "electron", "core", "video.ts"))
+kontrol("Uygulama ici oynatici var (9:16 video + skor kirilimi + kesit zaman cizgisi)",
+        "<video" in _oynatici and "Skor kırılımı" in _oynatici and "Kesitler" in _oynatici)
+kontrol("Yerel video vfil:// protokolu ile servis edilir (Range destekli, CSP gevsetilmedi)",
+        "registerSchemesAsPrivileged" in _oyun_protokolu and "Content-Range" in _oyun_protokolu
+        and "media-src 'self' vfil:" in oku(os.path.join("desktop", "index.html")))
+
+# --- T7) SES KAYMASI: video ve ses AYNI kesim sinirlarini kullanir ---
+# Senaryo: saniyede bir TIK (ses) + BEYAZ FLAS (goruntu). Klip 3 ayri kesitle
+# birlestirildikten sonra tik ve flas AYNI anda olmali; hicbir kesitte birikimli
+# kayma olmamali. (Eski kodda ses her kesitte 0.3 sn daha uzundu -> kesit basina
+# 0.3 sn kayma birikiyordu.)
+if not FFMPEG_VAR:
+    atla("Ses kaymasi (tik/flas hizasi)", "ffmpeg PATH'te yok")
+else:
+    _kayma_kok = gecici("vf_kayma_")
+    _tik_video = os.path.join(_kayma_kok, "tik.mp4")
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "color=c=black:s=640x360:r=30:d=24",
+                    "-f", "lavfi", "-i", "aevalsrc=0.9*exp(-45*mod(t+0.5\\,1)):s=44100:d=24",
+                    "-vf", "drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='lt(mod(t-0.5\\,1)\\,0.06)'",
+                    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "160k", "-shortest", _tik_video],
+                   check=True, capture_output=True)
+    _tik_paneller = [{"ad": "tam", "yuz_izi": None, "sahip": None,
+                      "kutu": [202, 360, 219, 0], "hedef": [1080, 1920]}]
+    _tik_parcalar = [
+        {"start": 2.0, "end": 6.5, "panel_sayisi": 1, "konusmacilar": [], "paneller": _tik_paneller,
+         "metin": "bir", "skor": 70},
+        {"start": 10.0, "end": 15.0, "panel_sayisi": 1, "konusmacilar": [], "paneller": _tik_paneller,
+         "metin": "iki", "skor": 80},
+        {"start": 19.0, "end": 22.0, "panel_sayisi": 1, "konusmacilar": [], "paneller": _tik_paneller,
+         "metin": "uc", "skor": 90},
+    ]
+    _sinirlar = _kc._kesit_sinirlari(_tik_parcalar)
+    _kayma_cikti = os.path.join(_kayma_kok, "klip.mp4")
+    _kayma_ok, _kayma_hata = _kc.klip_render(_tik_video, _tik_parcalar, _kayma_cikti, sinirlar=_sinirlar)
+    kontrol("Ses kaymasi testi: 3 kesitli klip render edildi", _kayma_ok, _kayma_hata)
+    if _kayma_ok:
+        import numpy as _np
+        import soundfile as _sf
+        _cikti_wav = os.path.join(_kayma_kok, "klip.wav")
+        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", _kayma_cikti,
+                        "-vn", "-c:a", "pcm_s16le", "-ar", "16000", "-ac", "1", _cikti_wav],
+                       check=True, capture_output=True)
+        _sinyal, _sr = _sf.read(_cikti_wav, dtype="float32", always_2d=False)
+        _guc = _np.abs(_sinyal)
+        _esik = max(0.15, float(_np.percentile(_guc, 99)) * 0.25)
+        _ust = _guc > _esik
+        _bas = int(_sr * 0.3)
+        _gecis = _np.where(_ust[_bas:] & ~_ust[_bas - 1:-1])[0]
+        _tik_idx = []
+        for _g in _gecis:
+            if _tik_idx and _g - _tik_idx[-1] < int(_sr * 0.4):
+                continue
+            _tik_idx.append(int(_g))
+        _tikler = [round((_g + _bas) / _sr, 3) for _g in _tik_idx]
+        # Beklenen cikti saniyesi: kesit sinirlarina gore
+        def _beklenen(_parcalar, _sinirlar, _kaynak_sn):
+            _imlec = 0.0
+            for (_b, _s), _p in zip(_sinirlar, _parcalar):
+                if _b <= _kaynak_sn <= _s:
+                    return round(_imlec + (_kaynak_sn - _b), 3)
+                _imlec += _s - _b
+            return None
+
+        _sapmalar = []
+        for _kaynak in (2.5, 3.5, 4.5, 5.5, 6.5, 10.5, 11.5, 12.5, 13.5, 14.5, 19.5, 20.5, 21.5):
+            _hedef = _beklenen(_tik_parcalar, _sinirlar, _kaynak)
+            if _hedef is None:
+                continue
+            _yakin = min(_tikler, key=lambda t, h=_hedef: abs(t - h))
+            _sapmalar.append(round(_yakin - _hedef, 3))
+        _en_buyuk = max(abs(s) for s in _sapmalar) if _sapmalar else 99.0
+        kontrol("SES KAYMASI YOK: her kesitte tik beklenen saniyede (sapma < 0.08 sn)",
+                bool(_sapmalar) and _en_buyuk < 0.08,
+                f"en buyuk sapma {_en_buyuk:.3f} sn ({len(_sapmalar)} tik)")
+        kontrol("Kesit sinirlari video/ses icin ORTAK (ust uste binme yok)",
+                all(a[1] <= b[0] + 1e-9 for a, b in zip(_sinirlar, _sinirlar[1:])),
+                str(_sinirlar))
+
+# --- T8) HOOK-FIRST + KONU CIKARIMI (saf python, hizli) ---
+_konu_wav = os.path.join(gecici("vf_konu_"), "sessiz.wav") if FFMPEG_VAR else None
+if FFMPEG_VAR:
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                    "-i", "anullsrc=r=16000:cl=mono", "-t", "90", _konu_wav],
+                   check=True, capture_output=True)
+    _metinler = [
+        "yani iste ee hmm sey",
+        "Shaolin tapinaginda ogrenciler sabah bes gibi kalkar ve dokuz saat antrenman yapar",
+        "Shaolin antrenmaninda ogrenciler sabah bes gibi kalkar ve dokuz saat calisir",
+        "Shaolin ogrencileri ayni antrenmani her gun tekrarlar ve teknik ogrenir",
+        "peki neden hic kimse shaolin antrenmaninin neden bu kadar sert oldugunu soylemiyor?",
+        "cunku shaolin ogrencisi gunde dokuz saat antrenman yapar ve bunu asla sorgulamaz",
+        "Simdi bu tarif icin un, yumurta ve sut gerekiyor; hamuru yogurup firinda pisirin",
+        "Tatli tarifinde firin 180 derece olmali ve kek 40 dakika pisirilmeli",
+        "Ama iste bu tatliyi kimse bilmiyor; firin sicakligi yanlis olursa kek kabarmaz",
+    ]
+    _ks = []
+    _t = 0.0
+    for _m in _metinler:
+        _ks.append({"start": _t, "end": _t + 4.0, "text": _m, "kelime": len(_m.split()), "sure": 4.0})
+        _t += 4.4
+    _ks = _kc.an_skorlari(_ks, _konu_wav)
+    _soru = next(x for x in _ks if "neden hic kimse" in x["text"])
+    _dolgu2 = next(x for x in _ks if x["text"].startswith("yani"))
+    kontrol("HOOK: merak sorusu en yuksek kanca puanini alir (hook agirlikli skor)",
+            _soru["kirilim"]["hook"] >= 0.9 and _soru["skor"] > _dolgu2["skor"],
+            f"soru hook={_soru['kirilim']['hook']} skor={_soru['skor']} / dolgu={_dolgu2['skor']}")
+    _kalan, _atilan2 = _kc.filler_temizle(_ks)
+    _konular = _kc.konu_cikar(_kalan)
+    _shaolin = [c for c in _konular if "shaolin" in c["etiket"]]
+    kontrol("KONU: transkript konu bloklarina ayrilir ve etiket kelimeler cikar",
+            len(_konular) >= 2 and bool(_shaolin),
+            str([(c["etiket"], c["kesit_sayisi"]) for c in _konular]))
+    kontrol("KONU: kanca cumlesi dogru konu bloguna atanir (konu uyumu 1.0)",
+            bool(_shaolin) and _soru.get("konu") in [c["no"] for c in _shaolin],
+            f"konu={_soru.get('konu')}")
+    _penc = _kc.klip_pencereleri(_kalan, adet=2, hedef_sure=30)
+    kontrol("HOOK-FIRST: secilen klibin ACILISI kanca cumlesinden gelir",
+            bool(_penc) and _penc[0]["kirilim"]["hook_acilis"] >= 0.5,
+            str([(p["kirilim"]["hook_acilis"], round(p["start"], 1)) for p in _penc]))
+    kontrol("KONU BUTUNLUGU: pencere tek konu blogunda kalir (konu_orani >= 0.5)",
+            bool(_penc) and _penc[0]["kirilim"]["konu_orani"] >= 0.5,
+            str([p["kirilim"]["konu_orani"] for p in _penc]))
+    kontrol("Pencere konusma suresine gore kurulur (15-60 sn)",
+            bool(_penc) and all(15 <= p["konusma_suresi"] <= 60 for p in _penc),
+            str([p["konusma_suresi"] for p in _penc]))
+else:
+    atla("Hook-first + konu cikarimi", "ffmpeg PATH'te yok")
+
+# --- T9) GORSEL HOOK MODU (konusma olmayan video) ---
+if not FFMPEG_VAR:
+    atla("Gorsel hook modu", "ffmpeg PATH'te yok")
+else:
+    _gor_kok = gecici("vf_gorsel_")
+    _aksiyon = os.path.join(_gor_kok, "aksiyon.mp4")
+    _vf = ("drawbox=x=0:y=0:w=iw:h=ih:color=red@1.0:t=fill:enable='between(t,12,24)',"
+           "drawbox=x='mod(t*200,iw-80)':y=100:w=80:h=80:color=white:t=fill:enable='between(t,12,24)'")
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "color=c=black:s=640x360:r=30:d=40",
+                    "-f", "lavfi", "-i", "aevalsrc=0.04+0.7*exp(-2*mod(t\\,4)):s=44100:d=40",
+                    "-vf", _vf, "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "128k", "-shortest", _aksiyon],
+                   check=True, capture_output=True)
+    _aksiyon_wav = os.path.join(_gor_kok, "aksiyon.wav")
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", _aksiyon,
+                    "-vn", "-c:a", "pcm_s16le", "-ar", "16000", "-ac", "1", _aksiyon_wav],
+                   check=True, capture_output=True)
+    _gor = _kc.gorsel_analiz(_aksiyon, _aksiyon_wav)
+    kontrol("GORSEL HOOK: konusmasiz video analiz edilir (hareket + sahne kesmesi)",
+            not _gor.get("hata") and len(_gor["hucreler"]) > 20 and _gor["kesme_sayisi"] >= 1,
+            f"{len(_gor.get('hucreler') or [])} hucre, {_gor.get('kesme_sayisi')} kesme, hata={_gor.get('hata')}")
+    _hucreler = _gor.get("hucreler") or []
+    if _hucreler:
+        _sakin = [h["skor"] for h in _hucreler if h["t"] < 11.5]
+        _aksi = [h["skor"] for h in _hucreler if 12.5 < h["t"] < 23.5]
+        kontrol("GORSEL HOOK: aksiyon bolumu sakin bolumden yuksek skor alir",
+                bool(_sakin) and bool(_aksi) and sum(_aksi) / len(_aksi) > sum(_sakin) / len(_sakin),
+                f"sakin={sum(_sakin) / max(1, len(_sakin)):.3f} aksiyon={sum(_aksi) / max(1, len(_aksi)):.3f}")
+        _zirve = max(_hucreler, key=lambda h: h["skor"])
+        kontrol("GORSEL HOOK: en yuksek enerji aksiyon bolgesinde", 12.0 <= _zirve["t"] <= 24.0,
+                f"zirve={_zirve['t']}")
+        _gp = _kc.gorsel_pencereleri(_hucreler, adet=2, sure=15, video_sure=_gor["sure"])
+        kontrol("GORSEL HOOK-FIRST: klip kanca aninda baslar (zirveye <= 2 sn)",
+                bool(_gp) and abs(_gp[0]["start"] - _zirve["t"]) <= 2.0,
+                str([p["start"] for p in _gp]))
+        if _gp:
+            _gparca = _kc.gorsel_kadraj_plani(_gp[0], _gor["fw"], _gor["fh"])
+            kontrol("GORSEL kadraj: tek panel, hareketi izleyen pencere (kare icinde)",
+                    bool(_gparca) and all(p["panel_sayisi"] == 1 for p in _gparca)
+                    and all(all(0 <= pp["kutu"][2] and pp["kutu"][2] + pp["kutu"][0] <= _gor["fw"]
+                                and pp["kutu"][3] + pp["kutu"][1] <= _gor["fh"] for pp in p["paneller"])
+                            for p in _gparca),
+                    str(len(_gparca)))
+            _gcikti = os.path.join(_gor_kok, "gorsel_klip.mp4")
+            _gok, _ghata = _kc.klip_render(_aksiyon, _gparca, _gcikti,
+                                           sinirlar=_kc._kesit_sinirlari(_gparca))
+            kontrol("GORSEL klip GERCEK render edilir (konusmasiz video -> dikey cikti)",
+                    _gok and os.path.getsize(_gcikti) > 20000, _ghata)
+    # Konusmasiz video otomatik olarak gorsel moda duser (transkript cikmaz)
+    _sessiz_video = os.path.join(_gor_kok, "sessiz.mp4")
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "color=c=black:s=320x180:r=30:d=6", "-vf", _vf,
+                    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-an", _sessiz_video],
+                   check=True, capture_output=True)
+    _sessiz_analiz = _kc.videoyu_analiz_et(_sessiz_video, whisper_model="tiny", yuz_atla=True)
+    kontrol("Konusmasiz video (ses akisi yok) otomatik 'gorsel' moda duser",
+            bool(_sessiz_analiz) and _sessiz_analiz.get("mod") == "gorsel",
+            str(_sessiz_analiz and _sessiz_analiz.get("mod")))
 
 # --------------------------------------------------------------------------
 for y in temizlenecek:
