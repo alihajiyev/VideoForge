@@ -7,6 +7,8 @@ import { STAGES, channelById } from '@shared/channels'
 import {
   GUN_SAYISI_VARSAYILAN,
   IPC,
+  KLIP_OTO,
+  KLIP_OTO_SURE_MAX,
   MAX_LOG_LINES,
   normalGunSayisi,
   normalKlipSayisi,
@@ -239,10 +241,13 @@ export function buildSteps(req: JobRequest, base: string[]): { steps: JobStep[];
         args.push('--ducking')
         if (req.klipMuzik) args.push('--muzik', req.klipMuzik)
       }
+      // 0 = OTOMATIK: sayiyi/sureyi motor secip plan dosyasina yazar (plan.oto).
+      const otoSayi = adet <= KLIP_OTO
+      const otoSure = sure <= KLIP_OTO
       return {
         steps: [{ label: 'Uzun video -> Shorts (analiz + montaj)', cmd: args }],
-        title: `Klip Stüdyo - ${adet} klip`,
-        subtitle: `${req.link || ''} · hedef ${sure} sn${req.klipPlanSadece ? ' · sadece plan' : ''}`,
+        title: `Klip Stüdyo - ${otoSayi ? 'otomatik klip sayısı' : `${adet} klip`}`,
+        subtitle: `${req.link || ''} · ${otoSure ? `otomatik süre (maks ${KLIP_OTO_SURE_MAX} sn)` : `hedef ${sure} sn`}${req.klipPlanSadece ? ' · sadece plan' : ''}`,
       }
     }
   }

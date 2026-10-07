@@ -132,8 +132,14 @@ OpusClip mantigiyla dikey Shorts'lara cevirir — tamami yerel ve ucretsiz:
 
 ```bash
 py -3 -X utf8 functions/klipci.py --link "https://youtube.com/watch?v=XXXX" --klip 3 --sure 45
+py -3 -X utf8 functions/klipci.py --link "https://youtube.com/watch?v=XXXX" --klip 0 --sure 0  # OTOMATIK
 py -3 -X utf8 functions/klipci.py --yerel "C:\\video\\reportaj.mp4" --plan-sadece   # sadece analiz
 ```
+
+**Otomatik mod (`--klip 0 --sure 0`, masaüstünde varsayılan):** kaç klip üretileceğine video karar verir —
+skoru yüksek **bütün ilginç sahneler** üretilir (en fazla 20 klip), zayıf sahneler atlanır; süre de içeriğe
+göre ayarlanır (anlatım güçlüyse klip uzar, ilgi düşerse kapanır, **en fazla 90 sn**). Yani "5 ilginç sahne
+varken 3 klip seçip 2 sahneyi boşa atmak" olmaz.
 
 1. **Zamanli transkript** cikarilir (yt-dlp altyazisi → Transcript API → yerel Whisper): hangi saniyede
    ne konusuldugu belli olur.
@@ -147,7 +153,9 @@ py -3 -X utf8 functions/klipci.py --yerel "C:\\video\\reportaj.mp4" --plan-sadec
    ile hook bulunur, kadraj hareket merkezini izler.
 6. **Ses**: `afftdn` temizlik + `loudnorm` (-14 LUFS) + istege bagli fon muzigi ducking. Video ve ses
    **ayni kesim sinirlarini** kullanir (kesit basina kayma olmaz).
-7. **QA kapisi**: her klip olculur (siyah kare, donma, sessizlik, LUFS, sure) ve `klip_plani.json`'a yazilir.
+7. **Otomatik secim**: sayı/süre otomatikken motor en iyi pencereye göre **göreli skor eşiği** hesaplar;
+eşiği geçen bütün sahneler üretilir, zayıflar atlanır (`plan.oto`: aday / seçilen / atlanan / eşik).
+8. **QA kapisi**: her klip olculur (siyah kare, donma, sessizlik, LUFS, sure) ve `klip_plani.json`'a yazilir.
 
 Cikti klasoru: `Masaustu/Klipler/<video adi>/` — `klip_plani.json`, `transkript.json`, klipler + SRT.
 Masaustu sayfasi bu klasoru okur; klipleri **uygulama icinde oynatir** (`vfil://` protokolu, Range

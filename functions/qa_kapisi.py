@@ -28,9 +28,10 @@ from datetime import datetime
 FFMPEG = os.environ.get("FFMPEG_BIN", "ffmpeg")
 FFPROBE = os.environ.get("FFPROBE_BIN", "ffprobe")
 
-# Shorts hedefleri (YouTube Shorts: 3 dk'a kadar ama bu kanal 25-60 sn uretiyor)
+# Shorts hedefleri (YouTube Shorts: 3 dk'a kadar). Elle secilen sureler 15-60 sn,
+# otomatik sure modunda motor icerige gore 90 sn'ye kadar klibi uzatabiliyor.
 HEDEF_MIN_SN = 15.0
-HEDEF_MAKS_SN = 60.0
+HEDEF_MAKS_SN = 90.0
 # YouTube normalde -14 LUFS'a normalize eder; +/-4 LU disi "ses zayif/yuksek".
 HEDEF_LUFS = -14.0
 LUFS_TOLERANS = 4.0

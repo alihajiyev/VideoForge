@@ -18,9 +18,9 @@ import {
 } from 'lucide-react'
 import type { KlipDurumu, KlipKlasoru, KlipOgesi, KlipTranskript } from '@shared/types'
 import {
+  KLIP_OTO,
+  KLIP_OTO_SURE_MAX,
   KLIP_SAYISI_MAX,
-  KLIP_SAYISI_VARSAYILAN,
-  KLIP_SURE_VARSAYILAN,
   normalKlipSayisi,
   normalKlipSuresi,
 } from '@shared/constants'
@@ -78,8 +78,9 @@ const AKIS_ADIMLARI: { icon: ReactNode; baslik: string; metin: string }[] = [
 export function KlipPage({ onNavigate }: { onNavigate: (page: PageKey) => void }): ReactNode {
   const { job, startJob, cancelJob, pushToast, settings } = useApp()
   const [link, setLink] = useState('')
-  const [adet, setAdet] = useState<number>(KLIP_SAYISI_VARSAYILAN)
-  const [sure, setSure] = useState<number>(KLIP_SURE_VARSAYILAN)
+  // Varsayilan OTOMATIK: sayiyi ve sureyi video belirler (klipci.py --klip 0 / --sure 0).
+  const [adet, setAdet] = useState<number>(KLIP_OTO)
+  const [sure, setSure] = useState<number>(KLIP_OTO)
   const [hoparlor, setHoparlor] = useState('auto')
   const [altyazi, setAltyazi] = useState<'yok' | 'srt' | 'yak'>('srt')
   const [planSadece, setPlanSadece] = useState(false)
@@ -260,16 +261,18 @@ export function KlipPage({ onNavigate }: { onNavigate: (page: PageKey) => void }
             <label className="flex w-[150px] flex-col gap-1.5">
               <span className="text-[11.5px] text-fg-subtle">Klip sayısı</span>
               <Select value={String(adet)} onChange={(e) => setAdet(normalKlipSayisi(e.target.value))} disabled={calisiyor}>
+                <option value={KLIP_OTO}>Otomatik — kaç sahne varsa (önerilen)</option>
                 {Array.from({ length: KLIP_SAYISI_MAX }, (_, i) => i + 1).map((n) => (
                   <option key={n} value={n}>
-                    {n} klip{n === KLIP_SAYISI_VARSAYILAN ? ' (önerilen)' : ''}
+                    {n} klip
                   </option>
                 ))}
               </Select>
             </label>
-            <label className="flex w-[150px] flex-col gap-1.5">
+            <label className="flex w-[190px] flex-col gap-1.5">
               <span className="text-[11.5px] text-fg-subtle">Hedef süre (sn)</span>
               <Select value={String(sure)} onChange={(e) => setSure(normalKlipSuresi(e.target.value))} disabled={calisiyor}>
+                <option value={KLIP_OTO}>Otomatik — içeriğe göre (maks {KLIP_OTO_SURE_MAX} sn)</option>
                 {SURE_SECENEK.map((s) => (
                   <option key={s} value={s}>
                     {s} saniye
@@ -366,6 +369,15 @@ export function KlipPage({ onNavigate }: { onNavigate: (page: PageKey) => void }
             </p>
           ) : null}
 
+          {adet === KLIP_OTO || sure === KLIP_OTO ? (
+            <p className="rounded-[10px] border border-cyan/25 bg-cyan/5 px-3 py-2 text-[11.5px] leading-relaxed text-fg-muted">
+              <strong className="font-medium text-cyan">Otomatik mod:</strong> KAÇ klip üretileceğine video karar
+              veriyor — skoru yüksek <strong className="font-medium text-fg">bütün ilginç sahneler</strong> üretilir
+              (en fazla 20 klip), zayıf sahneler boşuna çıkarılmaz. Süre de içeriğe göre ayarlanır: anlatım
+              güçlüyse klip uzar, ilgi düşerse kapanır (en fazla {KLIP_OTO_SURE_MAX} sn).
+            </p>
+          ) : null}
+
           <div className="grid gap-2 border-t border-border pt-3 sm:grid-cols-2 lg:grid-cols-4">
             {AKIS_ADIMLARI.map((a) => (
               <div key={a.baslik} className="flex items-start gap-2">
@@ -453,6 +465,14 @@ export function KlipPage({ onNavigate }: { onNavigate: (page: PageKey) => void }
                 {k.konular.length ? <Badge tone="neutral">{k.konular.length} konu bloğu</Badge> : null}
                 {k.transkriptKaynagi ? <Badge tone="neutral">{k.transkriptKaynagi}</Badge> : null}
                 {k.atilanKesit ? <Badge tone="neutral">{k.atilanKesit} gereksiz kesit atıldı</Badge> : null}
+                {k.oto?.klipSayisi ? (
+                  <Badge tone="brand">
+                    otomatik seçim: {k.oto.secilen} sahne
+                    {k.oto.atlanan ? ` · ${k.oto.atlanan} zayıf atlandı` : ''}
+                    {k.oto.skorEsigi !== null ? ` · eşik ${Math.round(k.oto.skorEsigi)}` : ''}
+                  </Badge>
+                ) : null}
+                {k.oto?.sure ? <Badge tone="brand">otomatik süre · maks {Math.round(k.oto.sureUst)} sn</Badge> : null}
                 {qaPuan !== null && qaDerece ? (
                   <Badge tone={qaPuan >= 85 ? 'success' : qaPuan >= 70 ? 'warn' : 'danger'}>
                     en iyi QA {qaPuan}/100 {qaDerece}

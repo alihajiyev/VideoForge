@@ -1644,8 +1644,92 @@ else:
             bool(_sessiz_analiz) and _sessiz_analiz.get("mod") == "gorsel",
             str(_sessiz_analiz and _sessiz_analiz.get("mod")))
 
+# --- T10) OTOMATIK MOD: klip sayisini ve sureyi video belirler ---
+if not FFMPEG_VAR:
+    atla("Otomatik klip sayisi/sure", "ffmpeg PATH'te yok")
+else:
+    # 1) PLANLAMA MANTIGI: 6 ilginc sahne + araya zayif kesitler + uzun guclu bolum
+    _oto_pl = []
+    _oto_t = 0.0
+
+    def _oto_kesit(bas, skor, konu, metin):
+        return {"start": round(bas, 2), "end": round(bas + 4.0, 2), "text": metin,
+                "kelime": 6, "sure": 4.0, "konu": konu, "konu_etiket": f"konu{konu}",
+                "skor": float(skor),
+                "kirilim": {"hook": skor / 100.0 * 0.9, "bilgi": skor / 100.0 * 0.7,
+                            "nadirlik": skor / 100.0 * 0.5, "vurgu": skor / 100.0 * 0.4,
+                            "konu": 0.6}}
+
+    for _k in range(6):                       # 6 ayri ilginc sahne (~22 sn'lik konusma)
+        for _i in range(5):
+            _oto_pl.append(_oto_kesit(_oto_t, 84 - _i, _k, f"konu {_k} cumle {_i}"))
+            _oto_t += 4.4
+        for _i in range(2):                   # araya zayif/gecis kesitleri
+            _oto_pl.append(_oto_kesit(_oto_t, 24, _k, "hmm ee sey"))
+            _oto_t += 4.4
+    for _i in range(26):                      # uzun guclu bolum: otomatik sure 45 sn'yi asmali
+        _oto_pl.append(_oto_kesit(_oto_t, 88 - (_i % 4), 6, f"uzun bolum cumle {_i}"))
+        _oto_t += 4.4
+
+    # Elle 45 sn: klip_uret de hedefi hem konusma hem span siniri olarak gecer.
+    _oto_manuel = _kc.klip_pencereleri(_oto_pl, adet=3, hedef_sure=45, maks_sure=45)
+    _oto_aday = _kc.klip_pencereleri(_oto_pl, adet=_kc.OTO_MAKS_KLIP, hedef_sure=_kc.OTO_MAKS_SURE,
+                                     maks_sure=_kc.OTO_MAKS_SURE, oto=True, oto_sure=True)
+    _oto_sec, _oto_esik = _kc.oto_pencereleri_sec(_oto_aday)
+    kontrol("OTOMATIK SAYI: 6 ilginc sahne varken 3 klip sinirlamasi yok (sahne bosuna gitmez)",
+            len(_oto_sec) >= 5,
+            f"manuel={len(_oto_manuel)} oto={len(_oto_sec)} aday={len(_oto_aday)} esik={_oto_esik}")
+    kontrol("OTOMATIK SAYI: secilen her sahne skor esigini gecer, zayif sahneler atlanir",
+            bool(_oto_sec) and _oto_esik > 0 and all(p["skor"] >= _oto_esik for p in _oto_sec),
+            f"esik={_oto_esik} skorlar={[round(p['skor'], 1) for p in _oto_sec]}")
+    kontrol("OTOMATIK SURE: icerik uzunsa klip 45 sn'yi asar ama 90 sn'yi GECMEZ",
+            bool(_oto_sec) and max(p["sure"] for p in _oto_sec) > 45.0
+            and all(p["sure"] <= _kc.OTO_MAKS_SURE + 0.6 for p in _oto_sec),
+            f"sureler={[p['sure'] for p in _oto_sec]}")
+    kontrol("OTOMATIK SURE: her klip en az 15 sn (Shorts alt siniri)",
+            bool(_oto_sec) and all(p["sure"] >= 15.0 for p in _oto_sec),
+            str([p["sure"] for p in _oto_sec]))
+    kontrol("MANUEL SURE: 45 sn secilince ekranda kalan sure de 45 sn'yi asmaz",
+            bool(_oto_manuel) and all(p["sure"] <= 45.6 for p in _oto_manuel),
+            str([p["sure"] for p in _oto_manuel]))
+    kontrol("OTOMATIK SAYI: emniyet siniri asilmaz (en fazla 20 klip)",
+            len(_oto_sec) <= _kc.OTO_MAKS_KLIP and len(_oto_aday) <= _kc.OTO_MAKS_KLIP,
+            f"aday={len(_oto_aday)} secilen={len(_oto_sec)}")
+    kontrol("CLI: '0' ve 'oto' degerleri otomatik moda cevrilir",
+            _kc._oto_deger("oto", int) == 0 and _kc._oto_deger("OTOMATIK", int) == 0
+            and _kc._oto_deger("7", int) == 7 and _kc._oto_deger("22.5", float) == 22.5,
+            f"oto={_kc._oto_deger('oto', int)} 7={_kc._oto_deger('7', int)}")
+    _oto_cli = subprocess.run([sys.executable, "functions/klipci.py", "--help"],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=120, env={**os.environ, "PYTHONUTF8": "1"})
+    kontrol("CLI --help otomatik modu anlatir (--klip 0 / --sure 0, maks 90 sn)",
+            _oto_cli.returncode == 0 and "OTOMATIK" in _oto_cli.stdout
+            and "90" in _oto_cli.stdout,
+            (_oto_cli.stdout or "").count("OTOMATIK"))
+
+    # 2) GERCEK UCTAN UCA: klip_uret(adet=0, sure=0) otomatik plani uretir (render yok)
+    _oto_kok = gecici("vf_oto_uret_")
+    _oto_ok, _oto_plan = _kc.klip_uret(yerel=_sessiz_video, adet=0, sure=0, yuz_atla=True,
+                                      whisper_model="tiny", plan_sadece=True,
+                                      cikis_klasoru=_oto_kok)
+    _oto_b = (_oto_plan or {}).get("oto") or {}
+    kontrol("OTOMATIK: klip_uret(adet=0, sure=0) plani 'oto' bilgisiyle yazar",
+            bool(_oto_ok) and _oto_b.get("klip_sayisi") is True and _oto_b.get("sure") is True
+            and _oto_b.get("secilen", 0) >= 1 and float(_oto_b.get("sure_ust") or 0) == _kc.OTO_MAKS_SURE,
+            json.dumps(_oto_b, ensure_ascii=False))
+    _man_ok, _man_plan = _kc.klip_uret(yerel=_sessiz_video, adet=2, sure=20, yuz_atla=True,
+                                       whisper_model="tiny", plan_sadece=True,
+                                       cikis_klasoru=gecici("vf_man_uret_"))
+    _man_b = (_man_plan or {}).get("oto") or {}
+    kontrol("MANUEL: adet/sure elle verilince 'oto' bilgisi kapali kalir ve sayi sinirlanir",
+            bool(_man_ok) and _man_b.get("klip_sayisi") is False and _man_b.get("sure") is False
+            and len(_man_plan.get("klipler") or []) <= 2
+            and float(_man_b.get("sure_ust") or 0) == 20.0,
+            json.dumps(_man_b, ensure_ascii=False))
+
 # --------------------------------------------------------------------------
 for y in temizlenecek:
+
     shutil.rmtree(y, ignore_errors=True)
 
 print("\n=========================================")

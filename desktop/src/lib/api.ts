@@ -170,6 +170,7 @@ const mockKlip: KlipDurumu = {
       link: 'https://youtube.com/watch?v=abc',
       video: 'C:\\tmp\\abc.mp4',
       mod: 'konusma',
+      oto: { klipSayisi: true, sure: false, aday: 6, secilen: 2, atlanan: 4, skorEsigi: 66.8, sureUst: 45 },
       konular: [
         { no: 0, etiket: 'arsiv, kayit, 1937', baslangic: 120, bitis: 260, kesitSayisi: 22, skor: 74.2 },
         { no: 1, etiket: 'elektrik, plan, sehir', baslangic: 380, bitis: 470, kesitSayisi: 14, skor: 69.8 },
@@ -239,6 +240,7 @@ const mockKlip: KlipDurumu = {
       link: '',
       video: 'C:\\tmp\\marvel.mp4',
       mod: 'gorsel',
+      oto: { klipSayisi: true, sure: true, aday: 3, secilen: 1, atlanan: 2, skorEsigi: 61.2, sureUst: 90 },
       konular: [],
       transkriptVar: false,
       konusmaciSayisi: 0,

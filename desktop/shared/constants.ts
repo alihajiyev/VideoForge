@@ -100,17 +100,29 @@ export const KLIP_SAYISI_VARSAYILAN = 3
 export const KLIP_SURE_MIN = 15
 export const KLIP_SURE_MAX = 60
 export const KLIP_SURE_VARSAYILAN = 45
+/**
+ * 0 = OTOMATIK: klip sayisini/sureyi motor secer (klipci.py --klip 0 / --sure 0).
+ * Sayi: video kac ilginc sahne verirse o kadar. Sure: icerige gore, en fazla
+ * KLIP_OTO_SURE_MAX. Secilen deger istege aynen bu sayi olarak gider.
+ */
+export const KLIP_OTO = 0
+/** Otomatik sure ust siniri (klipci.py OTO_MAKS_SURE ile ayni). */
+export const KLIP_OTO_SURE_MAX = 90
 
 export function normalKlipSayisi(value?: number | string | null): number {
+  if (value === undefined || value === null || value === '') return KLIP_SAYISI_VARSAYILAN
   const v = Math.floor(Number(value))
-  if (!Number.isFinite(v) || v < KLIP_SAYISI_MIN) return KLIP_SAYISI_VARSAYILAN
-  return Math.min(KLIP_SAYISI_MAX, v)
+  if (!Number.isFinite(v)) return KLIP_SAYISI_VARSAYILAN
+  if (v <= KLIP_OTO) return KLIP_OTO
+  return Math.min(KLIP_SAYISI_MAX, Math.max(KLIP_SAYISI_MIN, v))
 }
 
 export function normalKlipSuresi(value?: number | string | null): number {
+  if (value === undefined || value === null || value === '') return KLIP_SURE_VARSAYILAN
   const v = Math.floor(Number(value))
-  if (!Number.isFinite(v) || v < KLIP_SURE_MIN) return KLIP_SURE_VARSAYILAN
-  return Math.min(KLIP_SURE_MAX, v)
+  if (!Number.isFinite(v)) return KLIP_SURE_VARSAYILAN
+  if (v <= KLIP_OTO) return KLIP_OTO
+  return Math.min(KLIP_SURE_MAX, Math.max(KLIP_SURE_MIN, v))
 }
 
 /** Kesif planinin gun sayisi sinirlari (7 sabit degil, kullanici seciyor). */

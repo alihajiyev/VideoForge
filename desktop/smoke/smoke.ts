@@ -17,7 +17,9 @@ import {
   GUN_SAYISI_MAX,
   GUN_SAYISI_VARSAYILAN,
   IPC,
+  KLIP_OTO,
   KLIP_SAYISI_VARSAYILAN,
+  KLIP_SURE_VARSAYILAN,
   normalGunSayisi,
   normalKlipSayisi,
   normalKlipSuresi,
@@ -349,6 +351,7 @@ async function main(): Promise<void> {
         yuz_izi_sayisi: 2,
         transkript_kaynagi: 'altyazi/api',
         atilan_kesit: 7,
+        oto: { klip_sayisi: true, sure: false, aday: 6, secilen: 2, atlanan: 4, skor_esigi: 66.8, sure_ust: 45 },
         klipler: [
           {
             no: 1,
@@ -381,14 +384,21 @@ async function main(): Promise<void> {
       kdKlasor.klipler[0].qaPuan === 88 && kdKlasor.klipler[0].qaDerece === 'GECTI' && kdKlasor.klipler[1].hata === 'ffmpeg hatasi',
       `qa=${kdKlasor.klipler[0].qaPuan} hata=${kdKlasor.klipler[1].hata}`)
     check('En iyi QA puani ozetlenir', kd.enIyiPuan === 88, String(kd.enIyiPuan))
+    check('Otomatik mod bilgisi plandan okundu (klip sayisi + esik + atlanan)',
+      kdKlasor.oto?.klipSayisi === true && kdKlasor.oto?.sure === false &&
+      kdKlasor.oto?.aday === 6 && kdKlasor.oto?.secilen === 2 && kdKlasor.oto?.atlanan === 4 &&
+      kdKlasor.oto?.skorEsigi === 66.8 && kdKlasor.oto?.sureUst === 45,
+      JSON.stringify(kdKlasor.oto))
     const eskiRoot = process.env.VF_KLIP_ROOT
     process.env.VF_KLIP_ROOT = klipRoot
     check('VF_KLIP_ROOT override edilince varsayilan kok onu kullanir', klipDurumu().klasorler.length === 1)
     if (eskiRoot === undefined) delete process.env.VF_KLIP_ROOT
     else process.env.VF_KLIP_ROOT = eskiRoot
-    check('Klip sayisi/sure normalizasyonu',
-      normalKlipSayisi(0) === KLIP_SAYISI_VARSAYILAN && normalKlipSayisi(99) === 10 && normalKlipSuresi(3) === 45 && normalKlipSuresi(30) === 30,
-      `${normalKlipSayisi(99)} / ${normalKlipSuresi(3)}`)
+    check('Klip sayisi/sure normalizasyonu (0 = OTOMATIK, tanimsiz = varsayilan)',
+      normalKlipSayisi(0) === KLIP_OTO && normalKlipSayisi(99) === 10 &&
+      normalKlipSuresi(0) === KLIP_OTO && normalKlipSuresi(30) === 30 && normalKlipSuresi(99) === 60 &&
+      normalKlipSayisi(undefined) === KLIP_SAYISI_VARSAYILAN && normalKlipSuresi(null) === KLIP_SURE_VARSAYILAN,
+      `0 -> ${normalKlipSayisi(0)}/${normalKlipSuresi(0)}, 99 -> ${normalKlipSayisi(99)}/${normalKlipSuresi(99)}`)
 
     /* ---------------- 6. Log ve plan okuma ---------------- */
     section('6) Log ve haftalik plan')
@@ -510,8 +520,18 @@ async function main(): Promise<void> {
     check('Otomatik panel modu komuta yazilmaz (varsayilan)', !klipOto.steps[0].cmd.includes('--hoparlor'), klipOto.steps[0].cmd.join(' '))
     const klipDuck = buildSteps({ kind: 'klip', link: 'https://youtu.be/abc', klipDucking: true, klipMuzik: 'C:\\m\\fon.mp3' }, base)
     check('Ducking muzikle birlikte komuta geciyor', klipDuck.steps[0].cmd.join(' ').includes('--ducking --muzik C:\\m\\fon.mp3'), klipDuck.steps[0].cmd.join(' '))
-    check('Klip normalizasyonu (99 klip -> 10, 5 sn -> 15)',
-      buildSteps({ kind: 'klip', link: 'https://youtu.be/abc', klipSayisi: 99, klipSuresi: 5 }, base).steps[0].cmd.join(' ').includes('--klip 10 --sure 45'),
+    const klipOtoIs = buildSteps({ kind: 'klip', link: 'https://youtu.be/abc', klipSayisi: 0, klipSuresi: 0 }, base)
+    check('Otomatik mod komuta aynen geciyor (--klip 0 --sure 0)',
+      klipOtoIs.steps[0].cmd.join(' ').includes('--klip 0 --sure 0'),
+      klipOtoIs.steps[0].cmd.join(' '))
+    check('Otomatik mod is basliginda/sure bilgisinde gorunuyor (maks 90 sn)',
+      klipOtoIs.title.includes('otomatik klip sayısı') && klipOtoIs.subtitle.includes('otomatik süre (maks 90 sn)'),
+      `${klipOtoIs.title} | ${klipOtoIs.subtitle}`)
+    check('Elle secilen modda baslik/sure eski bicimiyle yazilir',
+      klip.title.includes('3 klip') && klip.subtitle.includes('hedef 45 sn'),
+      `${klip.title} | ${klip.subtitle}`)
+    check('Klip normalizasyonu (99 klip -> 10, 5 sn -> 15 sn alt siniri)',
+      buildSteps({ kind: 'klip', link: 'https://youtu.be/abc', klipSayisi: 99, klipSuresi: 5 }, base).steps[0].cmd.join(' ').includes('--klip 10 --sure 15'),
       buildSteps({ kind: 'klip', link: 'https://youtu.be/abc', klipSayisi: 99, klipSuresi: 5 }, base).steps[0].cmd.join(' '))
     check('Klip adimlari (STAGES.klip) tanimli', STAGES.klip.length >= 5 && STAGES.klip.some((s) => s.key === 'face'))
     const klipBadLink = await startJob({ kind: 'klip', link: 'https://youtu.be/abc', klipDucking: true, klipMuzik: path.join(os.tmpdir(), 'yok-boyle-dosya.mp3') })

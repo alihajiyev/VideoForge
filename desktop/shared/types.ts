@@ -68,9 +68,9 @@ export interface JobRequest {
   yenidenGun?: string
 
   /* ---- KLIPCI (uzun video -> Shorts) ozel alanlari ---- */
-  /** Kac klip uretilsin (functions/klipci.py --klip) */
+  /** Kac klip uretilsin (functions/klipci.py --klip). 0 = OTOMATIK: motor secar. */
   klipSayisi?: number
-  /** Hedef klip suresi, saniye (--sure) */
+  /** Hedef klip suresi, saniye (--sure). 0 = OTOMATIK: icerige gore, en fazla 90 sn. */
   klipSuresi?: number
   /** Konusmaci/panel modu: auto | 1 | 2 | 3 | 4 (--hoparlor) */
   klipHoparlor?: string
@@ -152,6 +152,27 @@ export interface TranskriptKesit {
   konuBasi: boolean
 }
 
+/**
+ * Otomatik mod bilgisi (klipci.py plan.oto).
+ *
+ * klipSayisi/sure true ise motor karar verdi: "kac klip" sorusunu video
+ * yanitlar (secilen/atlanan sahne sayilari), sureyi ise icerik belirler.
+ */
+export interface KlipOtoBilgi {
+  klipSayisi: boolean
+  sure: boolean
+  /** Planda uretilen uygun sahne adayi sayisi. */
+  aday: number
+  /** Skor esigini gecip uretilen sahne sayisi. */
+  secilen: number
+  /** Zayif oldugu icin atlanan sahne sayisi. */
+  atlanan: number
+  /** Otomatik secimde kullanilan skor esigi. */
+  skorEsigi: number | null
+  /** Otomatik/elle secilen sure ust siniri (sn). */
+  sureUst: number
+}
+
 /** Transkript haritasi (hangi saniyede ne konusuldu). */
 export interface KlipTranskript {
   ok: boolean
@@ -169,6 +190,8 @@ export interface KlipKlasoru {
   video: string
   /** 'konusma' | 'gorsel' */
   mod: KlipMod
+  /** Otomatik mod bilgisi (motor sayiyi/sureyi kendi sectiyse). */
+  oto: KlipOtoBilgi | null
   konular: { no: number; etiket: string; baslangic: number; bitis: number; kesitSayisi: number; skor: number }[]
   transkriptVar: boolean
   konusmaciSayisi: number

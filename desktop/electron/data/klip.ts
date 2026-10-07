@@ -7,6 +7,7 @@ import type {
   KlipKirilim,
   KlipKlasoru,
   KlipMod,
+  KlipOtoBilgi,
   KlipOgesi,
   KlipTranskript,
   TranskriptKesit,
@@ -112,6 +113,22 @@ function klipOgesi(ham: Record<string, unknown>, indeks: number): KlipOgesi {
   }
 }
 
+/** plan.oto -> arayuz tipi (otomatik mod bilgisi; yoksa null). */
+function otoOku(ham: unknown): KlipOtoBilgi | null {
+  if (!ham || typeof ham !== 'object') return null
+  const o = ham as Record<string, unknown>
+  const esik = sayi(o.skor_esigi, Number.NaN)
+  return {
+    klipSayisi: Boolean(o.klip_sayisi),
+    sure: Boolean(o.sure),
+    aday: sayi(o.aday),
+    secilen: sayi(o.secilen),
+    atlanan: sayi(o.atlanan),
+    skorEsigi: Number.isFinite(esik) ? esik : null,
+    sureUst: sayi(o.sure_ust),
+  }
+}
+
 function konularOku(ham: unknown): KlipKlasoru['konular'] {
   if (!Array.isArray(ham)) return []
   return ham.map((c, i) => {
@@ -150,6 +167,7 @@ function klasorOku(klasor: string): KlipKlasoru | null {
     link: metin(plan.link),
     video: metin(plan.video),
     mod: mod(plan.mod),
+    oto: otoOku(plan.oto),
     konular: konularOku(plan.konular),
     transkriptVar: fs.existsSync(path.join(klasor, 'transkript.json')),
     konusmaciSayisi: sayi(plan.konusmaci_sayisi, 1),

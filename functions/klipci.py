@@ -70,7 +70,16 @@ HEDEF_SPK = 48000                  # ffmpeg ic karisim ornekleme hizi
 VARSAYILAN_KLIP = 3                # kac klip uretilsin
 HEDEF_SURE = 45.0                  # hedef klip suresi (sn)
 MIN_SURE = 15.0                    # Shorts alt siniri (qa_kapisi ile ayni)
-MAKS_SURE = 60.0                   # Shorts ust siniri
+MAKS_SURE = 60.0                   # Shorts ust siniri (elle secilen sureler)
+# --- OTOMATIK MOD (--klip 0 / --sure 0): sayiyi ve sureyi motor secer ---
+OTO_KLIP = 0                       # --klip 0 => otomatik: ne kadar ilginc sahne varsa
+OTO_MAKS_KLIP = 20                 # emniyet siniri (render suresi / disk)
+OTO_SKOR_TABAN = 45.0              # otomatik modda kabul edilen en dusuk pencere skoru
+OTO_SKOR_ORAN = 0.72               # en iyi pencereye gore goreli taban (skor * oran)
+OTO_SURE = 0                       # --sure 0 => otomatik: sureyi icerik belirler
+OTO_MAKS_SURE = 90.0               # otomatik sure ust siniri (kullanici istegi)
+OTO_DOYUM = 0.62                   # sonraki kesit bu orandan zayifsa pencere buyumez
+OTO_BOSLUK = 3.0                   # otomatik modda bu kadar boslukta pencere kapanir
 MIN_KESIT = 0.6                    # bundan kisa transkript parcalari atilir
 MAKS_PARCA = 42                    # klip basina en fazla kac kesit (filtergraph siniri)
 YSA_ADIM = 0.5                     # yuz tarama adimi (sn)
@@ -1078,8 +1087,36 @@ def _acilis_skoru(k):
             0.15 * (1.0 if k.get("konu_basi") else 0.0) + 0.10 * float(c.get("nadirlik", 0.0)))
 
 
+def oto_pencereleri_sec(pencereler, taban=OTO_SKOR_TABAN, oran=OTO_SKOR_ORAN,
+                        maks=OTO_MAKS_KLIP):
+    """Otomatik secim: kac klip olacagini kullanici degil VIDEO belirler.
+
+    En iyi pencereye gore goreli bir skor tabani hesaplanir; bu esigi gecen
+    BUTUN pencereler secilir (en fazla `maks`). Boylece "5 ilginc sahne varken
+    3 klip secmek" gibi sahne kaybi olmaz, zayif sahneler de uretilmez.
+    Donus: (secilen_pencereler, skor_esigi).
+    """
+    if not pencereler:
+        return [], 0.0
+    en_iyi = max(float(p.get("skor") or 0.0) for p in pencereler)
+    esik = max(float(taban), float(oran) * en_iyi)
+    secilen = [p for p in pencereler if float(p.get("skor") or 0.0) >= esik][:maks]
+    if not secilen:
+        secilen = pencereler[:1]      # hicbiri esigi gecmediyse en iyi sahne yine uretilir
+    return secilen, round(esik, 1)
+
+
+def _oto_deger(deger, tip=int):
+    """'oto'/'otomatik'/'auto' ya da 0 -> 0 (otomatik mod); aksi halde sayi."""
+    metin = str(deger).strip().lower()
+    if metin in ("oto", "otomatik", "auto", ""):
+        return 0
+    return tip(float(metin))
+
+
 def klip_pencereleri(kesitler, adet=VARSAYILAN_KLIP, hedef_sure=HEDEF_SURE,
-                     min_sure=MIN_SURE, maks_sure=MAKS_SURE):
+                     min_sure=MIN_SURE, maks_sure=MAKS_SURE,
+                     oto=False, oto_sure=False):
     """Hook-first + konu farkindalikli klip pencereleri.
 
     1. Tohum: ACILIS skoru (kanca cumlesi / konu basi) en yuksek kesit.
@@ -1088,14 +1125,19 @@ def klip_pencereleri(kesitler, adet=VARSAYILAN_KLIP, hedef_sure=HEDEF_SURE,
     3. Sahne, dolgu ve sessizlik atildiktan sonra kalan GERCEK konusma suresine
        gore kurulur (min_sure .. maks_sure).
     4. Pencereler ASLA ortusmez.
+    5. oto=True      -> sabit klip sayisi yok: butun uygun pencereler dondurulur
+                        (secimi oto_pencereleri_sec yapar).
+    6. oto_sure=True -> hedef sure yok: pencere, kesit skoru ortalamanin
+                        OTO_DOYUM katindan asagi dusunce kapanir (en fazla 90 sn).
     """
     if not kesitler:
         return []
     n = len(kesitler)
+    adet_etkin = max(1, int(adet))
     sirali = sorted(range(n), key=lambda i: -_acilis_skoru(kesitler[i]))
     pencereler = []
     for tohum in sirali:
-        if len(pencereler) >= adet * 4:
+        if len(pencereler) >= adet_etkin * 4:
             break
         if any(p["start"] <= kesitler[tohum]["start"] < p["end"] for p in pencereler):
             continue
@@ -1103,21 +1145,40 @@ def klip_pencereleri(kesitler, adet=VARSAYILAN_KLIP, hedef_sure=HEDEF_SURE,
         konu = kesitler[tohum].get("konu")
         kanca_t = kesitler[tohum]["start"]
         sure = _konusma_suresi(kesitler, bas, son)
+        ortalama = float(kesitler[tohum].get("skor") or 0.0)
+        pencere_basi = kesitler[bas]["start"]
         # 1) AYNI KONU blogunda ileri buyu (konu butunlugu bozulmaz).
         while son + 1 < n:
             sonraki = kesitler[son + 1]
             yeni = sure + (sonraki["end"] - sonraki["start"])
-            if yeni > maks_sure or sonraki.get("konu") != konu:
+            # Ust sinir HEM gercek konusma suresi HEM klibin ekranda kalacagi span icin
+            # gecerli: hedef 45 sn olan kullanici 70 sn'lik klip almaz.
+            if (yeni > maks_sure or sonraki["end"] - pencere_basi > maks_sure
+                    or sonraki.get("konu") != konu):
                 break
-            if sure >= hedef_sure and sonraki["start"] - kesitler[son]["end"] > 2.0:
+            if oto_sure:
+                # Otomatik sure: pencere UST USTE iki zayif kesitte kapanir (skor
+                # ortalamanin OTO_DOYUM katindan dusukse) ya da uzun bosluk baslarsa.
+                # Tek bir sakin cumle klibi kesmez, ilgi tamamen dusunce keser.
+                esik = OTO_DOYUM * ortalama
+                skor1 = float(sonraki.get("skor") or 0.0)
+                skor2 = (float(kesitler[son + 2].get("skor") or 0.0)
+                         if son + 2 < n else skor1)
+                if sure >= min_sure and skor1 < esik and skor2 < esik:
+                    break
+                if sonraki["start"] - kesitler[son]["end"] > OTO_BOSLUK:
+                    break
+            elif sure >= hedef_sure and sonraki["start"] - kesitler[son]["end"] > 2.0:
                 break
             son += 1
             sure = yeni
+            ortalama = (ortalama * (son - bas) + float(sonraki.get("skor") or 0.0)) / (son - bas + 1)
         # 2) Kancadan ONCE sinirli baglam ekle (kanca ilk 8 saniyede kalsin).
         while bas > 0:
             onceki = kesitler[bas - 1]
             yeni = sure + (onceki["end"] - onceki["start"])
-            if yeni > maks_sure or onceki.get("konu") != konu:
+            if (yeni > maks_sure or kesitler[son]["end"] - onceki["start"] > maks_sure
+                    or onceki.get("konu") != konu):
                 break
             if kanca_t - onceki["start"] > LEAD_IN_MAKS:
                 break
@@ -1173,7 +1234,9 @@ def klip_pencereleri(kesitler, adet=VARSAYILAN_KLIP, hedef_sure=HEDEF_SURE,
             "kirilim": kirilim,
         })
     pencereler.sort(key=lambda p: -p["skor"])
-    return pencereler[:adet]
+    if oto:
+        return pencereler[:OTO_MAKS_KLIP]
+    return pencereler[:adet_etkin]
 
 
 # ---------------------------------------------------------------- 8. panel/kadraj plani
@@ -1663,21 +1726,50 @@ def gorsel_analiz(video, wav=None, adim=GORSEL_ADIM, sr=16000, maks_ornek=30000)
     return sonuc
 
 
+def _gorsel_oto_son(hucreler, zirve_i, bas, video_sure, min_sure, maks_sure):
+    """Gorsel hook klibinin suresini ICERIK belirler (otomatik sure).
+
+    Klibin acilisindaki enerji zirvesi referans alinir; enerji zirvenin
+    OTO_DOYUM katindan asagi dusunce pencere kapanir (en fazla maks_sure).
+    """
+    zirve = max(1e-6, float(hucreler[zirve_i].get("skor") or 0.0))
+    esik = OTO_DOYUM * zirve
+    son = bas
+    while son + 2.0 <= video_sure and son - bas < maks_sure:
+        blok = [float(h.get("skor") or 0.0) for h in hucreler
+                if son < h["t"] <= min(video_sure, son + 2.0)]
+        if blok and (sum(blok) / len(blok)) < esik and son - bas >= min_sure:
+            break
+        son = min(video_sure, son + 2.0)
+    if son - bas < min_sure:
+        son = min(video_sure, bas + min_sure)
+    return round(son, 2)
+
+
 def gorsel_pencereleri(hucreler, adet=VARSAYILAN_KLIP, sure=HEDEF_SURE,
-                       min_sure=MIN_SURE, maks_sure=MAKS_SURE, video_sure=None):
-    """Hook-first gorsel pencereler: en yuksek enerjili an klibin ACILISINDA."""
+                       min_sure=MIN_SURE, maks_sure=MAKS_SURE, video_sure=None,
+                       oto=False, oto_sure=False):
+    """Hook-first gorsel pencereler: en yuksek enerjili an klibin ACILISINDA.
+
+    oto=True: kac pencere olacagini video belirler (skor esigini gecenler).
+    oto_sure=True: pencere uzunlugunu enerji egrisi belirler (maks OTO_MAKS_SURE).
+    """
     if not hucreler:
         return []
     if not video_sure:
         video_sure = hucreler[-1]["t"] + GORSEL_ADIM
     hedef = max(min_sure, min(maks_sure, float(sure)))
+    adet_etkin = OTO_MAKS_KLIP if oto else max(1, int(adet))
     indeksler = sorted(range(len(hucreler)), key=lambda i: -hucreler[i]["skor"])
     pencereler = []
     for i in indeksler:
-        if len(pencereler) >= adet:
+        if len(pencereler) >= adet_etkin:
             break
         bas = hucreler[i]["t"]
-        son = min(video_sure, bas + hedef)
+        if oto_sure:
+            son = _gorsel_oto_son(hucreler, i, bas, video_sure, min_sure, maks_sure)
+        else:
+            son = min(video_sure, bas + hedef)
         if son - bas < min_sure:
             bas = max(0.0, son - min_sure)
         if any(bas < p["end"] - 0.2 and p["start"] < son - 0.2 for p in pencereler):
@@ -1703,7 +1795,9 @@ def gorsel_pencereleri(hucreler, adet=VARSAYILAN_KLIP, sure=HEDEF_SURE,
             "konu": "görsel hook", "konu_no": 0, "kirilim": kirilim,
         })
     pencereler.sort(key=lambda p: -p["skor"])
-    return pencereler[:adet]
+    if oto:
+        return pencereler[:OTO_MAKS_KLIP]
+    return pencereler[:adet_etkin]
 
 
 def gorsel_kadraj_plani(pencere, fw, fh, adim=4.0):
@@ -1834,11 +1928,28 @@ def klip_uret(link=None, yerel=None, adet=VARSAYILAN_KLIP, sure=HEDEF_SURE,
               hoparlor="auto", cikis_klasoru=None, muzik=None, ducking=False,
               altyazi="srt", whisper_model="small", dil=None, yuz_atla=False,
               plan_sadece=False, indir_klasoru=None, muzik_db=-20.0):
-    """Uzun video -> N adet dikey Shorts + rapor. Donus: (basarili, plan)."""
+    """Uzun video -> N adet dikey Shorts + rapor. Donus: (basarili, plan).
+
+    adet=0 (OTO_KLIP) -> OTOMATIK: video kac ilginc sahne veriyorsa o kadar klip.
+    sure=0 (OTO_SURE) -> OTOMATIK: sureyi icerik belirler, en fazla OTO_MAKS_SURE.
+    """
     baslangic = datetime.now()
+    oto_adet = int(adet) <= OTO_KLIP
+    oto_sure = float(sure) <= OTO_SURE
+    adet_etkin = OTO_MAKS_KLIP if oto_adet else max(1, int(adet))
+    hedef_sure_etkin = (OTO_MAKS_SURE if oto_sure
+                        else max(MIN_SURE, min(MAKS_SURE, float(sure))))
+    oto_bilgi = {"klip_sayisi": oto_adet, "sure": oto_sure, "aday": 0,
+                 "secilen": 0, "atlanan": 0, "skor_esigi": None,
+                 "sure_ust": OTO_MAKS_SURE if oto_sure else hedef_sure_etkin}
     _yaz("=" * 68)
     _yaz("🎬 KLIPCI — uzun video -> Shorts (yerel, ucretsiz)")
     _yaz("=" * 68)
+    if oto_adet:
+        _yaz(f"🧠 Otomatik klip sayisi: video kac ilginc sahne verirse o kadar "
+             f"(en fazla {OTO_MAKS_KLIP}).")
+    if oto_sure:
+        _yaz(f"⏱️ Otomatik sure: icerige gore, en fazla {OTO_MAKS_SURE:.0f} sn.")
     gecici_indirme = None
     try:
         if not yerel:
@@ -1867,11 +1978,23 @@ def klip_uret(link=None, yerel=None, adet=VARSAYILAN_KLIP, sure=HEDEF_SURE,
         gorsel_mod = analiz.get("mod") == "gorsel"
         if gorsel_mod:
             _yaz("🧩 Konusma yok — gorsel hook pencereleri seciliyor (sahne kesmesi + hareket + ses)...")
-            pencereler = gorsel_pencereleri(analiz["gorsel"]["hucreler"], adet=adet, sure=sure,
-                                            video_sure=analiz["gorsel"].get("sure"))
+            pencereler = gorsel_pencereleri(analiz["gorsel"]["hucreler"], adet=adet_etkin,
+                                            sure=hedef_sure_etkin, maks_sure=hedef_sure_etkin,
+                                            video_sure=analiz["gorsel"].get("sure"),
+                                            oto=oto_adet, oto_sure=oto_sure)
         else:
             _yaz("🧩 Klip pencereleri seciliyor (hook-first + konu butunlugu)...")
-            pencereler = klip_pencereleri(analiz["kesitler"], adet=adet, hedef_sure=sure)
+            pencereler = klip_pencereleri(analiz["kesitler"], adet=adet_etkin,
+                                          hedef_sure=hedef_sure_etkin, maks_sure=hedef_sure_etkin,
+                                          oto=oto_adet, oto_sure=oto_sure)
+        if oto_adet and pencereler:
+            _aday = len(pencereler)
+            _secilen, _esik = oto_pencereleri_sec(pencereler)
+            oto_bilgi.update({"aday": _aday, "secilen": len(_secilen), "skor_esigi": _esik,
+                              "atlanan": max(0, _aday - len(_secilen))})
+            _yaz(f"🎯 Otomatik secim: {_aday} uygun sahne bulundu, {len(_secilen)} tanesi secildi "
+                 f"(skor esigi {_esik}, {oto_bilgi['atlanan']} zayif sahne atlandi).")
+            pencereler = _secilen
         if not pencereler:
             _yaz("❌ Uygun klip penceresi bulunamadi.")
             return False, {}
@@ -1888,6 +2011,7 @@ def klip_uret(link=None, yerel=None, adet=VARSAYILAN_KLIP, sure=HEDEF_SURE,
             "yuz_izi_sayisi": len(analiz["yuz"].get("izler") or []),
             "yuz_esleme": {str(a): b for a, b in analiz["yuz_esleme"].items()},
             "esleme_yontemi": analiz["esleme_yontemi"],
+            "oto": oto_bilgi,
             "atilan_kesit": len(analiz["atilan"]),
             "atilan_ornek": [{"metin": a["text"][:90], "sebep": a.get("sebep")}
                              for a in analiz["atilan"][:12]],
@@ -2007,8 +2131,12 @@ def _cli(argv=None):
     p = argparse.ArgumentParser(description="VideoForge KLIPCI — uzun video -> Shorts (yerel)")
     p.add_argument("--link", help="Uzun video linki (YouTube/TikTok/Instagram)")
     p.add_argument("--yerel", help="Yerel video dosyasi (indirme yok)")
-    p.add_argument("--klip", type=int, default=VARSAYILAN_KLIP, help="Kac klip uretilsin")
-    p.add_argument("--sure", type=float, default=HEDEF_SURE, help="Hedef klip suresi (sn)")
+    p.add_argument("--klip", type=lambda d: _oto_deger(d, int), default=VARSAYILAN_KLIP,
+                   help="Kac klip uretilsin (0 ya da 'oto' = OTOMATIK: video kac ilginc "
+                        f"sahne verirse o kadar, en fazla {OTO_MAKS_KLIP})")
+    p.add_argument("--sure", type=lambda d: _oto_deger(d, float), default=HEDEF_SURE,
+                   help="Hedef klip suresi sn (0 ya da 'oto' = OTOMATIK: sureyi icerik "
+                        f"belirler, en fazla {OTO_MAKS_SURE:.0f} sn)")
     p.add_argument("--hoparlor", default="auto", help="auto | 1 | 2 | 3 | 4 (panel sayisi)")
     p.add_argument("--cikis", help="Cikis klasoru (varsayilan: Masaustu/Klipler/<video>)")
     p.add_argument("--muzik", help="Fon muzigi dosyasi")
@@ -2021,7 +2149,9 @@ def _cli(argv=None):
     p.add_argument("--plan-sadece", action="store_true", help="Sadece analiz/plan (render yok)")
     a = p.parse_args(argv)
     tamam, plan = klip_uret(
-        link=a.link, yerel=a.yerel, adet=max(1, a.klip), sure=max(MIN_SURE, a.sure),
+        link=a.link, yerel=a.yerel,
+        adet=a.klip if a.klip <= 0 else max(1, a.klip),
+        sure=a.sure if a.sure <= 0 else max(MIN_SURE, a.sure),
         hoparlor=a.hoparlor, cikis_klasoru=a.cikis, muzik=a.muzik, ducking=a.ducking,
         muzik_db=a.muzik_db, altyazi=a.altyazi, whisper_model=a.whisper_model, dil=a.dil,
         yuz_atla=a.yuz_atla, plan_sadece=a.plan_sadece)

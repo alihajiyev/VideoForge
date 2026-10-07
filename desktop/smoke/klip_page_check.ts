@@ -116,6 +116,32 @@ async function main(): Promise<void> {
     const sayfa = (await win.webContents.executeJavaScript('document.body.textContent || ""')) as string
     check('Sol menuden Klip Studyo acildi', nav && sayfa.includes('Shorts üret'), nav ? 'menu butonu tiklandi' : 'menu butonu bulunamadi')
 
+    /* ---------------- 1b) OTOMATIK secenekleri (klip sayisi + hedef sure) ---------------- */
+    const otoOncesi = (await win.webContents.executeJavaScript(
+      `(() => {
+         const etiketli = (metin) => [...document.querySelectorAll('label')].find((l) => (l.textContent || '').includes(metin));
+         const adetS = etiketli('Klip sayısı')?.querySelector('select');
+         const sureS = etiketli('Hedef süre')?.querySelector('select');
+         if (!adetS || !sureS) return { ok: false };
+         return {
+           ok: true, adet: adetS.value, sure: sureS.value,
+           adetMetinleri: [...adetS.options].map((o) => (o.textContent || '').trim()),
+           sureMetinleri: [...sureS.options].map((o) => (o.textContent || '').trim()),
+         };
+       })()`,
+    )) as { ok: boolean; adet?: string; sure?: string; adetMetinleri?: string[]; sureMetinleri?: string[] }
+    check(
+      'Klip sayisi ve hedef sure VARSAYILAN olarak otomatik (0)',
+      otoOncesi.ok && otoOncesi.adet === '0' && otoOncesi.sure === '0',
+      `adet=${otoOncesi.adet} sure=${otoOncesi.sure}`,
+    )
+    check(
+      'Otomatik secenekleri listede (klip sayisi: kac sahne varsa, sure: maks 90 sn)',
+      (otoOncesi.adetMetinleri || []).some((t) => t.includes('Otomatik')) &&
+        (otoOncesi.sureMetinleri || []).some((t) => t.includes('Otomatik') && t.includes('90')),
+      (otoOncesi.adetMetinleri || []).slice(0, 2).join(' | ') + ' // ' + (otoOncesi.sureMetinleri || []).slice(0, 2).join(' | '),
+    )
+
     /* ---------------- 2) Formu doldur: link + 1 klip + 20 sn ---------------- */
     const form = (await win.webContents.executeJavaScript(
       `(async () => {
@@ -133,12 +159,19 @@ async function main(): Promise<void> {
          const adetS = adetL && adetL.querySelector('select');
          const sureS = sureL && sureL.querySelector('select');
          if (!adetS || !sureS) return { ok: false, neden: 'select bulunamadi' };
+         // Once OTOMATIK secip arayuzun durumu degistirdigini dogrula, sonra 1 klip / 20 sn'ye don.
+         vfSet(adetS, '0', window.HTMLSelectElement, 'change');
+         vfSet(sureS, '0', window.HTMLSelectElement, 'change');
+         await new Promise((r) => setTimeout(r, 300));
+         const otoIpucu = (document.body.textContent || '').includes('Otomatik mod');
          vfSet(adetS, '1', window.HTMLSelectElement, 'change');
          vfSet(sureS, '20', window.HTMLSelectElement, 'change');
-         return { ok: true, linkDegeri: link.value, adet: adetS.value, sure: sureS.value };
+         await new Promise((r) => setTimeout(r, 200));
+         return { ok: true, linkDegeri: link.value, adet: adetS.value, sure: sureS.value, otoIpucu };
        })()`,
-    )) as { ok: boolean; neden?: string; linkDegeri?: string; adet?: string; sure?: string }
+    )) as { ok: boolean; neden?: string; linkDegeri?: string; adet?: string; sure?: string; otoIpucu?: boolean }
     check('Form dolduruldu (link + 1 klip + 20 sn)', form.ok === true, JSON.stringify(form))
+    check('Otomatik secilince sayfa otomatik mod bilgisini gosteriyor', form.otoIpucu === true, String(form.otoIpucu))
     await sleep(400)
 
     /* ---------------- 3) "Shorts uret" butonuna bas ---------------- */
@@ -333,6 +366,52 @@ async function main(): Promise<void> {
     check('Sayfada "Uretilen klipler" bolumu klip gosteriyor', /Üretilen klipler/.test(sonMetin) && !/Henüz klip yok/i.test(sonMetin), 'liste dolu')
     check('Sayfada QA rozeti gorunuyor', /GECTI|ORTA|ZAYIF/.test(sonMetin))
     check('Arayuz konsol hatasi uretmedi', rendererErrors.length === 0, rendererErrors.slice(0, 2).join(' | '))
+
+    /* ---------------- 6b) OTOMATIK is: arayuz --klip 0 --sure 0 kuruyor mu ---------------- */
+    const otoIs = (await win.webContents.executeJavaScript(
+      `(async () => {
+         ${SETTER}
+         window.scrollTo(0, 0);
+         await new Promise((r) => setTimeout(r, 700));
+         const etiketli = (metin) => [...document.querySelectorAll('label')].find((l) => (l.textContent || '').includes(metin));
+         const adetS = etiketli('Klip sayısı')?.querySelector('select');
+         const sureS = etiketli('Hedef süre')?.querySelector('select');
+         if (!adetS || !sureS) return { ok: false, neden: 'select yok' };
+         vfSet(adetS, '0', window.HTMLSelectElement, 'change');
+         vfSet(sureS, '0', window.HTMLSelectElement, 'change');
+         await new Promise((r) => setTimeout(r, 300));
+         const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim().toLocaleLowerCase('tr') === 'shorts üret');
+         if (!b) return { ok: false, neden: 'buton yok' };
+         b.click();
+         await new Promise((r) => setTimeout(r, 2500));
+         const s = await window.vfgui.runState();
+         const j = s.ok ? s.data : null;
+         return { ok: true, status: j && j.status, pid: j && j.pid };
+       })()`,
+    )) as { ok: boolean; status?: string; pid?: number; neden?: string }
+    check('Otomatik modda gercek is basliyor (ayni arayuz akisi)', otoIs.ok === true && otoIs.status === 'running', JSON.stringify(otoIs))
+    let gunluk2 = ''
+    try {
+      gunluk2 = fs.readFileSync(gunlukYolu, 'utf8')
+    } catch {
+      gunluk2 = ''
+    }
+    const komut2 = (gunluk2.match(/komut: ([^\n]+)/g) || []).pop() || ''
+    check(
+      'Otomatik secim python komutuna aynen gidiyor (--klip 0 --sure 0)',
+      komut2.includes('klipci.py') && komut2.includes('--klip 0') && komut2.includes('--sure 0'),
+      komut2.replace(/^komut: /, '').trim(),
+    )
+    await win.webContents.executeJavaScript(
+      `(async () => {
+         const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim().toLocaleLowerCase('tr') === 'durdur');
+         if (b) b.click();
+         await new Promise((r) => setTimeout(r, 1800));
+         return true;
+       })()`,
+    )
+    const durdu = getState()
+    check('Otomatik is Durdur ile iptal edildi', durdu?.status !== 'running', `durum=${durdu?.status}`)
 
     const cikti = path.join(desktopDir, 'Klipler')
     console.log(`   cikti klasoru: ${cikti}`)
