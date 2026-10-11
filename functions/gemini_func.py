@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from google import genai
 from google.genai import types
-from constants import GEMINI_API_KEYS, GEMINI_MODELS, get_working_model, set_working_model, GENERIC_TITLE_HASHTAGS, GENERIC_TAGS
+from constants import GEMINI_API_KEYS, GEMINI_MODELS, get_working_model, set_working_model, GENERIC_TITLE_HASHTAGS, GENERIC_TAGS, etiket_genel_mi
 from functions.seo_builder import build_seo_html
 
 class GeminiRateLimiter:
@@ -958,15 +958,19 @@ def fix_title_hashtags(title_text, tags_text):
 # BASLIK + ETIKET — profesyonel Shorts SEO (2026 arastirmasi)
 #  * Shorts baslik denetleyicileri: 40-60 karakter ideal, ilk 2-3 kelime kanca,
 #    anahtar kelime ilk 30 karakterde, 1 emoji, 1-2 hashtag; ALL-CAPS/hype cezasi.
-#  * YouTube etiket alani 500 karakter (virguller dahil). Profesyonel yapi:
-#    "spesifik -> nis -> genel" piramidi, long-tail + yazim varyantlari; alakasiz
-#    etiketler erisimi bozar (silme/yayilma dususu).
+#  * Etiket politikasi (2026): SADECE videonun konusuna ozel 3-5 etiket. Genel/
+#    kanal seviyesi etiketler ("интересные факты", "кино тайны") hicbir arama niyeti
+#    tasimaz, her videoda aynidir ve erisimi bozar (silme/yayilma dususu). Alan
+#    siniri 500 karakter (virguller dahil) — 3-5 etiketle zaten asilmaz.
 # ------------------------------------------------------------------
 TITLE_MAX_LEN = 65
 EMOJI_RE = re.compile(r'[\U0001F000-\U0010FFFF\u2600-\u27BF]')
 TAG_FIELD_LIMIT = 500
-TAG_MIN_COUNT = 20
-TAG_MIN_TOTAL = 300
+# Etiket politikasi: SADECE 3-5, hepsi videonun konusuna ozel. Genel/kanal seviyesi
+# etiketler ("интересные факты", "кино тайны") uretilmez ve deterministik elenir.
+TAG_MIN_COUNT = 3
+TAG_MAX_COUNT = 5
+TAG_MIN_TOTAL = 10
 TAG_MAX_ITEM = 60
 
 # Ilk kelime CTR kararini verir: kanca acilislari
@@ -1172,6 +1176,10 @@ def _clean_tags(raw):
         key = tag.lower()
         if key in seen or key in GENERIC_TAGS:
             continue
+        if etiket_genel_mi(key):
+            # Sadece genel kelimelerden kurulu etiket ("интересные факты", "movie recap"):
+            # videonun konusunu adlandirmiyor, her videoda ayni olur -> atilir.
+            continue
         if len(tag) < 3 or len(tag) > TAG_MAX_ITEM:
             continue
         if not re.search(r'[а-яёa-z0-9]', key):
@@ -1212,16 +1220,21 @@ def _tierle_ayir(raw):
     return _clean_tags(", ".join(parcalar))
 
 
-def _fit_tag_field(tags_text, limit=TAG_FIELD_LIMIT, min_count=12):
-    """500 karakter alan sinirini asarsa SONDAKI (en genel) etiketlerden kirp."""
+def _fit_tag_field(tags_text, limit=TAG_FIELD_LIMIT, max_count=TAG_MAX_COUNT):
+    """Etiket listesini politika sinirlarina sigdir: en fazla TAG_MAX_COUNT (3-5)
+    etiket ve en fazla 500 karakter. Sira korunur (en spesifik etiketler BASTADIR);
+    fazlasi SONDAKILERDEN atilir."""
     items = [t.strip() for t in (tags_text or "").split(",") if t.strip()]
-    while len(", ".join(items)) > limit and len(items) > min_count:
+    if max_count and len(items) > max_count:
+        items = items[:max_count]
+    while len(", ".join(items)) > limit and items:
         items.pop()
     return ", ".join(items)
 
 
 def _tag_issues(tags_text):
-    """Etiket alani denetimi: YouTube alani 500 karakter (virguller dahil)."""
+    """Etiket denetimi: SADECE 3-5 konu-spesifik etiket.
+    # yok, genel/kanal seviyesi etiket yok, alan 500 karakter."""
     if not tags_text:
         return ["empty"]
     issues = []
@@ -1229,19 +1242,20 @@ def _tag_issues(tags_text):
         issues.append("no # symbols")
     count = len([t for t in tags_text.split(",") if t.strip()])
     if count < TAG_MIN_COUNT:
-        issues.append(f"only {count} tags (need {TAG_MIN_COUNT}+)")
+        issues.append(f"only {count} tags (need {TAG_MIN_COUNT}-{TAG_MAX_COUNT})")
+    if count > TAG_MAX_COUNT:
+        issues.append(f"{count} tags (max {TAG_MAX_COUNT})")
     total = len(tags_text)
     if total > TAG_FIELD_LIMIT:
         issues.append(f"{total} chars > {TAG_FIELD_LIMIT} field limit")
     if total < TAG_MIN_TOTAL:
-        issues.append(f"only {total} chars (fill the {TAG_FIELD_LIMIT}-char field)")
+        issues.append(f"only {total} chars (tags are missing or empty)")
     return issues
 
 
 def generate_tags(voice_text, tags_prompt_template, channel_name, max_retries=2):
-    """Etiket uret: profesyonel piramit promptu (spesifik -> nis -> genel) +
-    500 karakter alan siniri. En fazla 2 tur; sonra deterministik temiz liste
-    dondurulur (eski 10 + 10 turluk dongu kaldirildi)."""
+    """Etiket uret: SADECE videonun konusuna ozel 3-5 etiket (genel/kanal seviyesi
+    etiket yok). En fazla 2 tur; sonra deterministik temiz liste dondurulur."""
     tags_sysp = tags_prompt_template.format(voice_text=voice_text)
     tags = ""
     for attempt in range(max(1, max_retries)):
@@ -1261,12 +1275,16 @@ def fix_tags(tags_text, channel_name, max_retries=1):
         return tags_text, True
     print(f"🔧 [Bulut] Etiket düzeltiliyor: {', '.join(issues)}...")
     fix_prompt = f"""Fix these YouTube tags: {', '.join(issues)}.
-Rules: KEEP every existing tag (fix, do not replace), then ADD more 2-4 word long-tail keyword phrases
-about the same topic until the list has 24-30 tags and the whole text is 350-{TAG_FIELD_LIMIT} characters
-(commas and spaces count). Order: most specific first, broadest last. Russian + English, no # symbols,
-no vague abstract words, no near-duplicate tags.
+Rules: output ONE line with {TAG_MIN_COUNT}-{TAG_MAX_COUNT} tags TOTAL, comma-separated, no # symbols, no labels.
+Every tag MUST name THIS video's exact subject (character, person, place, object, brand, work, team,
+event or term that actually appears in the voiceover) — never the video's genre or channel category.
+Give the official local-language form AND the English original as SEPARATE tags when viewers search both.
+KEEP the most searched/most relevant existing tags, DROP generic/channel-level ones and any extras
+above {TAG_MAX_COUNT}. NEVER output generic labels (факты, интересное, кино, фильмы, тайны,
+загадки, теории, истории, разбор, топ, shorts, movie recap) — they carry no search intent for this video.
+Most searched/most specific first, no near-duplicates, no typos.
 Current tags: {tags_text}
-Output exactly 3 lines (EXACT / NICHE / BROAD), comma-separated, no labels."""
+Output ONLY the tags, one line."""
     raw = gemini_uret("Fix tags", fix_prompt, channel_name)
     if raw and not raw.startswith("❌"):
         fixed = _fit_tag_field(_tierle_ayir(raw.strip()))
@@ -1318,23 +1336,21 @@ Rules (Shorts mobil feed'e gore — hepsi zorunlu):
 
 Write ONLY the title, one line."""
 
-DEFAULT_TAGS_PROMPT = """Based on this voiceover text, write the YouTube tag list for a Russian Shorts video.
+DEFAULT_TAGS_PROMPT = """Based on this voiceover text, write the YouTube tag list for THIS video (Shorts, any topic).
 
 Voiceover:
 {voice_text}
 
 Rules:
-1. Output THREE lines in this exact order, comma-separated, no # symbols, no line labels:
-   - Line 1 — 10-12 EXACT tags: exact topic names viewers type (official Russian form + English original) and long-tail phrases from THIS video. Write them as PHRASES of 2-4 words, not single words — viewers search phrases (e.g. "тор без молота", "хела против тора", "мстители судный день финал", "avengers doomsday ending explained").
-   - Line 2 — 10-12 NICHE tags: the niche keywords tied to this video's sub-topic (character nicknames, actor names, specific objects/abilities/places/events).
-   - Line 3 — 4-6 BROAD tags: e.g. "марвел", "mcu", "marvel", "кино новости"
-2. Total 24-30 tags, 350-500 characters INCLUDING commas (YouTube's tag field limit is 500). Fill the field as far as GENUINELY RELEVANT keywords allow — never pad with junk, near-duplicates or made-up words. Most specific first, broadest last — YouTube weighs the first tags more.
-3. Include ONLY real alternative spellings viewers actually type (with/without hyphen, Latin vs Russian, singular/plural) — NEVER invent typos or garbled word forms; every tag must be a correctly spelled real keyword. Single-word tags are allowed only in the BROAD tier.
-4. ONLY real names/topics that appear in the voiceover or are direct aliases of it. Correct official names ("Avengers Doomsday" not "Avengers Judgement Day").
-5. NEVER use vague abstract concepts (герой, судьба, наследие, технологии) — no search volume, filtered out automatically.
-6. Spell every tag correctly (except intentional common variants).
+1. Output ONE line with 3-5 tags, comma-separated, no # symbols, no labels. Not fewer, not more - every slot must be a keyword viewers actually type into YouTube search for THIS video.
+2. EVERY tag must name THIS video's exact subject - a character, person, place, object, organization, brand, team, work (movie/show/book/game), event, product or term that really appears in the voiceover. NEVER the video's genre, category or channel theme.
+3. Give the official local-language form AND the English original as SEPARATE tags when viewers search both (translated name + original name). A 2-4 word phrase from THIS video is allowed only when it is a real search phrase viewers type.
+4. Single words and short phrases are both fine - pick whatever viewers actually search. Never pad a strong name into a longer generic phrase, and never waste a slot on a label that would fit every video.
+5. NEVER output generic/channel-level labels in ANY language: факты, интересные факты, интересное, кино, фильмы, тайны, секреты, загадки, теории, истории, разбор, объяснение, топ, шортс, facts, top 10, movie recap, shorts, interesting - they are the same for every video, carry no search intent, and are filtered out automatically.
+6. ONLY names that really appear in the voiceover or are direct official aliases of it. Correct official spelling, no invented typos or garbled word forms.
+7. Order: most important/most searched first - YouTube weighs the first tags more.
 
-Output exactly 3 lines (EXACT / NICHE / BROAD), comma-separated, no labels."""
+Output ONLY the tags, one line."""
 
 
 def run_voice_pipeline(tam_metin, raw_title, voice_prompt, title_prompt_template, tags_prompt_template, channel_name, lang, char_limit):

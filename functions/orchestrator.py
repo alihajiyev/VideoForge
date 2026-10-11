@@ -11,10 +11,10 @@ BAKU_TZ = timezone(timedelta(hours=4))
 def now_baku():
     return datetime.now(BAKU_TZ)
 from elevenlabs.client import ElevenLabs
-from constants import SETTINGS, TEXT_FIXES, NAME_FIXES, ELEVENLABS_API_KEY, FRAMES_PER_GPU, MAX_CONCURRENT_GPUS, results_volume, get_video_fps, get_video_duration, OVERHEAD_SECONDS, GPU_COST_PER_SEC, get_char_limit, MOVIE_NAMES_RU, GENERIC_TAGS, PROC_W, PROC_H, CLEANER_GPU, TTS_DOGRULAMA_AKTIF
+from constants import SETTINGS, TEXT_FIXES, NAME_FIXES, ELEVENLABS_API_KEY, FRAMES_PER_GPU, MAX_CONCURRENT_GPUS, results_volume, get_video_fps, get_video_duration, OVERHEAD_SECONDS, GPU_COST_PER_SEC, get_char_limit, MOVIE_NAMES_RU, GENERIC_TAGS, etiket_genel_mi, PROC_W, PROC_H, CLEANER_GPU, TTS_DOGRULAMA_AKTIF
 from functions import maliyet
 from functions.transcribe import api_ile_transkript_cek
-from functions.gemini_func import gemini_uret, evaluate_topic, run_voice_pipeline, fix_length, reset_gemini_call_stats, gemini_usage_summary, _LAST_HARD_BLOCK
+from functions.gemini_func import gemini_uret, evaluate_topic, run_voice_pipeline, fix_length, reset_gemini_call_stats, gemini_usage_summary, _LAST_HARD_BLOCK, TAG_MAX_COUNT
 from functions.seo_builder import build_seo_html
 from functions.tts_func import tts_verify
 from functions.tts_kontrol import SISTEMIK_ISARET, abonelik_durumu, odeme_sorunu_var_mi, odeme_mesaji, tts_hata_mesaji
@@ -943,10 +943,12 @@ def run_orchestrator(link, rand_num, video_bytes, raw_title, tam_metin, system_p
             tag_l = tag.lower()
             if tag_l == "мcu":
                 tag_l = "mcu"
-            if tag_l and tag_l not in seen and tag_l not in GENERIC_TAGS:
+            if tag_l and tag_l not in seen and tag_l not in GENERIC_TAGS and not etiket_genel_mi(tag_l):
                 seen.add(tag_l)
                 deduped.append(tag_l)
-        sections["tags"] = ", ".join(deduped)
+        # Politika: SADECE videonun konusuna ozel 3-5 etiket; fazlasi (en sona eklenen
+        # en genel etiketler) burada da kirpilir.
+        sections["tags"] = ", ".join(deduped[:TAG_MAX_COUNT])
 
     # SEO HTML artik BURADA kurulmaz: TTS sonrasi metin kisaltilabildigi icin
     # erken kurulan rapor bayat kaliyordu (bkz. eski hata #2.1). Tek kurum

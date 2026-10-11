@@ -46,17 +46,14 @@ Voiceover:
 {voice_text}
 
 Rules:
-1. Output THREE lines in this exact order, comma-separated, no # symbols, no line labels:
-   - Line 1 — 10-12 EXACT tags: the exact subject/place/object/person names viewers type, official form + English original, plus long-tail phrases from THIS video. (e.g. "марианская впадина", "mariana trench", "глубоководные существа"). Write them as PHRASES of 2-4 words, not single words — viewers search phrases (e.g. "тор без молота", "хела против тора", "мстители судный день финал", "avengers doomsday ending explained").
-   - Line 2 — 10-12 NICHE tags: keywords of this video's field tied to the topic (science/history/space/biology terms that actually apply: "океанология", "батискаф", "тихоокеанский регион").
-   - Line 3 — 4-6 BROAD tags: "интересные факты", "наука", "природа", "история", "facts"
-2. Total 24-30 tags, 350-500 characters INCLUDING commas (YouTube's tag field limit is 500). Fill the field as far as GENUINELY RELEVANT keywords allow — never pad with junk, near-duplicates or made-up words. Most specific first, broadest last — YouTube weighs the first tags more.
-3. Include ONLY real alternative spellings viewers actually type (with/without hyphen, Latin vs Russian, singular/plural) — NEVER invent typos or garbled word forms; every tag must be a correctly spelled real keyword. Single-word tags are allowed only in the BROAD tier.
-4. ONLY names that actually appear in the transcript or are direct aliases of it. Correct official names and spellings.
-5. NEVER use vague abstract concepts (тайна, секрет, знание, судьба, жизнь, смерть, время, учёный, наследие) — no search volume, filtered out automatically.
-6. Spell-check every tag; no typos (only the intentional common variants from rule 3).
+1. Output ONE line with 3-5 tags, comma-separated, no # symbols, no labels. Not fewer, not more - every slot must be a keyword viewers actually type into YouTube search for THIS video.
+2. EVERY tag must name the EXACT subject of this video: the place, animal, person, object, event, technology or phenomenon it is about ("марианская впадина", "батискаф", "тихоокеанский регион"). Official Russian form + the English original as separate tags when viewers search both ("mariana trench"). Sub-topic terms that really apply ("океанология", "глубоководные существа") are perfect.
+3. NEVER output generic/channel-level labels: факты, интересные факты, интересное, наука, природа, кино, истории, тайны, загадки, секреты, теории, разбор, объяснение, топ 5, шортс, shorts, interesting facts - they are identical for every video, carry no search intent, and are filtered out automatically.
+4. Single-word subject names are the strongest tags - never pad them into generic phrases; a 2-4 word phrase must be a real search phrase from THIS video.
+5. ONLY names/topics that actually appear in the voiceover or are direct aliases of it. Correct spellings, no typos, no invented word forms.
+6. Order: most important/most specific first - YouTube weighs the first tags more.
 
-Output exactly 3 lines (EXACT / NICHE / BROAD), comma-separated, no labels."""
+Output ONLY the tags, one line."""
 
 VOICE_ID = os.environ.get("VOICE_ID_CH2", "M1CSR3PJBsfWU6ZquG3C")
 LANG = "ru"

@@ -48,17 +48,14 @@ Voiceover:
 {voice_text}
 
 Rules:
-1. Output THREE lines in this exact order, comma-separated, no # symbols, no line labels:
-   - Line 1 — 10-12 EXACT tags: exact names viewers type — official Russian movie/character forms + English originals + long-tail phrases from THIS video. (e.g. "мстители судный день", "avengers doomsday", "человек паук новый день", "spider-man brand new day"). Write them as PHRASES of 2-4 words, not single words — viewers search phrases (e.g. "тор без молота", "хела против тора", "мстители судный день финал", "avengers doomsday ending explained").
-   - Line 2 — 10-12 NICHE tags: Marvel/DC sub-topic keywords tied to this video (character nicknames, actor names, specific objects/abilities: "мьёльнир", "инкурсия", "уви", "мультивселенная").
-   - Line 3 — 4-6 BROAD tags: "марвел", "marvel", "mcu", "мси", "кино новости"
-2. Total 24-30 tags, 350-500 characters INCLUDING commas (YouTube's tag field limit is 500). Fill the field as far as GENUINELY RELEVANT keywords allow — never pad with junk, near-duplicates or made-up words. Most specific first, broadest last — YouTube weighs the first tags more.
-3. Include ONLY real alternative spellings viewers actually type (with/without hyphen, Latin vs Russian, singular/plural) — NEVER invent typos or garbled word forms; every tag must be a correctly spelled real keyword. Single-word tags are allowed only in the BROAD tier.
-4. ONLY names that actually appear in the transcript or are direct aliases of it. Correct official names ("Avengers Doomsday" not "Avengers Judgement Day" or "Avengers Doom"). NEVER tag a movie that is not mentioned.
-5. NEVER use vague abstract concepts (герой, судьба, наследие, технологии, преемник, будущее) — no search volume, filtered out automatically.
-6. Spell-check every tag; no typos (only the intentional common variants from rule 3).
+1. Output ONE line with 3-5 tags, comma-separated, no # symbols, no labels. Not fewer, not more - every slot must be a keyword viewers actually type into YouTube search for THIS video.
+2. EVERY tag must name the exact subject of THIS video: the character, movie, team, actor or object in official Russian form, plus the English original as a SEPARATE tag when viewers search both ("тор" + "thor", "человек паук" + "spider-man"). Example for "почему Халк сильнее Тора": "тор, халк, marvel, mcu, мстители". Sub-topic keywords that really apply ("мьёльнир", "инкурсия", "мультивселенная") are perfect.
+3. NEVER output generic/channel-level labels: кино, фильмы, кино новости, интересные факты, интересное, тайны, загадки, секреты, теории, истории, разбор, топ, шортс, shorts, movie recap - they are identical for every video, carry no search intent, and are filtered out automatically. A broad brand tag ("marvel", "mcu", "dc") is allowed ONLY when it is one of THIS video's actual subjects.
+4. Single-word names are the strongest tags - never pad them into generic phrases; a 2-4 word phrase must be a real search phrase from THIS video ("тор против халка", "мстители судный день").
+5. ONLY names that actually appear in the voiceover or are direct official aliases of it. Correct official forms ("Avengers Doomsday" not "Avengers Judgement Day"). NEVER tag a movie that is not mentioned. No typos.
+6. Order: most important/most specific first - YouTube weighs the first tags more.
 
-Output exactly 3 lines (EXACT / NICHE / BROAD), comma-separated, no labels."""
+Output ONLY the tags, one line."""
 
 VOICE_ID = os.environ.get("VOICE_ID_CH1", "M1CSR3PJBsfWU6ZquG3C")
 LANG = "ru"

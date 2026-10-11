@@ -328,6 +328,44 @@ GENERIC_TAGS = {
     "memory", "past", "future", "reality", "ability", "abilities", "personality", "mission",
 }
 
+# Etiketin KENDISI videonun konusuna ozel olmali. Sadece asagidaki genel/kanal-seviyesi
+# kelimelerden kurulmus etiketler ("интересные факты", "кино тайны", "movie recap", "топ 5")
+# her videoda aynidir ve arama niyeti tasimaz — deterministik elenir.
+# DIKKAT: marka/konu adlari (marvel, mcu, марвел) buraya GIRMEZ: videonun gercek konusu
+# olduklarinda en degerli etiketlerdir.
+GENERIC_TAG_WORDS = {
+    # Russian
+    "факт", "факты", "фактик", "фактики", "интересное", "интересный", "интересная",
+    "интересные", "интересно", "кино", "кинo", "фильм", "фильмы", "сериал", "сериалы",
+    "мультфильм", "мультфильмы", "тайна", "тайны", "загадка", "загадки", "секрет",
+    "секреты", "теория", "теории", "разбор", "объяснение", "объяснения", "история",
+    "истории", "новость", "новости", "шортс", "видео", "топ", "подборка", "подборки",
+    "канал", "каналы", "ютуб", "мнение", "реакция", "юмор", "прикол", "приколы",
+    "смешное", "правда", "миф", "мифы", "легенда", "легенды", "герой", "герои",
+    "судьба", "наследие", "будущее", "технологии", "преемник", "главное", "важное",
+    # English
+    "fact", "facts", "interesting", "cinema", "movie", "movies", "film", "films",
+    "series", "mystery", "mysteries", "secret", "secrets", "theory", "theories",
+    "explained", "explanation", "review", "recap", "story", "stories", "news", "top",
+    "video", "videos", "channel", "youtube", "shorts", "short", "comedy", "funny", "fandom",
+}
+
+
+def etiket_genel_mi(tag):
+    """Etiket SADECE genel/kanal-seviyesi kelimelerden mi kurulu?
+
+    True ise etiket videoya ozel degildir ("интересные факты", "кино тайны",
+    "movie recap", "топ 5") ve atilir. Tek bir spesifik kelime bile varsa
+    ("тор против халка", "marvel") etiket KORUNUR: videonun konusuna bagli tek bir
+    kelime bile etiketi degerli kilar. Saf sayilar ("5", "2026") spesifik
+    isim sayilmaz."""
+    kelimeler = [k for k in re.split(r"[^\w]+", str(tag or "").lower()) if k]
+    anlamli = [k for k in kelimeler if not k.isdigit()]
+    if not anlamli:
+        return True
+    return all(k in GENERIC_TAG_WORDS for k in anlamli)
+
+
 # English movie titles (as they appear in English transcripts) → official Russian dub names.
 # Used to verify the voiceover names only movies that actually appear in the transcript.
 MOVIE_NAMES_RU = {

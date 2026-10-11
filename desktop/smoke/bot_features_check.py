@@ -794,39 +794,54 @@ try:
     kontrol("fix_title en fazla 2 LLM turu (eski 10 tur kalkti)",
             _gemini_cagri["n"] == 2, str(_gemini_cagri["n"]))
 
-    # 9) Etiketler: 500 karakter alani + temizlik (genel kelime/tekrar/# temizligi)
+    # 9) Etiketler: SADECE 3-5 konu-spesifik etiket (genel/kanal etiketi ve # yok)
     _etik_raw = ", ".join(
-        ["#мстители судный день", "avengers doomsday", "мстители судный день"]
-        + ["интересные факты про кино номер %d" % i for i in range(30)]
+        ["#мстители судный день", "тор", "халк", "#marvel", "mcu", "мьёльнир", "мстители судный день", "thor vs hulk"]
+        + ["интересные факты", "кино тайны", "movie recap", "загадки истории", "топ 5", "shorts", "интересное кино"] * 4
         + ["#герой", "судьба"]
     )
     _t = _gf._fit_tag_field(_gf._clean_tags(_etik_raw))
-    kontrol("Etiket alani 500 karakter sinirini asmiyor",
-            len(_t) <= _gf.TAG_FIELD_LIMIT, f"{len(_t)}ch")
-    kontrol("Temizlik: # yok, tekrar yok, genel kelimeler atildi",
+    _tt = [x.strip() for x in _t.split(",") if x.strip()]
+    kontrol("Etiket politikasi: 3-5 etiketle sinirli (fazlasi atilir)",
+            len(_tt) == _gf.TAG_MAX_COUNT, f"{len(_tt)}: {_t}")
+    kontrol("Temizlik: # yok, tekrar yok, soyut/genel kelimeler atildi",
             "#" not in _t and "герой" not in _t and "судьба" not in _t
             and _t.count("мстители судный день") == 1)
-    kontrol("Tek etiket sayisi korunuyor (>=12)",
-            len([x for x in _t.split(",") if x.strip()]) >= 12)
-    _guzel = ", ".join("ключ слово %d" % i for i in range(28))
-    kontrol("Dolu ve gecerli etiket listesi denetimden geciyor",
+    kontrol("Genel/kanal etiketleri elenir (интересные факты, кино тайны, movie recap)",
+            all(g not in _t for g in ("интересные факты", "кино тайны", "movie recap",
+                                      "загадки истории", "топ 5", "shorts", "интересное кино")))
+    kontrol("Alakali isimler korunur ve EN ALAKALILAR BASTA kalir (fazlasi kirpilir)",
+            _tt == ["мстители судный день", "тор", "халк", "marvel", "mcu"]
+            and "мьёльнир" not in _t and "thor vs hulk" not in _t, _t)
+    kontrol("Genel etiket filtresi kelime bazli (tek spesifik kelime etiketi kurtarir)",
+            _constants.etiket_genel_mi("интересные факты") and _constants.etiket_genel_mi("movie recap")
+            and _constants.etiket_genel_mi("топ 5") and _constants.etiket_genel_mi("shorts")
+            and not _constants.etiket_genel_mi("тор") and not _constants.etiket_genel_mi("marvel")
+            and not _constants.etiket_genel_mi("тор против халка"))
+    _guzel = "тор, халк, marvel, mcu, мстители судный день"
+    kontrol("3-5 konu-spesifik etiket denetimden geciyor",
             _gf._tag_issues(_guzel) == [], str(_gf._tag_issues(_guzel)))
-    _katmanli = ("Line 1 — 10-12 EXACT tags: тор без молота, тор против хелы, thor vs hela\n"
+    kontrol("3 etiket de yeterli (yeni alt sinir)",
+            _gf._tag_issues("тор, халк, marvel") == [], str(_gf._tag_issues("тор, халк, marvel")))
+    kontrol("2 etiket denetimden gecmiyor (en az 3)",
+            _gf._tag_issues("тор, халк") != [], str(_gf._tag_issues("тор, халк")))
+    kontrol("12 etiket denetimden gecmiyor (en fazla 5)",
+            _gf._tag_issues(", ".join("спец%d" % i for i in range(12))) != [])
+    _katmanli = ("Line 1 — 3-5 EXACT tags: тор без молота, тор против хелы, thor vs hela\n"
                  "EXACT: мьёльнир тора, хела разбивает мьёльнир\n"
-                 "BROAD: марвел, marvel, mcu, кино новости")
+                 "марвел, mcu")
     _ta = _gf._tierle_ayir(_katmanli)
     kontrol("Katmanli cikti tek listeye cevriliyor (etiket/baslik satirlari ayiklanir)",
-            _ta.startswith("тор без молота") and _ta.endswith("кино новости")
+            _ta.startswith("тор без молота") and _ta.endswith("mcu")
             and ":" not in _ta and "Line" not in _ta and "#" not in _ta, _ta[:80])
     kontrol("Katmanli ceviri sirasi korunuyor (EXACT -> NICHE -> BROAD)",
             _gf._tierle_ayir(_katmanli).split(", ")[0] == "тор без молота")
     _gemini_cagri["n"] = 0
-    _gemini_cevaplar[:] = [_guzel]
+    _gemini_cevaplar[:] = [_guzel + ", спец лишний"]
     _et, _et_ok = _gf.generate_tags("ses", _gf.DEFAULT_TAGS_PROMPT, "Fakt Za 15")
-    kontrol("generate_tags tek cagride dolu liste dondurdu",
-            _et_ok is True and _gemini_cagri["n"] == 1
-            and _gf.TAG_MIN_TOTAL <= len(_et) <= _gf.TAG_FIELD_LIMIT,
-            f"{len(_et)}ch, cagri={_gemini_cagri['n']}")
+    kontrol("generate_tags tek cagride 3-5 etikete kirpilmis liste dondurdu",
+            _et_ok is True and _gemini_cagri["n"] == 1 and _et == _guzel,
+            f"{len(_et)}ch, cagri={_gemini_cagri['n']}, {_et}")
 finally:
     _gf.gemini_uret = _gemini_gercek
 
@@ -835,15 +850,24 @@ for _kanal_dosya in ("kinosekrety.py", "faktza15.py", "kinok_syjet.py"):
     _kanal_kaynak = oku(_kanal_dosya)
     kontrol(f"{_kanal_dosya}: baslik kurallari (kanca + tek emoji) yazili",
             "HOOK IN THE FIRST 2-3 WORDS" in _kanal_kaynak and "EXACTLY ONE emoji" in _kanal_kaynak)
-    kontrol(f"{_kanal_dosya}: etiket 3 katmanli cikti + 500 karakter siniri yazili",
-            "Output THREE lines" in _kanal_kaynak and "tag field limit is 500" in _kanal_kaynak
-            and "EXACT" in _kanal_kaynak and "BROAD" in _kanal_kaynak)
+    kontrol(f"{_kanal_dosya}: etiket kurali (SADECE 5-6 konu-spesifik, genel etiket yok) yazili",
+            "Output ONE line with 3-5 tags" in _kanal_kaynak
+            and "NEVER output generic" in _kanal_kaynak
+            and "24-30" not in _kanal_kaynak and "tag field limit is 500" not in _kanal_kaynak)
 _kjs = oku("kinok_syjet.py")
 kontrol("kinok_syjet: bozuk '##hashtag' ve 'антагон' metni temizlendi",
         "##" not in _kjs and "антагон" not in _kjs)
 kontrol("Varsayilan promptlar da yeni kurallari tasiyor",
-        "tag field limit is 500" in _gf.DEFAULT_TAGS_PROMPT
+        "Output ONE line with 3-5 tags" in _gf.DEFAULT_TAGS_PROMPT
+        and "NEVER output generic" in _gf.DEFAULT_TAGS_PROMPT
+        and "24-30" not in _gf.DEFAULT_TAGS_PROMPT
         and "HOOK IN THE FIRST 2-3 WORDS" in _gf.DEFAULT_TITLE_PROMPT)
+# NOT: kelime bazli karsilastirma (alt-dize degil): "истории" icinde "тор" gecmesi
+# yanlis pozitif uretiyordu.
+_prompt_kelimeler = {t.strip(".,:;()[]\"'#-") for t in _gf.DEFAULT_TAGS_PROMPT.lower().split()}
+kontrol("Varsayilan etiket promptu kanal-bagimsiz (marka/karakter ornegi icermiyor)",
+        not (_prompt_kelimeler & {"халк", "тор", "marvel", "марвел", "мстители", "mcu"}),
+        str(sorted(_prompt_kelimeler & {"халк", "тор", "marvel", "марвел", "мстители", "mcu"})))
 kontrol("Eski uzunluk savrulmasi kodda kalmadi ('en iyi haliyle kabul' yok)",
         "en iyi haliyle kabul" not in gem_kaynak)
 kontrol("Baslik/etiket 8+10 turluk ic ice donguleri kaldirildi",
